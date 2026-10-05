@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from . import config as cfg
 from . import service, updater
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, timesheet_csv,
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, timesheet_csv,
                       timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -70,10 +70,24 @@ tr.x td{text-decoration:line-through;color:#898781} tr.x td.keep{text-decoration
 .bar{margin-bottom:20px;display:flex;gap:12px;align-items:center;color:#52514e}
 button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #c3c2b7;background:#fff;cursor:pointer}
 label.ex{cursor:pointer;font-size:12px;color:#52514e;white-space:nowrap}
-@media print{.bar,label.ex{display:none} body{margin:0}}
+.lines{border:1px solid #c3c2b7;border-radius:12px;padding:16px 18px;margin:0 0 28px;background:#fcfcfb}
+button.copy{font-size:12px;padding:3px 9px;margin-left:6px;border-radius:6px}
+.copied{color:#006300;font-size:13px}
+@media print{.bar,label.ex,.lines{display:none} body{margin:0}}
 """
 
 PAGE_SCRIPT = """<script>
+for (const b of document.querySelectorAll("button.copy")) {
+  b.addEventListener("click", async () => {
+    const text = b.dataset.copy;
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      const t = document.createElement("textarea"); t.value = text; document.body.append(t);
+      t.select(); document.execCommand("copy"); t.remove();
+    }
+    const old = b.textContent; b.textContent = "Copied ✓"; setTimeout(() => (b.textContent = old), 1500);
+  });
+}
 for (const box of document.querySelectorAll("input[data-id]")) {
   box.addEventListener("change", async () => {
     box.disabled = true;
@@ -164,10 +178,46 @@ def invoice_page(inv: dict) -> str:
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
 <td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
+    table = _lines_panel(inv) + table
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table)
+
+
+def _lines_panel(inv: dict) -> str:
+    """Copy-ready invoice lines for pasting into Revolut Business (or any invoicing app). Not printed."""
+    esc = html.escape
+    rate = inv.get("rate")
+    lines = invoice_lines(inv, rate)
+    if not lines:
+        return ""
+
+    def btn(text: str, value: str) -> str:
+        return f'<button class="copy" data-copy="{esc(value)}">{esc(text)}</button>'
+
+    rows = "".join(
+        f"<tr><td>{esc(l['description'])} {btn('Copy', l['description'])}</td>"
+        f"<td class=n>{l['hours']:.2f} {btn('Copy', format(l['hours'], '.2f'))}</td>"
+        f"<td class=n>{'£' + format(rate, '.2f') if rate else '–'}</td>"
+        f"<td class=n>{'£' + format(l['amount'], '.2f') if l['amount'] is not None else '–'}</td></tr>"
+        for l in lines
+    )
+    total_hours = sum(l["hours"] for l in lines)
+    total_amount = sum(l["amount"] or 0 for l in lines)
+    all_text = "\n".join(f"{l['description']}\t{l['hours']:.2f}" + (f"\t{rate:.2f}" if rate else "") for l in lines)
+    rate_note = ("" if rate else
+                 ' Add an hourly rate for this client in <b>Settings → How each client is invoiced</b> to see amounts.')
+    return f"""<div class="lines bar-block">
+<h2 style="margin-top:0">Invoice lines</h2>
+<p>One line per {"day" if inv["style"] == "day" else "week"}, ready to copy into your invoice: description, then quantity
+(hours), then rate.{rate_note}</p>
+<table><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
+<tbody>{rows}</tbody>
+<tfoot><tr class="grand"><td>Total</td><td class=n>{total_hours:.2f}</td><td></td>
+<td class=n>{'£' + format(total_amount, '.2f') if rate else '–'}</td></tr></tfoot></table>
+<p style="margin-top:10px">{btn('Copy all lines', all_text)} <span class="copied" id="copied"></span></p>
+</div>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -284,7 +334,11 @@ def _clean_client(raw: dict) -> dict:
     block = int(raw.get("block_minutes") or 15)
     if not 1 <= block <= 240:
         raise ValueError("Rounding block must be between 1 and 240 minutes.")
-    return {"billing": billing, "rounding": rounding, "block_minutes": block}
+    rate = raw.get("rate")
+    rate = None if rate in (None, "") else float(rate)
+    if rate is not None and rate < 0:
+        raise ValueError("Hourly rate can't be negative.")
+    return {"billing": billing, "rounding": rounding, "block_minutes": block, "rate": rate}
 
 
 def _client_settings(conf: dict, client: str) -> dict:
@@ -305,8 +359,10 @@ def _invoice(q: dict) -> dict:
         raise ValueError("Choose a month.")
     c = _client_settings(cfg.load_config(), client)
     style = c["billing"] if c["billing"] in ("day", "week") else "day"
-    return invoice(service.open_store(), client, year, month, style,
-                   c.get("block_minutes", 15), c.get("rounding", "none"))
+    inv = invoice(service.open_store(), client, year, month, style,
+                  c.get("block_minutes", 15), c.get("rounding", "none"))
+    inv["rate"] = c.get("rate")
+    return inv
 
 
 def _clean_limit(raw: dict) -> dict:

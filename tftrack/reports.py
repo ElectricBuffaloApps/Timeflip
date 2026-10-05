@@ -182,3 +182,23 @@ def invoice(store, client: str, year: int, month: int, style: str,
         "total_billed_s": sum(g["billed_s"] for g in groups),
         "total_actual_s": sum(d["actual_s"] for d in all_days),
     }
+
+
+def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
+    """One invoice line per billed day (by-the-day clients) or per week (by-the-week clients)."""
+    lines = []
+
+    def add(description: str, seconds: int) -> None:
+        if seconds <= 0:
+            return
+        hours = round(seconds / 3600, 2)
+        lines.append({"description": description, "hours": hours, "rate": rate,
+                      "amount": round(hours * rate, 2) if rate else None})
+
+    for g in inv["groups"]:
+        if inv["style"] == "week":
+            add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}", g["billed_s"])
+        else:
+            for d in g["days"]:
+                add(f"{inv['client']} – {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])
+    return lines

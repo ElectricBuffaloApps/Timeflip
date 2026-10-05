@@ -163,7 +163,7 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
     </div>
     <h2 style="margin-top:20px;font-size:16px">How each client is invoiced</h2>
     <table class="edit">
-      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th></tr></thead>
+      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th><th>Hourly rate (£)</th></tr></thead>
       <tbody id="clientRows"></tbody>
     </table>
     <div class="row" style="margin-top:10px">
@@ -518,8 +518,11 @@ function renderClientRows(s) {
     const block = el("input", { type: "number", min: "1", max: "240", step: "1", "aria-label": `Block minutes for ${name}` });
     block.value = c.block_minutes || 15;
     const label = s.clients.includes(name) ? name : `${name} (no tasks with this tag yet)`;
-    for (const cell of [document.createTextNode(label), style, rounding, block]) { const td = el("td"); td.append(cell); tr.append(td); }
-    tr.read = () => [name, { billing: style.value, rounding: rounding.value, block_minutes: Number(block.value) || 15 }];
+    const rate = el("input", { type: "number", min: "0", step: "0.01", placeholder: "optional", "aria-label": `Hourly rate for ${name}` });
+    rate.value = c.rate ?? "";
+    for (const cell of [document.createTextNode(label), style, rounding, block, rate]) { const td = el("td"); td.append(cell); tr.append(td); }
+    tr.read = () => [name, { billing: style.value, rounding: rounding.value, block_minutes: Number(block.value) || 15,
+                             rate: rate.value === "" ? null : Number(rate.value) }];
     return tr;
   }));
 }

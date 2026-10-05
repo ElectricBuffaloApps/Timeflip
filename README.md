@@ -28,6 +28,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
   - **By the day:** each day's entries, with a total under each day.
   - **By the week:** every week whose Monday is in the month, with day and week totals. September's last week can run into October.
   - **Rounding:** day totals can be rounded to a block of minutes, such as 15.
+- **Invoice lines:** each monthly timesheet starts with one line per day (by-the-day clients) or per week (by-the-week clients), with **Copy** buttons for pasting into a Revolut Business invoice or any other invoicing app. Set an hourly rate per client in Settings to show amounts. The panel doesn't print.
 - **Not charging for something:** tick **Exclude** beside the entry on the timesheet. It stays on the sheet crossed out, isn't counted in the totals, and stays excluded after future syncs.
 - **Billable amounts** use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 

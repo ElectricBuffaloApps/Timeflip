@@ -338,3 +338,19 @@ class AutoUpdateTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 updater.maybe_auto_update({}, store2, now)
         self.assertIsNone(store2.get_meta("auto_update_checked"))           # will retry at the next check
+
+
+class InvoiceLinesTest(unittest.TestCase):
+    def test_lines_per_day_and_per_week(self):
+        from tftrack.reports import invoice, invoice_lines
+        at = lambda m, d, h=9: datetime(2026, m, d, h).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 28), "duration": 50 * 60},
+            {"id": 2, "taskId": 1, "startedAt": at(10, 2), "duration": 70 * 60},
+            {"id": 3, "taskId": 2, "startedAt": at(9, 29), "duration": 6 * 60},
+        ], tasks=[{"id": 1, "name": "Prog", "tag": "FCY"}, {"id": 2, "name": "Build", "tag": "HTB"}])
+        fcy = invoice_lines(invoice(store, "FCY", 2026, 9, "week"), 40)
+        self.assertEqual(fcy, [{"description": "FCY – week commencing Mon 28 Sep 2026", "hours": 2.0,
+                                "rate": 40, "amount": 80.0}])
+        htb = invoice_lines(invoice(store, "HTB", 2026, 9, "day", 15, "up"))
+        self.assertEqual(htb, [{"description": "HTB – Tue 29 Sep 2026", "hours": 0.25, "rate": None, "amount": None}])
