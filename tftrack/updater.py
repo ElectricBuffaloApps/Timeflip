@@ -7,7 +7,9 @@ check starts a fresh Python each run, so it picks up the new code by itself.
 from __future__ import annotations
 
 import io
+import json
 import os
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -15,6 +17,7 @@ import threading
 import time
 import urllib.request
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 REPO = "ElectricBuffaloApps/Timeflip"
@@ -105,3 +108,45 @@ def restart_soon(delay: float = 1.0) -> None:
         os.chdir(INSTALL_DIR)
         os.execv(sys.executable, [sys.executable, "-m", "tftrack", "serve"])
     threading.Thread(target=go, daemon=True).start()
+
+
+def changes_since(seen: int | None) -> list[dict]:
+    """Release notes newer than the version the user last saw (just the current one if unknown)."""
+    try:
+        notes = json.loads((CODE_DIR / "CHANGELOG.json").read_text())
+    except (OSError, ValueError):
+        return []
+    current = current_version()
+    floor = seen if seen is not None else current - 1
+    return [n for n in notes if floor < n["version"] <= current]
+
+
+AUTO_HOUR = 3  # updates are checked at the first background check after 3am
+
+
+def auto_update_due(last_checked: str | None, now: datetime) -> bool:
+    if now.hour < AUTO_HOUR:
+        return False
+    return last_checked != now.date().isoformat()
+
+
+def restart_web_agent() -> None:
+    subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.tftrack.web"],
+                   capture_output=True, timeout=30)
+
+
+def maybe_auto_update(conf: dict, store, now: datetime | None = None) -> int | None:
+    """Called by the 5-minute background check. Returns the new version if it updated."""
+    now = now or datetime.now()
+    if not conf.get("auto_update", True) or not is_installed_copy():
+        return None
+    if not auto_update_due(store.get_meta("auto_update_checked"), now):
+        return None
+    # Only mark today as done once the check succeeds, so a Mac waking without Wi-Fi tries again shortly.
+    if latest_version() <= current_version():
+        store.set_meta("auto_update_checked", now.date().isoformat())
+        return None
+    version = update()
+    store.set_meta("auto_update_checked", now.date().isoformat())
+    restart_web_agent()
+    return version

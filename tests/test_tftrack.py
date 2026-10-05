@@ -301,3 +301,40 @@ class UpdaterTest(unittest.TestCase):
     def test_version_file_is_a_number(self):
         from tftrack import updater
         self.assertGreater(updater.current_version(), 0)
+
+
+class AutoUpdateTest(unittest.TestCase):
+    def test_due_once_a_day_after_3am(self):
+        from tftrack.updater import auto_update_due
+        self.assertFalse(auto_update_due(None, datetime(2026, 10, 6, 2, 55)))
+        self.assertTrue(auto_update_due(None, datetime(2026, 10, 6, 3, 0)))
+        self.assertTrue(auto_update_due("2026-10-05", datetime(2026, 10, 6, 9, 0)))   # asleep overnight
+        self.assertFalse(auto_update_due("2026-10-06", datetime(2026, 10, 6, 15, 0)))
+
+    def test_changes_since(self):
+        from tftrack import updater
+        cur = updater.current_version()
+        self.assertEqual([n["version"] for n in updater.changes_since(cur)], [])
+        self.assertEqual([n["version"] for n in updater.changes_since(None)], [cur])
+        self.assertTrue(all(n["changes"] for n in updater.changes_since(cur - 2)))
+        self.assertEqual(updater.changes_since(None)[0]["version"], cur, "CHANGELOG.json needs an entry for VERSION")
+
+    def test_maybe_auto_update(self):
+        from unittest import mock
+        from tftrack import updater
+        store = make_store([])
+        now = datetime(2026, 10, 6, 3, 2)
+        with mock.patch.object(updater, "is_installed_copy", return_value=True), \
+             mock.patch.object(updater, "latest_version", return_value=99), \
+             mock.patch.object(updater, "update", return_value=99) as upd, \
+             mock.patch.object(updater, "restart_web_agent") as restart:
+            self.assertIsNone(updater.maybe_auto_update({"auto_update": False}, store, now))
+            self.assertEqual(updater.maybe_auto_update({}, store, now), 99)
+            self.assertIsNone(updater.maybe_auto_update({}, store, now))   # already done today
+            self.assertEqual((upd.call_count, restart.call_count), (1, 1))
+        store2 = make_store([])
+        with mock.patch.object(updater, "is_installed_copy", return_value=True), \
+             mock.patch.object(updater, "latest_version", side_effect=OSError("offline")):
+            with self.assertRaises(OSError):
+                updater.maybe_auto_update({}, store2, now)
+        self.assertIsNone(store2.get_meta("auto_update_checked"))           # will retry at the next check

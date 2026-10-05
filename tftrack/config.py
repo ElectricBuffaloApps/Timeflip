@@ -18,6 +18,8 @@ DEFAULT_CONFIG = {
     "alert_levels_percent": [80, 100],
     "duration_unit": "seconds",
     "limits": [],
+    "auto_update": True,
+    "last_seen_version": None,
     # How each client (TimeFlip task tag) is invoiced: "hourly", "day" (monthly, by day) or "week"
     # (weeks whose Monday is in the month). Day totals can be rounded to a block of minutes.
     "clients": {

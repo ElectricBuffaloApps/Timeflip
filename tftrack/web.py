@@ -43,6 +43,8 @@ def state() -> dict:
     return {
         "email": conf.get("email"),
         "version": updater.current_version(),
+        "auto_update": conf.get("auto_update", True),
+        "whats_new": updater.changes_since(conf.get("last_seen_version")),
         "last_sync": store.last_sync(),
         "last_error": error.split("|", 1)[1] if error else None,
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
@@ -244,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
                     conf = cfg.load_config()
                     if body.get("week_starts") in WEEKDAYS:
                         conf["week_starts"] = body["week_starts"]
+                    if isinstance(body.get("auto_update"), bool):
+                        conf["auto_update"] = body["auto_update"]
+                    cfg.save_config(conf)
+                elif self.path == "/api/seen":
+                    conf = cfg.load_config()
+                    conf["last_seen_version"] = updater.current_version()
                     cfg.save_config(conf)
                 elif self.path == "/api/update":
                     version = updater.update()

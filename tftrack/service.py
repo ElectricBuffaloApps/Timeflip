@@ -51,4 +51,11 @@ def run_check(conf: dict, store: Store) -> list[str]:
             if lv <= level:
                 store.mark_alert_sent(lim.key, st.period_start.isoformat(), lv)
         sent.append(title)
+    try:
+        from . import updater
+        version = updater.maybe_auto_update(conf, store)
+        if version:
+            sent.append(f"updated to version {version}")
+    except Exception as e:
+        print(f"{datetime.now():%Y-%m-%d %H:%M} auto-update failed: {e}")
     return sent

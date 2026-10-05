@@ -38,6 +38,9 @@ def cmd_install(args) -> None:
         sys.exit(f"{e}")
     except Exception as e:
         sys.exit(f"Couldn't reach TimeFlip: {e}")
+    if conf.get("last_seen_version") is None:  # a fresh install has nothing "new" to announce
+        from .updater import current_version
+        conf["last_seen_version"] = current_version()
     cfg.save_config(conf)
     cfg.save_password(conf["email"], password)
     try:

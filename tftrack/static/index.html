@@ -43,6 +43,8 @@ button:disabled { opacity: .5; cursor: default; }
 input[type=number] { width: 84px; }
 .banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--critical); }
 .hidden { display: none !important; }
+.banner.news { border-color: var(--good); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.banner.news ul { margin: 6px 0 0; padding-left: 20px; }
 .banner.update { border-color: var(--accent); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
 /* limit meters */
 .meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
@@ -86,6 +88,10 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
     <button id="syncBtn">Sync now</button>
   </header>
   <div class="banner hidden" id="error"></div>
+  <div class="banner news hidden" id="newsBanner">
+    <div><b id="newsTitle">What's new</b><ul id="newsList"></ul></div>
+    <button class="primary" id="newsOk">Got it</button>
+  </div>
   <div class="banner update hidden" id="updateBanner">
     <span id="updateText">A new version of TimeFlip Tracker is available.</span>
     <button class="primary" id="updateBtn">Update now</button>
@@ -166,6 +172,9 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
     </div>
     <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
     <div class="row" style="margin-top:16px">
+      <label><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label>
+    </div>
+    <div class="row" style="margin-top:8px">
       <span>Version <b id="version">–</b></span>
       <button id="checkUpdate">Check for updates</button>
       <span class="sub" id="updateMsg"></span>
@@ -221,6 +230,8 @@ function showState(s, withLimitRows = false) {
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
   $("version").textContent = s.version;
+  $("autoUpdate").checked = s.auto_update;
+  showNews(s.whats_new || []);
   $("weekStarts").value = s.week_starts;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
@@ -520,6 +531,15 @@ $("saveClients").onclick = async () => {
 };
 
 /* ---------- updates ---------- */
+function showNews(notes) {
+  $("newsBanner").classList.toggle("hidden", !notes.length);
+  if (!notes.length) return;
+  const newest = Math.max(...notes.map((n) => n.version));
+  $("newsTitle").textContent = `Updated to version ${newest}. What's new:`;
+  $("newsList").replaceChildren(...notes.flatMap((n) => n.changes).map((c) => el("li", {}, c)));
+}
+$("newsOk").onclick = async () => { showState(await api("/api/seen", {})); };
+$("autoUpdate").onchange = async () => { showState(await api("/api/settings", { auto_update: $("autoUpdate").checked })); };
 async function checkForUpdate(manual) {
   if (manual) $("updateMsg").textContent = "Checking…";
   try {

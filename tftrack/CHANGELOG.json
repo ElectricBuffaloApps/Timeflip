@@ -1,0 +1,15 @@
+[
+  {"version": 6, "changes": [
+    "Updates now install automatically overnight (you can switch this off in Settings).",
+    "A “What's new” message like this one appears after each update."
+  ]},
+  {"version": 5, "changes": [
+    "Update now button, so new versions install without downloading a ZIP.",
+    "Your version number is shown in Settings, with a Check for updates button."
+  ]},
+  {"version": 4, "changes": [
+    "Monthly timesheets for clients billed by the day (HTB) or by the week (FCY), with day and week totals.",
+    "Exclude any entry you won't charge for. It stays on the sheet, crossed out, and isn't counted.",
+    "Each day's total can be rounded to 15-minute blocks."
+  ]}
+]

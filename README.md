@@ -35,7 +35,9 @@ The tracker checks TimeFlip every 5 minutes. It can only see what your phone app
 
 ## Updating
 
-When there's a new version, a banner appears at the top of the tracker page. Click **Update now** and the page reloads on the new version. You can also click **Check for updates** in Settings.
+Updates install automatically once a day: overnight if your Mac is on, otherwise shortly after it wakes. The next time you open the tracker, a **What's new** message lists the changes.
+
+To update straight away, click **Update now** on the banner at the top of the page, or **Check for updates** in Settings. To stop automatic updates, untick **Install updates automatically overnight** in Settings.
 
 ## Uninstall
 
@@ -51,4 +53,4 @@ Double-click **Uninstall TimeFlip Tracker.command**, which is in the download fo
 - Commands (run from `~/Library/Application Support/TimeFlip Tracker`): `python3 -m tftrack status | sync | check | probe | serve`.
 - `probe` prints a sample of the raw API data. If durations turn out to be in milliseconds, set `"duration_unit": "milliseconds"` in `config.json`.
 - Tests: `python3 -m unittest discover -s tests`
-- **Releasing:** increase the number in `tftrack/VERSION` with every change pushed to the branch. Installed copies compare it with GitHub to offer the update.
+- **Releasing:** with every change pushed to the branch, increase the number in `tftrack/VERSION` and add a matching entry to `tftrack/CHANGELOG.json`. Installed copies compare the version with GitHub, update overnight from the background check, and show the changelog once.
