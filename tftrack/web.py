@@ -59,20 +59,27 @@ def state() -> dict:
 
 
 PAGE_STYLE = """
-body{font:14px system-ui,-apple-system,sans-serif;color:#0b0b0b;background:#fff;margin:32px}
-h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:28px 0 6px} p{color:#52514e;margin:0 0 20px}
-table{border-collapse:collapse;width:100%} th,td{padding:6px 8px;border-bottom:1px solid #e1e0d9;text-align:left}
-th{font-weight:600;color:#52514e} .n{text-align:right;font-variant-numeric:tabular-nums}
-tr.sub td{font-weight:600;background:#f4f4f1}
-tr.x td{text-decoration:line-through;color:#898781} tr.x td.keep{text-decoration:none}
-.tag{font-size:12px;color:#898781;text-decoration:none;display:inline-block;margin-left:6px}
-.grand td{font-weight:700;border-top:2px solid #0b0b0b;border-bottom:none;font-size:15px}
-.bar{margin-bottom:20px;display:flex;gap:12px;align-items:center;color:#52514e}
-button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #c3c2b7;background:#fff;cursor:pointer}
-label.ex{cursor:pointer;font-size:12px;color:#52514e;white-space:nowrap}
-.lines{border:1px solid #c3c2b7;border-radius:12px;padding:16px 18px;margin:0 0 28px;background:#fcfcfb}
-button.copy{font-size:12px;padding:3px 9px;margin-left:6px;border-radius:6px}
-.copied{color:#006300;font-size:13px}
+body{font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827;background:#fff;margin:32px}
+h1,h2,button{font-family:Sora,Inter,sans-serif;letter-spacing:-0.02em}
+h1{font-size:24px;font-weight:700;margin:0 0 4px}
+h1::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:#F97316;margin-bottom:14px}
+h2{font-size:17px;margin:28px 0 6px} p{color:#6B7280;margin:0 0 20px}
+table{border-collapse:collapse;width:100%} th,td{padding:6px 8px;border-bottom:1px solid #E5E7EB;text-align:left}
+th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabular-nums}
+tr.sub td{font-weight:600;background:#FFF7ED}
+tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
+.tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
+.grand td{font-family:Sora,Inter,sans-serif;font-weight:700;border-top:2px solid #1E2530;border-bottom:none;font-size:15px}
+.bar{margin-bottom:24px;display:flex;gap:12px;align-items:center;color:#6B7280}
+button{font-size:14px;font-weight:600;padding:8px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#111827;cursor:pointer}
+button:hover{border-color:#F97316}
+.bar button{background:#F97316;border-color:#F97316;color:#fff} .bar button:hover{background:#c2410c;border-color:#c2410c}
+label.ex{cursor:pointer;font-size:12px;color:#6B7280;white-space:nowrap} input[type=checkbox]{accent-color:#F97316}
+.lines{border-radius:12px;padding:18px 22px;margin:0 0 28px;background:#FFF7ED;border-left:3px solid #F97316;
+  box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+.lines td,.lines th{border-bottom-color:#FED7AA}
+button.copy{font-size:12px;padding:3px 10px;margin-left:6px;border-radius:6px}
+.copied{color:#00c853;font-size:13px}
 @media print{.bar,label.ex,.lines{display:none} body{margin:0}}
 """
 
@@ -115,7 +122,9 @@ def _exclude_cell(r: dict) -> str:
 def _page(title: str, heading: str, subtitle: str, table: str) -> str:
     esc = html.escape
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
-<title>{esc(title)}</title><style>{PAGE_STYLE}</style></head><body>
+<title>{esc(title)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>{PAGE_STYLE}</style></head><body>
 <div class="bar"><button onclick="window.print()">Print or save as PDF</button>
 <span>Tick <b>Exclude</b> on any entry you won't charge for. It stays on the sheet, crossed out.</span></div>
 <h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{PAGE_SCRIPT}</body></html>"""

@@ -1,5 +1,12 @@
 [
   {
+    "version": 8,
+    "changes": [
+      "New look in Future You PT colours and fonts: dark header bar, orange accents, Sora headings.",
+      "Timesheets and invoice lines use the same colours."
+    ]
+  },
+  {
     "version": 7,
     "changes": [
       "Monthly timesheets now have an Invoice lines panel: one line per day (HTB) or per week (FCY), with Copy buttons for pasting into a Revolut Business invoice.",

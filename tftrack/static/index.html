@@ -4,55 +4,79 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TimeFlip Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>
+/* Future You PT brand: dark frame, light content, orange accents, zing green sparingly. */
 :root {
   color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
-  --accent: #2a78d6; --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --other: #a8a69f;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+  --page: #E5E7EB; --surface: #FFFFFF; --ink: #111827; --ink-2: #6B7280; --muted: #6B7280;
+  --grid: #E5E7EB; --axis: #D1D5DB; --border: #E5E7EB; --tint: #FFF7ED;
+  --frame: #1E2530; --frame-ink: #f1f5f9; --frame-muted: #94a3b8;
+  --accent: #F97316; --accent-deep: #c2410c; --accent-soft: #FED7AA; --zing: #00E676; --zing-deep: #00c853;
+  --bar: #273344; --good: #00c853; --warning: #F97316; --critical: #d03b3b; --other: #9CA3AF;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --s1:#F97316; --s2:#2a78d6; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5; --other: #6b6a65;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    --page: #0f1219; --surface: #1E2530; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
+    --grid: #2a3342; --axis: #2a3342; --border: #2a3342; --tint: #273344;
+    --frame: #1E2530; --bar: #94a3b8; --other: #64748b; --shadow: 0 2px 12px rgba(0,0,0,0.3);
+    --s1:#ea580c; --s2:#3987e5; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5; --other: #6b6a65;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --page: #0f1219; --surface: #1E2530; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
+  --grid: #2a3342; --axis: #2a3342; --border: #2a3342; --tint: #273344;
+  --frame: #0f1219; --bar: #94a3b8; --other: #64748b; --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --s1:#ea580c; --s2:#3987e5; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 Inter, -apple-system, BlinkMacSystemFont, sans-serif; }
+h1, h2, h3, button, .label { font-family: Sora, Inter, sans-serif; letter-spacing: -0.02em; }
+.topbar { background: var(--frame); color: var(--frame-ink); border-bottom: 1px solid #2a3342; }
+.topbar-inner { max-width: 1040px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between; }
+.topbar h1 { font-size: 22px; font-weight: 700; margin: 0; }
+.topbar h1 span { color: var(--accent); }
+.topbar .sub { color: var(--frame-muted); }
+.topbar button { background: transparent; color: var(--frame-ink); border-color: var(--frame-muted); }
+.topbar button:hover { border-color: var(--accent); color: var(--accent); }
 main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 20px; }
-h1 { font-size: 24px; margin: 0; }
-h2 { font-size: 18px; margin: 0 0 4px; }
+h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+h2::before { content: ""; display: block; width: 40px; height: 3px; border-radius: 2px; background: var(--accent); margin-bottom: 14px; }
 .sub { color: var(--ink-2); font-size: 13px; }
-section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+section { background: var(--surface); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-button, select, input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 10px; }
-button { cursor: pointer; }
+button, select, input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 12px; }
+button { cursor: pointer; font-weight: 600; font-size: 14px; letter-spacing: 0.01em; }
+button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
 button.link { border: none; background: none; color: var(--accent); padding: 4px; }
 button:disabled { opacity: .5; cursor: default; }
+select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 input[type=number] { width: 84px; }
-.banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--critical); }
+input[type=checkbox] { accent-color: var(--accent); }
+summary { color: var(--ink); }
+summary::marker { color: var(--accent); }
+.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; background: var(--surface); box-shadow: var(--shadow);
+  border-left: 3px solid var(--critical); }
 .hidden { display: none !important; }
-.banner.news { border-color: var(--good); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.banner.news { border-left-color: var(--zing-deep); background: var(--tint); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
 .banner.news ul { margin: 6px 0 0; padding-left: 20px; }
-.banner.update { border-color: var(--accent); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.banner.update { border-left-color: var(--accent); background: var(--tint); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
 /* limit meters */
-.meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
-.meter { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-.meter .name { font-weight: 600; overflow-wrap: anywhere; }
-.meter .fig { font-size: 20px; margin: 2px 0 6px; }
+.meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
+.meter { border-radius: 12px; padding: 14px 16px; background: var(--tint); border-left: 3px solid var(--accent); }
+.meter .name { font-family: Sora, Inter, sans-serif; font-weight: 600; overflow-wrap: anywhere; }
+.meter .fig { font-family: Sora, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 2px 0 8px; }
 .track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
-.fill { height: 100%; border-radius: 4px; background: var(--accent); }
+.fill { height: 100%; border-radius: 4px; background: var(--bar); }
 .state { font-size: 13px; color: var(--ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: center; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 /* limit editor */
@@ -71,22 +95,24 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 .tip b { font-size: 15px; }
 .tip .k { display: inline-block; width: 12px; height: 2px; margin-right: 6px; vertical-align: middle; }
 table.totals { width: 100%; border-collapse: collapse; margin-top: 16px; }
-table.totals th, table.totals td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: left; }
+table.totals th, table.totals td { padding: 8px; border-bottom: 1px solid var(--grid); text-align: left; }
 table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .seg:hover, .seg:focus { opacity: .8; outline: none; }
-.empty { color: var(--ink-2); padding: 24px 0; }
+.empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
 </style>
 </head>
 <body>
-<main>
-  <header>
+<div class="topbar">
+  <div class="topbar-inner">
     <div>
-      <h1>TimeFlip Tracker</h1>
+      <h1>TimeFlip <span>Tracker</span></h1>
       <div class="sub" id="syncInfo">Loading…</div>
     </div>
     <button id="syncBtn">Sync now</button>
-  </header>
+  </div>
+</div>
+<main>
   <div class="banner hidden" id="error"></div>
   <div class="banner news hidden" id="newsBanner">
     <div><b id="newsTitle">What's new</b><ul id="newsList"></ul></div>
@@ -261,7 +287,7 @@ function renderMeters(status) {
     const fill = el("div", { class: "fill" });
     fill.style.width = `${Math.min(100, s.percent)}%`;
     const level = s.percent >= 100 ? ["critical", "Limit reached"] : s.percent >= 80 ? ["warning", "Getting close"] : ["good", "On track"];
-    fill.style.background = s.percent >= 80 ? `var(--${level[0]})` : "var(--accent)";
+    fill.style.background = s.percent >= 80 ? `var(--${level[0]})` : "var(--bar)";
     track.append(fill);
     m.append(track);
     const st = el("div", { class: "state" });
