@@ -17,7 +17,7 @@ class ParseStartedAtTest(unittest.TestCase):
     def test_formats(self):
         expected = datetime(2026, 9, 30, 9, 0, tzinfo=UTC)
         for value in ["2026-09-30T09:00:00Z", "2026-09-30T09:00:00", "2026-09-30T10:00:00+01:00",
-                      "2026-09-30 09:00:00", "2026-09-30T09:00:00.1234567Z",
+                      "2026-09-30 09:00:00", "2026-09-30T09:00:00.1234567Z", "2026-09-30T10:00:00.000+01", "2026-09-30T10:00:00+0100",
                       1790758800, "1790758800000"]:
             self.assertEqual(parse_started_at(value).replace(microsecond=0), expected, value)
 
@@ -35,6 +35,28 @@ def make_store(intervals, tasks=None, unit="seconds"):
 
 
 class StoreTest(unittest.TestCase):
+    def test_real_timeflip_shape_links_by_local_id(self):
+        # Shape copied from a real /api/sync/all response.
+        store = make_store(
+            [
+                {"id": 179118691200000, "startedAt": "2026-10-05T08:55:12.000+01", "duration": 5,
+                 "taskId": None, "taskLocalId": "C35C", "extId": 6204897, "delDate": None},
+                {"id": 179118691700000, "startedAt": "2026-10-05T08:55:17.000+01", "duration": 16501,
+                 "taskId": None, "taskLocalId": "5679", "extId": 6204893, "delDate": None},
+                {"id": 1, "startedAt": "2026-10-05T09:00:00.000+01", "duration": 60,
+                 "taskId": None, "taskLocalId": "gone", "delDate": None},
+            ],
+            tasks=[
+                {"id": 163705, "name": "FYPT Clients", "localId": "C35C", "tag": "FYPT1", "isBillable": False},
+                {"id": 163706, "name": "Admin", "localId": "5679", "tag": None},
+            ],
+        )
+        start = datetime(2026, 10, 5, tzinfo=UTC)
+        self.assertEqual(store.seconds_by_task(start, start + timedelta(days=1)), {163705: 5, 163706: 16501})
+        self.assertEqual(store.get_meta("unmatched_intervals"), "1")
+        seg = store.segments(start, start + timedelta(days=1))[0]
+        self.assertEqual(seg["start"], datetime(2026, 10, 5, 7, 55, 12, tzinfo=UTC))
+
     def test_clips_at_window_edges_and_skips_deleted(self):
         store = make_store([
             # 23:00 -> 01:00 across midnight: only 1h falls on the 30th.

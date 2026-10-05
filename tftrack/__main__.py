@@ -24,9 +24,14 @@ SHORTCUT = Path.home() / "Desktop" / "TimeFlip Tracker.webloc"
 
 def cmd_install(args) -> None:
     """Save the account, test it, start both background jobs and put a shortcut on the Desktop."""
-    password = sys.stdin.readline().rstrip("\n")
     conf = cfg.load_config()
-    conf["email"] = args.email.strip()
+    if args.reuse:  # updating: keep the saved account
+        if not conf.get("email"):
+            sys.exit("No saved account.")
+        password = cfg.get_password(conf["email"])
+    else:
+        password = sys.stdin.readline().rstrip("\n")
+        conf["email"] = args.email.strip()
     try:
         service.TimeFlipClient(conf["email"], password).login()
     except AuthError as e:
@@ -85,8 +90,9 @@ def cmd_check(_args) -> None:
 
 
 def cmd_sync(_args) -> None:
-    t, i = service.sync(cfg.load_config(), service.open_store())
-    print(f"Synced {t} tasks and {i} intervals.")
+    store = service.open_store()
+    t, i = service.sync(cfg.load_config(), store)
+    print(f"Synced {t} tasks and {i} intervals ({store.get_meta('unmatched_intervals')} not linked to a task).")
 
 
 def cmd_status(_args) -> None:
@@ -112,7 +118,8 @@ def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="tftrack", description="TimeFlip limits, alerts and reports")
     sub = p.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("install", help="sign in (password on stdin) and start the background jobs")
-    i.add_argument("--email", required=True)
+    i.add_argument("--email", default="")
+    i.add_argument("--reuse", action="store_true", help="keep the saved email and password (for updates)")
     i.set_defaults(fn=cmd_install)
     for name, fn, help_ in [
         ("uninstall", cmd_uninstall, "stop the background jobs and forget the password"),

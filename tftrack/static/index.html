@@ -193,7 +193,8 @@ async function api(path, body) {
 function showState(s, withLimitRows = false) {
   state = s;
   const when = s.last_sync ? new Date(s.last_sync).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "never";
-  $("syncInfo").textContent = `Last synced with TimeFlip: ${when}`;
+  const skipped = s.unmatched_intervals ? ` · ${s.unmatched_intervals} entries skipped (their task no longer exists)` : "";
+  $("syncInfo").textContent = `Last synced with TimeFlip: ${when}${skipped}`;
   $("error").classList.toggle("hidden", !s.last_error);
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";

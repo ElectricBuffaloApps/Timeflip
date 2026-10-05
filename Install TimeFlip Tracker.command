@@ -32,6 +32,14 @@ rm -rf "$DEST/tftrack"
 cp -R "$SRC/tftrack" "$DEST/"
 cp "$SRC/Uninstall TimeFlip Tracker.command" "$DEST/" 2>/dev/null
 
+# Updating? Keep the saved account if it still signs in.
+if (cd "$DEST" && "$PY" -m tftrack install --reuse >/dev/null 2>&1); then
+  sleep 2
+  open "http://127.0.0.1:8765/"
+  say_box "TimeFlip Tracker has been updated and is open in your browser. You can close this window."
+  exit 0
+fi
+
 while true; do
   EMAIL="$(ask "Your TimeFlip email address:")" || exit 0
   PASSWORD="$(ask "Your TimeFlip password:" hidden)" || exit 0

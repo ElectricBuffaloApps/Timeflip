@@ -1,6 +1,7 @@
 """Local SQLite copy of TimeFlip tasks and intervals, plus a record of alerts already sent."""
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -53,6 +54,10 @@ def parse_started_at(value) -> datetime:
         while rest and rest[0].isdigit():
             frac, rest = frac + rest[0], rest[1:]
         s = f"{head}.{(frac + '000000')[:6]}{rest}"
+    # TimeFlip sends offsets like "+01"; Python 3.9 needs "+01:00".
+    m = re.search(r"([+-])(\d{2}):?(\d{2})?$", s) if "T" in s else None
+    if m:
+        s = f"{s[:m.start()]}{m.group(1)}{m.group(2)}:{m.group(3) or '00'}"
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -69,36 +74,47 @@ class Store:
     def replace_all(self, data: dict, duration_unit: str = "seconds") -> tuple[int, int]:
         """Replace the local copy with the server's full data set. Returns (tasks, intervals)."""
         divisor = 1000 if duration_unit == "milliseconds" else 1
-        tasks = [t for t in data.get("tasks") or [] if t.get("id") is not None]
-        intervals = [
-            i for i in data.get("timeIntervals") or []
-            if not i.get("delDate") and i.get("taskId") is not None and i.get("startedAt")
-        ]
+        # Intervals point at their task by server id (taskId) or, from the phone app, by localId.
+        task_rows, by_local = [], {}
+        for n, t in enumerate(data.get("tasks") or []):
+            tid = t.get("id") if t.get("id") is not None else -(n + 1)
+            if t.get("localId"):
+                by_local[t["localId"]] = tid
+            task_rows.append((tid, t.get("name") or f"Task {tid}", (t.get("tag") or "").strip() or None,
+                              int(bool(t.get("isBillable", t.get("billable")))), t.get("hourlyRate"),
+                              t.get("currency")))
+        task_ids = {r[0] for r in task_rows}
+        rows, unmatched = [], 0
+        for n, i in enumerate(data.get("timeIntervals") or []):
+            if i.get("delDate") or not i.get("startedAt"):
+                continue
+            tid = i.get("taskId") if i.get("taskId") in task_ids else by_local.get(i.get("taskLocalId"))
+            if tid is None:
+                unmatched += 1
+                continue
+            rows.append((
+                i.get("id") if i.get("id") is not None else -(n + 1),
+                tid,
+                parse_started_at(i["startedAt"]).isoformat(),
+                int(i.get("duration") or 0) // divisor,
+            ))
         with self.db:
             self.db.execute("DELETE FROM task")
             self.db.execute("DELETE FROM interval")
             self.db.executemany(
-                "INSERT INTO task (id, name, tag, billable, hourly_rate, currency) VALUES (?,?,?,?,?,?)",
-                [(t["id"], t.get("name") or f"Task {t['id']}", (t.get("tag") or None),
-                  int(bool(t.get("isBillable", t.get("billable")))), t.get("hourlyRate"), t.get("currency"))
-                 for t in tasks],
+                "INSERT INTO task (id, name, tag, billable, hourly_rate, currency) VALUES (?,?,?,?,?,?)", task_rows
             )
-            rows = []
-            for n, i in enumerate(intervals):
-                rows.append((
-                    i.get("id") if i.get("id") is not None else -(n + 1),
-                    i["taskId"],
-                    parse_started_at(i["startedAt"]).isoformat(),
-                    int(i.get("duration") or 0) // divisor,
-                ))
             self.db.executemany(
                 "INSERT OR REPLACE INTO interval (id, task_id, started_at, duration_s) VALUES (?,?,?,?)", rows
+            )
+            self.db.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('unmatched_intervals', ?)", (str(unmatched),)
             )
             self.db.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_sync', ?)",
                 (datetime.now(timezone.utc).isoformat(),),
             )
-        return len(tasks), len(rows)
+        return len(task_rows), len(rows)
 
     def tasks(self) -> list[sqlite3.Row]:
         return list(self.db.execute("SELECT * FROM task ORDER BY name"))

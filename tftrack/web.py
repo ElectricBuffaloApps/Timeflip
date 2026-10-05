@@ -43,6 +43,7 @@ def state() -> dict:
         "email": conf.get("email"),
         "last_sync": store.last_sync(),
         "last_error": error.split("|", 1)[1] if error else None,
+        "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
         "week_starts": conf.get("week_starts", "monday"),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
