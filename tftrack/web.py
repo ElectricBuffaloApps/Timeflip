@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfg
-from . import service
+from . import service, updater
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, timesheet_csv,
                       timesheet_rows)
@@ -42,6 +42,7 @@ def state() -> dict:
         status = []
     return {
         "email": conf.get("email"),
+        "version": updater.current_version(),
         "last_sync": store.last_sync(),
         "last_error": error.split("|", 1)[1] if error else None,
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
@@ -201,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path == "/":
                 return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path == "/api/update":
+                return self._send(200, {**updater.check(), "can_update": updater.is_installed_copy()})
             if url.path == "/api/state":
                 return self._send(200, state())
             if url.path == "/api/report":
@@ -242,6 +245,10 @@ class Handler(BaseHTTPRequestHandler):
                     if body.get("week_starts") in WEEKDAYS:
                         conf["week_starts"] = body["week_starts"]
                     cfg.save_config(conf)
+                elif self.path == "/api/update":
+                    version = updater.update()
+                    updater.restart_soon()
+                    return self._send(200, {"ok": True, "version": version})
                 elif self.path == "/api/exclude":
                     service.open_store().set_excluded(int(body["id"]), bool(body.get("excluded")))
                     return self._send(200, {"ok": True})

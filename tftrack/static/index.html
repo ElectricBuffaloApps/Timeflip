@@ -43,6 +43,7 @@ button:disabled { opacity: .5; cursor: default; }
 input[type=number] { width: 84px; }
 .banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--critical); }
 .hidden { display: none !important; }
+.banner.update { border-color: var(--accent); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
 /* limit meters */
 .meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
 .meter { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
@@ -85,6 +86,10 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
     <button id="syncBtn">Sync now</button>
   </header>
   <div class="banner hidden" id="error"></div>
+  <div class="banner update hidden" id="updateBanner">
+    <span id="updateText">A new version of TimeFlip Tracker is available.</span>
+    <button class="primary" id="updateBtn">Update now</button>
+  </div>
 
   <section>
     <h2>Limits</h2>
@@ -160,6 +165,11 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
       <span class="sub" id="clientMsg"></span>
     </div>
     <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
+    <div class="row" style="margin-top:16px">
+      <span>Version <b id="version">–</b></span>
+      <button id="checkUpdate">Check for updates</button>
+      <span class="sub" id="updateMsg"></span>
+    </div>
     <p class="sub">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</p>
   </section>
 </main>
@@ -210,6 +220,7 @@ function showState(s, withLimitRows = false) {
   $("error").classList.toggle("hidden", !s.last_error);
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
+  $("version").textContent = s.version;
   $("weekStarts").value = s.week_starts;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
@@ -508,11 +519,43 @@ $("saveClients").onclick = async () => {
   setTimeout(() => ($("clientMsg").textContent = ""), 4000);
 };
 
+/* ---------- updates ---------- */
+async function checkForUpdate(manual) {
+  if (manual) $("updateMsg").textContent = "Checking…";
+  try {
+    const u = await api("/api/update");
+    if (u.error) { if (manual) $("updateMsg").textContent = u.error; return; }
+    $("updateBanner").classList.toggle("hidden", !(u.available && u.can_update));
+    $("updateText").textContent = `A new version of TimeFlip Tracker is available (version ${u.latest}; you have ${u.current}).`;
+    if (manual) $("updateMsg").textContent = u.available
+      ? (u.can_update ? "An update is available: use the Update now button at the top." : "An update is available, but this copy can't update itself.")
+      : "You're up to date.";
+  } catch (e) { if (manual) $("updateMsg").textContent = e.message; }
+}
+$("checkUpdate").onclick = () => checkForUpdate(true);
+$("updateBtn").onclick = async () => {
+  $("updateBtn").disabled = true; $("updateBtn").textContent = "Updating…";
+  try {
+    const r = await api("/api/update", {});
+    $("updateText").textContent = `Installed version ${r.version}. Restarting…`;
+    // Wait for the server to come back on the new version, then reload.
+    for (let i = 0; i < 30; i++) {
+      await new Promise((ok) => setTimeout(ok, 1000));
+      try { const s = await api("/api/state"); if (s.version === r.version) { location.reload(); return; } } catch (_) {}
+    }
+    $("updateText").textContent = "Updated. Please refresh this page.";
+  } catch (e) {
+    $("updateText").textContent = `Update failed: ${e.message}`;
+    $("updateBtn").disabled = false; $("updateBtn").textContent = "Try again";
+  }
+};
+
 /* ---------- start ---------- */
 (async () => {
   try { showState(await api("/api/state"), true); }
   catch (e) { $("syncInfo").textContent = `Couldn't load: ${e.message}`; }
   loadReport();
+  checkForUpdate(false);
   setInterval(async () => { try { showState(await api("/api/state")); } catch (_) {} }, 60000);
 })();
 </script>

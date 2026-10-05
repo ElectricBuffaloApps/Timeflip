@@ -33,6 +33,10 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.
 
+## Updating
+
+When there's a new version, a banner appears at the top of the tracker page. Click **Update now** and the page reloads on the new version. You can also click **Check for updates** in Settings.
+
 ## Uninstall
 
 Double-click **Uninstall TimeFlip Tracker.command**, which is in the download folder or in `~/Library/Application Support/TimeFlip Tracker`. Your settings and history stay in `~/.tftrack` until you delete that folder.
@@ -47,3 +51,4 @@ Double-click **Uninstall TimeFlip Tracker.command**, which is in the download fo
 - Commands (run from `~/Library/Application Support/TimeFlip Tracker`): `python3 -m tftrack status | sync | check | probe | serve`.
 - `probe` prints a sample of the raw API data. If durations turn out to be in milliseconds, set `"duration_unit": "milliseconds"` in `config.json`.
 - Tests: `python3 -m unittest discover -s tests`
+- **Releasing:** increase the number in `tftrack/VERSION` with every change pushed to the branch. Installed copies compare it with GitHub to offer the update.

@@ -270,3 +270,34 @@ class InvoiceTest(unittest.TestCase):
         self.assertEqual(inv["groups"][-1]["label"], "Week commencing Mon 28 Sep 2026")
         self.assertEqual([d["date"] for d in inv["groups"][-1]["days"]], ["2026-09-28", "2026-10-02"])
         self.assertEqual(inv["total_billed_s"], 1200)
+
+
+class UpdaterTest(unittest.TestCase):
+    def test_install_zip_swaps_code_folder(self):
+        import io
+        import os
+        import zipfile
+        from tftrack import updater
+        install = Path(tempfile.mkdtemp()) / "Application Support" / "TimeFlip Tracker"
+        (install / "tftrack").mkdir(parents=True)
+        (install / "tftrack" / "VERSION").write_text("1\n")
+        (install / "tftrack" / "stale.py").write_text("")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:   # same layout as a GitHub branch download
+            root = "Timeflip-claude-branch/"
+            zf.writestr(root + "tftrack/__main__.py", "print('hi')\n")
+            zf.writestr(root + "tftrack/VERSION", "7\n")
+            zf.writestr(root + "tftrack/static/index.html", "<html></html>")
+            zf.writestr(root + "Uninstall TimeFlip Tracker.command", "#!/bin/bash\n")
+            zf.writestr(root + "README.md", "ignored")
+        self.assertEqual(updater.install_zip(buf.getvalue(), install), 7)
+        self.assertEqual((install / "tftrack" / "VERSION").read_text().strip(), "7")
+        self.assertFalse((install / "tftrack" / "stale.py").exists())
+        self.assertTrue((install / "tftrack" / "static" / "index.html").exists())
+        self.assertFalse((install / "README.md").exists())
+        self.assertTrue(os.access(install / "Uninstall TimeFlip Tracker.command", os.X_OK))
+        self.assertEqual(sorted(p.name for p in install.iterdir()), ["Uninstall TimeFlip Tracker.command", "tftrack"])
+
+    def test_version_file_is_a_number(self):
+        from tftrack import updater
+        self.assertGreater(updater.current_version(), 0)
