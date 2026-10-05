@@ -1,84 +1,44 @@
-# TimeFlip tracker
+# TimeFlip Tracker
 
-Pulls your TIMEFLIP2 data from the TimeFlip cloud API, checks it against daily and weekly limits, and sends a Mac notification when you near or reach a limit.
+TimeFlip Tracker works with your TIMEFLIP2 cube. It:
 
-It runs on the Mac's built-in Python 3 and uses only the standard library, so there's nothing to install.
+- sends you a Mac notification when you near or reach a time limit (daily or weekly, per task or per client)
+- shows charts of where your time went
+- makes timesheets for each client (print/PDF or spreadsheet), with billable totals
 
-## How it works
+## Install (about 5 minutes, no typing commands)
 
-- The TimeFlip phone app syncs the cube to the TimeFlip cloud.
-- Every 5 minutes this tool downloads your tasks and time intervals (`GET /api/sync/all`) into a local SQLite database at `~/.tftrack/`.
-- It totals today and this week per task, and per client.
-- A **client** is the TimeFlip task **tag**: give every task for a client the same tag in the TimeFlip app.
-- Alerts fire once per limit per day or week, at each level in `alert_levels_percent` (80% and 100% by default).
+1. On GitHub, switch the branch drop-down to `claude/modest-wozniak-j8obe2`, then click **Code → Download ZIP**. Open the downloaded ZIP to unzip it.
+2. In the unzipped folder, **right-click `Install TimeFlip Tracker.command` and choose Open**. If macOS warns that it's from an unidentified developer, click **Open**.
+3. If asked, let macOS install Apple's free developer tools, then double-click the installer again.
+4. Enter your TimeFlip email and password when asked. Your account needs an email and password; Apple or Google sign-in won't work here.
+5. Your browser opens the tracker. There's also a **TimeFlip Tracker** shortcut on your Desktop.
 
-Alerts are only as up to date as the phone app's last sync to the cloud.
+After that, you can delete the downloaded folder.
 
-## Setup
+If notifications don't appear, go to **System Settings → Notifications** and allow **Script Editor**, which is what sends them.
 
-1. Your TimeFlip account needs an email and password. Apple or Google sign-in won't work with the API.
-2. Create the config file:
-   ```sh
-   cd /path/to/Timeflip
-   python3 -m tftrack setup
-   ```
-3. Edit `~/.tftrack/config.json`: set your email and your limits (see below).
-4. Store your password in the Keychain (it prompts for it) and test the sign-in:
-   ```sh
-   python3 -m tftrack setup
-   ```
-5. Check the data looks right. In the probe output, `duration` should be in seconds. If the numbers look about 1000 times too big, set `"duration_unit": "milliseconds"` in the config.
-   ```sh
-   python3 -m tftrack probe
-   python3 -m tftrack status
-   ```
-6. Start the background check:
-   ```sh
-   python3 -m tftrack install-agent      # add --minutes 10 to change how often it runs
-   ```
-   macOS may ask once whether to allow Keychain access. Choose **Always Allow**.
+## Using it
 
-## Limits
+- **Limits:** open **Change limits**, pick a task or a client, and enter the hours per day and/or per week.
+- **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
+- **Charts:** pick a date range and choose **By task** or **By client**.
+- **Timesheets:** pick a client and click **Open timesheet** (then press **Print**, and choose **Save as PDF** if you want a PDF) or **Download spreadsheet**.
+- **Billable amounts** use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 
-```json
-{
-  "email": "you@example.com",
-  "week_starts": "monday",
-  "alert_levels_percent": [80, 100],
-  "duration_unit": "seconds",
-  "limits": [
-    {"task": "Admin", "daily_hours": 2},
-    {"task": "Email", "daily_hours": 1, "weekly_hours": 4},
-    {"client": "Acme Ltd", "weekly_hours": 10, "label": "Acme"}
-  ]
-}
-```
+The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.
 
-- Each limit sets either `task` (the TimeFlip task name) or `client` (the task tag).
-- Each limit needs `daily_hours`, `weekly_hours`, or both.
-- Matching ignores upper and lower case.
-- `status` warns if a name or tag doesn't match anything in TimeFlip.
-- Changing a limit's hours resets its alerts for the current period.
+## Uninstall
 
-## Commands
+Double-click **Uninstall TimeFlip Tracker.command**, which is in the download folder or in `~/Library/Application Support/TimeFlip Tracker`. Your settings and history stay in `~/.tftrack` until you delete that folder.
 
-| Command | What it does |
-|---|---|
-| `setup` | Creates the config and stores your password |
-| `probe` | Shows a sample of the raw API data |
-| `sync` | Downloads your tasks and intervals |
-| `status [--offline]` | Shows your progress against each limit |
-| `check` | Syncs, then sends any notifications that are due. This is what the background agent runs |
-| `install-agent` / `uninstall-agent` | Starts or stops the background check |
+## For developers
 
-The log is at `~/.tftrack/check.log`.
-
-## Tests
-
-```sh
-python3 -m unittest discover -s tests
-```
-
-## Not built yet
-
-- Reports, charts and per-client timesheets (CSV/PDF) with billable totals.
+- Python 3.9+ standard library only.
+- Data is in `~/.tftrack/`: `config.json`, `tftrack.sqlite`, and the logs.
+- The web page runs on `http://127.0.0.1:8765` and only accepts requests from this Mac.
+- The background check runs every 5 minutes.
+- Both run as launchd agents: `com.tftrack.web` and `com.tftrack.check`.
+- Commands (run from `~/Library/Application Support/TimeFlip Tracker`): `python3 -m tftrack status | sync | check | probe | serve`.
+- `probe` prints a sample of the raw API data. If durations turn out to be in milliseconds, set `"duration_unit": "milliseconds"` in `config.json`.
+- Tests: `python3 -m unittest discover -s tests`

@@ -103,21 +103,37 @@ class Store:
     def tasks(self) -> list[sqlite3.Row]:
         return list(self.db.execute("SELECT * FROM task ORDER BY name"))
 
-    def seconds_by_task(self, start: datetime, end: datetime) -> dict[int, int]:
-        """Seconds tracked per task id within [start, end), clipping intervals at the edges."""
+    def segments(self, start: datetime, end: datetime) -> list[dict]:
+        """Intervals overlapping [start, end), clipped to it, with their task details."""
         # An interval can start before `start` and still overlap; look back a day to catch those.
         lookback = (start - timedelta(days=1)).astimezone(timezone.utc).isoformat()
         upper = end.astimezone(timezone.utc).isoformat()
-        totals: dict[int, int] = {}
+        out = []
         for row in self.db.execute(
-            "SELECT task_id, started_at, duration_s FROM interval WHERE started_at >= ? AND started_at < ?",
+            """SELECT i.id, i.task_id, i.started_at, i.duration_s, t.name, t.tag, t.billable,
+                      t.hourly_rate, t.currency
+               FROM interval i LEFT JOIN task t ON t.id = i.task_id
+               WHERE i.started_at >= ? AND i.started_at < ? ORDER BY i.started_at""",
             (lookback, upper),
         ):
             s = datetime.fromisoformat(row["started_at"])
             e = s + timedelta(seconds=row["duration_s"])
-            overlap = (min(e, end) - max(s, start)).total_seconds()
-            if overlap > 0:
-                totals[row["task_id"]] = totals.get(row["task_id"], 0) + int(overlap)
+            seg_start, seg_end = max(s, start), min(e, end)
+            seconds = int((seg_end - seg_start).total_seconds())
+            if seconds > 0:
+                out.append({
+                    "task_id": row["task_id"], "task": row["name"] or f"Task {row['task_id']}",
+                    "client": row["tag"], "billable": bool(row["billable"]),
+                    "hourly_rate": row["hourly_rate"], "currency": row["currency"],
+                    "start": seg_start, "end": seg_end, "seconds": seconds,
+                })
+        return out
+
+    def seconds_by_task(self, start: datetime, end: datetime) -> dict[int, int]:
+        """Seconds tracked per task id within [start, end), clipping intervals at the edges."""
+        totals: dict[int, int] = {}
+        for seg in self.segments(start, end):
+            totals[seg["task_id"]] = totals.get(seg["task_id"], 0) + seg["seconds"]
         return totals
 
     def alert_already_sent(self, limit_key: str, period_start: str, level: int) -> bool:
@@ -133,6 +149,13 @@ class Store:
                 (limit_key, period_start, level, datetime.now(timezone.utc).isoformat()),
             )
 
-    def last_sync(self) -> str | None:
-        row = self.db.execute("SELECT value FROM meta WHERE key='last_sync'").fetchone()
+    def get_meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str | None) -> None:
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+    def last_sync(self) -> str | None:
+        return self.get_meta("last_sync")

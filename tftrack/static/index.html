@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TimeFlip Tracker</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6; --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --other: #a8a69f;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5; --other: #6b6a65;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5; --other: #6b6a65;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 24px; margin: 0; }
+h2 { font-size: 18px; margin: 0 0 4px; }
+.sub { color: var(--ink-2); font-size: 13px; }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button, select, input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.link { border: none; background: none; color: var(--accent); padding: 4px; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=number] { width: 84px; }
+.banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--critical); }
+.hidden { display: none !important; }
+/* limit meters */
+.meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+.meter { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.meter .name { font-weight: 600; overflow-wrap: anywhere; }
+.meter .fig { font-size: 20px; margin: 2px 0 6px; }
+.track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.fill { height: 100%; border-radius: 4px; background: var(--accent); }
+.state { font-size: 13px; color: var(--ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+/* limit editor */
+table.edit { width: 100%; border-collapse: collapse; margin-top: 12px; }
+table.edit th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 13px; padding: 4px 6px; }
+table.edit td { padding: 4px 6px; }
+table.edit select.name { min-width: 160px; max-width: 100%; }
+/* chart */
+.chart-wrap { position: relative; margin-top: 16px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; min-width: 150px; z-index: 5; }
+.tip b { font-size: 15px; }
+.tip .k { display: inline-block; width: 12px; height: 2px; margin-right: 6px; vertical-align: middle; }
+table.totals { width: 100%; border-collapse: collapse; margin-top: 16px; }
+table.totals th, table.totals td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: left; }
+table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+.n { text-align: right !important; font-variant-numeric: tabular-nums; }
+.seg:hover, .seg:focus { opacity: .8; outline: none; }
+.empty { color: var(--ink-2); padding: 24px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>TimeFlip Tracker</h1>
+      <div class="sub" id="syncInfo">Loading…</div>
+    </div>
+    <button id="syncBtn">Sync now</button>
+  </header>
+  <div class="banner hidden" id="error"></div>
+
+  <section>
+    <h2>Limits</h2>
+    <div class="sub">You get a Mac notification at <span id="levels">80% and 100%</span> of each limit.</div>
+    <div class="meters" id="meters"></div>
+    <details id="editLimits" style="margin-top:16px">
+      <summary style="cursor:pointer;font-weight:600">Change limits</summary>
+      <table class="edit">
+        <thead><tr><th>Limit applies to</th><th>Name</th><th>Per day (hours)</th><th>Per week (hours)</th><th></th></tr></thead>
+        <tbody id="limitRows"></tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <button id="addLimit">+ Add a limit</button>
+        <button class="primary" id="saveLimits">Save limits</button>
+        <span class="sub" id="saveMsg"></span>
+      </div>
+      <p class="sub">Clients are the <b>tags</b> you give tasks in the TimeFlip app. Leave a box empty for no limit.</p>
+    </details>
+  </section>
+
+  <section>
+    <h2>Where your time went</h2>
+    <div class="row" style="margin-top:12px">
+      <select id="range" aria-label="Date range">
+        <option value="thisWeek">This week</option>
+        <option value="lastWeek">Last week</option>
+        <option value="thisMonth">This month</option>
+        <option value="lastMonth">Last month</option>
+        <option value="last30">Last 30 days</option>
+        <option value="custom">Choose dates…</option>
+      </select>
+      <span id="customDates" class="row hidden">
+        <input type="date" id="start" aria-label="From"> to <input type="date" id="end" aria-label="To">
+      </span>
+      <select id="group" aria-label="Group by">
+        <option value="task">By task</option>
+        <option value="client">By client</option>
+      </select>
+    </div>
+    <div class="chart-wrap" id="chartWrap"><div class="tip hidden" id="tip"></div></div>
+    <div class="legend" id="legend"></div>
+    <table class="totals" id="totals"></table>
+  </section>
+
+  <section>
+    <h2>Timesheets</h2>
+    <div class="sub">Uses the dates chosen above.</div>
+    <div class="row" style="margin-top:12px">
+      <select id="tsClient" aria-label="Client"></select>
+      <button class="primary" id="tsPdf">Open timesheet (print or save as PDF)</button>
+      <button id="tsCsv">Download spreadsheet (CSV)</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Settings</h2>
+    <div class="row" style="margin-top:8px">
+      <label for="weekStarts">Weeks start on</label>
+      <select id="weekStarts">
+        <option value="monday">Monday</option><option value="sunday">Sunday</option>
+        <option value="saturday">Saturday</option>
+      </select>
+    </div>
+    <p class="sub">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SLOTS = 8;
+let state = null;
+
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const svgEl = (tag, attrs = {}) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+};
+function hm(seconds) {
+  const m = Math.round(seconds / 60);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+function money(amounts) {
+  const parts = Object.entries(amounts || {}).map(([sym, v]) => `${sym}${v.toFixed(2)}`);
+  return parts.length ? parts.join(" + ") : "–";
+}
+function iso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json", "X-TFTrack": "1" }, body: JSON.stringify(body),
+  };
+  const r = await fetch(path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+  return data;
+}
+
+/* ---------- state & limits ---------- */
+function showState(s, withLimitRows = false) {
+  state = s;
+  const when = s.last_sync ? new Date(s.last_sync).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "never";
+  $("syncInfo").textContent = `Last synced with TimeFlip: ${when}`;
+  $("error").classList.toggle("hidden", !s.last_error);
+  $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
+  $("email").textContent = s.email || "(not set)";
+  $("weekStarts").value = s.week_starts;
+  $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
+  renderMeters(s.status);
+  if (withLimitRows) renderLimitRows(s.limits);
+  const cur = $("tsClient").value;
+  $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
+    ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
+  $("tsClient").value = cur;
+}
+
+function renderMeters(status) {
+  const box = $("meters");
+  box.replaceChildren();
+  if (!status.length) {
+    box.append(el("div", { class: "empty" }, "No limits yet. Open “Change limits” below to add one."));
+    $("editLimits").open = true;
+    return;
+  }
+  for (const s of status) {
+    const m = el("div", { class: "meter" });
+    m.append(el("div", { class: "name" }, s.label));
+    m.append(el("div", { class: "sub" }, s.period === "daily" ? "Today" : "This week"));
+    m.append(el("div", { class: "fig" }, `${hm(s.seconds)} of ${s.hours}h`));
+    const track = el("div", { class: "track" });
+    const fill = el("div", { class: "fill" });
+    fill.style.width = `${Math.min(100, s.percent)}%`;
+    const level = s.percent >= 100 ? ["critical", "Limit reached"] : s.percent >= 80 ? ["warning", "Getting close"] : ["good", "On track"];
+    fill.style.background = s.percent >= 80 ? `var(--${level[0]})` : "var(--accent)";
+    track.append(fill);
+    m.append(track);
+    const st = el("div", { class: "state" });
+    const dot = el("span", { class: "dot" });
+    dot.style.background = `var(--${level[0]})`;
+    st.append(dot, document.createTextNode(`${level[1]} · ${Math.round(s.percent)}%`));
+    m.append(st);
+    box.append(m);
+  }
+}
+
+function limitRow(lim = {}) {
+  const tr = el("tr");
+  const kind = el("select", { "aria-label": "Limit applies to" });
+  kind.append(el("option", { value: "task" }, "A task"), el("option", { value: "client" }, "A client"));
+  kind.value = lim.client ? "client" : "task";
+  const name = el("select", { class: "name", "aria-label": "Name" });
+  const fillNames = () => {
+    const list = kind.value === "client" ? state.clients : state.tasks;
+    const current = lim.client || lim.task;
+    const opts = list.map((n) => el("option", { value: n }, n));
+    if (current && !list.includes(current)) opts.unshift(el("option", { value: current }, `${current} (not found in TimeFlip)`));
+    if (!opts.length) opts.push(el("option", { value: "" }, kind.value === "client" ? "No tagged tasks yet" : "No tasks yet"));
+    name.replaceChildren(...opts);
+    if (current) name.value = current;
+  };
+  kind.onchange = () => { lim = {}; fillNames(); };
+  fillNames();
+  const daily = el("input", { type: "number", min: "0.25", step: "0.25", "aria-label": "Hours per day" });
+  daily.value = lim.daily_hours ?? "";
+  const weekly = el("input", { type: "number", min: "0.25", step: "0.25", "aria-label": "Hours per week" });
+  weekly.value = lim.weekly_hours ?? "";
+  const del = el("button", { class: "link", "aria-label": "Remove limit" }, "Remove");
+  del.onclick = () => tr.remove();
+  for (const c of [kind, name, daily, weekly, del]) { const td = el("td"); td.append(c); tr.append(td); }
+  tr.read = () => ({ [kind.value]: name.value, daily_hours: daily.value, weekly_hours: weekly.value });
+  return tr;
+}
+function renderLimitRows(limits) {
+  $("limitRows").replaceChildren(...limits.map(limitRow));
+}
+$("addLimit").onclick = () => $("limitRows").append(limitRow());
+$("saveLimits").onclick = async () => {
+  const limits = [...$("limitRows").children].map((tr) => tr.read())
+    .filter((l) => (l.task || l.client) && (l.daily_hours || l.weekly_hours));
+  try {
+    showState(await api("/api/limits", { limits }), true);
+    $("saveMsg").textContent = "Saved.";
+  } catch (e) { $("saveMsg").textContent = e.message; }
+  setTimeout(() => ($("saveMsg").textContent = ""), 4000);
+};
+$("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); loadReport(); };
+$("syncBtn").onclick = async () => {
+  $("syncBtn").disabled = true; $("syncBtn").textContent = "Syncing…";
+  try { showState(await api("/api/sync", {})); loadReport(); }
+  catch (e) { $("error").classList.remove("hidden"); $("error").textContent = `Couldn't reach TimeFlip: ${e.message}`; }
+  $("syncBtn").disabled = false; $("syncBtn").textContent = "Sync now";
+};
+
+/* ---------- date range ---------- */
+function rangeDates() {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const startsOn = { monday: 1, sunday: 0, saturday: 6 }[state?.week_starts || "monday"];
+  const weekStart = new Date(t); weekStart.setDate(t.getDate() - ((t.getDay() - startsOn + 7) % 7));
+  const add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  switch ($("range").value) {
+    case "thisWeek": return [weekStart, add(weekStart, 6)];
+    case "lastWeek": return [add(weekStart, -7), add(weekStart, -1)];
+    case "thisMonth": return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)];
+    case "lastMonth": return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)];
+    case "last30": return [add(t, -29), t];
+    default: return [new Date(`${$("start").value || iso(add(t, -6))}T00:00`), new Date(`${$("end").value || iso(t)}T00:00`)];
+  }
+}
+function rangeQuery() {
+  const [s, e] = rangeDates();
+  return `start=${iso(s)}&end=${iso(e)}`;
+}
+$("range").onchange = () => {
+  const custom = $("range").value === "custom";
+  $("customDates").classList.toggle("hidden", !custom);
+  if (custom && !$("start").value) { const [s, e] = rangeDates(); $("start").value = iso(s); $("end").value = iso(e); }
+  loadReport();
+};
+$("start").onchange = $("end").onchange = $("group").onchange = () => loadReport();
+
+/* ---------- report chart ---------- */
+async function loadReport() {
+  const wrap = $("chartWrap");
+  wrap.style.opacity = 0.5;
+  try {
+    const r = await api(`/api/report?${rangeQuery()}&group=${$("group").value}`);
+    renderChart(r);
+    renderTotals(r);
+  } catch (e) {
+    wrap.querySelector("svg")?.remove();
+    $("totals").replaceChildren(el("tr", {}, `Couldn't load the report: ${e.message}`));
+  }
+  wrap.style.opacity = 1;
+}
+
+function foldSeries(series) {
+  // Eight colours at most; anything beyond the seventh biggest is folded into "Other".
+  if (series.length <= SLOTS) return series.map((s, i) => ({ ...s, color: `var(--s${i + 1})` }));
+  const keep = series.slice(0, SLOTS - 1).map((s, i) => ({ ...s, color: `var(--s${i + 1})` }));
+  const rest = series.slice(SLOTS - 1);
+  const other = { name: `Other (${rest.length})`, color: "var(--other)", total: 0, values: rest[0].values.map(() => 0), amounts: {} };
+  for (const s of rest) { s.values.forEach((v, i) => (other.values[i] += v)); other.total += s.total; }
+  return [...keep, other];
+}
+
+function renderChart(r) {
+  const wrap = $("chartWrap"), tip = $("tip");
+  wrap.querySelector("svg")?.remove();
+  $("legend").replaceChildren();
+  if (!r.total_seconds) {
+    const svg = svgEl("svg", { viewBox: "0 0 600 60", role: "img", "aria-label": "No time recorded" });
+    const t = svgEl("text", { x: 0, y: 30, fill: "var(--ink-2)", "font-size": 14 });
+    t.textContent = "No time recorded in this period.";
+    svg.append(t); wrap.append(svg); return;
+  }
+  const series = foldSeries(r.series);
+  const n = r.days.length, W = 960, H = 300, L = 44, B = 28, T = 8;
+  const dayTotals = r.days.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const maxH = Math.max(1, Math.ceil(Math.max(...dayTotals) / 3600));
+  const step = maxH <= 4 ? 1 : maxH <= 10 ? 2 : maxH <= 24 ? 4 : 10;
+  const top = Math.ceil(maxH / step) * step;
+  const y = (sec) => T + (H - T - B) * (1 - sec / 3600 / top);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Hours tracked per day" });
+  for (let h = 0; h <= top; h += step) {
+    svg.append(svgEl("line", { x1: L, x2: W, y1: y(h * 3600), y2: y(h * 3600), stroke: h ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    const lab = svgEl("text", { x: L - 8, y: y(h * 3600) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 });
+    lab.textContent = `${h}h`; svg.append(lab);
+  }
+  const slot = (W - L) / n, bw = Math.max(4, Math.min(48, slot * 0.6));
+  const labelEvery = Math.ceil(n / 14);
+  r.days.forEach((d, i) => {
+    const cx = L + slot * i + slot / 2, x = cx - bw / 2;
+    const date = new Date(`${d}T12:00:00`);
+    if (i % labelEvery === 0) {
+      const lab = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle", fill: "var(--muted)", "font-size": 12 });
+      lab.textContent = n <= 7 ? date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })
+                               : date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      svg.append(lab);
+    }
+    let acc = 0;
+    const visible = series.filter((s) => s.values[i] > 0);
+    visible.forEach((s, k) => {
+      const v = s.values[i], y0 = y(acc), y1 = y(acc + v);
+      acc += v;
+      const gap = k < visible.length - 1 ? 2 : 0;   // 2px surface gap between stacked segments
+      const h = Math.max(1, y0 - y1 - gap);
+      const isTop = k === visible.length - 1;
+      const seg = svgEl("path", {
+        d: isTop ? roundedTop(x, y0 - h, bw, h, Math.min(4, h)) : `M${x},${y0}h${bw}v${-h}h${-bw}z`,
+        fill: s.color, class: "seg", tabindex: 0,
+        "aria-label": `${s.name}, ${date.toLocaleDateString("en-GB")}: ${hm(v)}`,
+      });
+      const show = (ev) => {
+        tip.replaceChildren();
+        tip.append(el("b", {}, hm(v)), el("br"));
+        const key = el("span", { class: "k" }); key.style.background = s.color;
+        tip.append(key, document.createTextNode(s.name), el("br"));
+        tip.append(el("span", { class: "sub" }, `${date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} · day total ${hm(dayTotals[i])}`));
+        tip.classList.remove("hidden");
+        const box = wrap.getBoundingClientRect();
+        const px = ev.clientX ?? seg.getBoundingClientRect().right, py = ev.clientY ?? seg.getBoundingClientRect().top;
+        tip.style.left = `${Math.min(px - box.left + 12, box.width - tip.offsetWidth)}px`;
+        tip.style.top = `${py - box.top - tip.offsetHeight - 8}px`;
+      };
+      seg.addEventListener("pointermove", show);
+      seg.addEventListener("focus", show);
+      seg.addEventListener("pointerleave", () => tip.classList.add("hidden"));
+      seg.addEventListener("blur", () => tip.classList.add("hidden"));
+      svg.append(seg);
+    });
+  });
+  wrap.append(svg);
+  for (const s of series) {
+    const item = el("span"); const sw = el("i"); sw.style.background = s.color;
+    item.append(sw, document.createTextNode(s.name));
+    $("legend").append(item);
+  }
+}
+function roundedTop(x, y, w, h, r) {
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+function renderTotals(r) {
+  const t = $("totals");
+  t.replaceChildren();
+  if (!r.series.length) return;
+  const head = el("tr");
+  head.append(el("th", {}, $("group").value === "client" ? "Client" : "Task"), el("th", { class: "n" }, "Time"),
+              el("th", { class: "n" }, "Share"), el("th", { class: "n" }, "Billable amount"));
+  t.append(head);
+  for (const s of r.series) {
+    const tr = el("tr");
+    tr.append(el("td", {}, s.name), el("td", { class: "n" }, hm(s.total)),
+              el("td", { class: "n" }, `${Math.round((100 * s.total) / r.total_seconds)}%`), el("td", { class: "n" }, money(s.amounts)));
+    t.append(tr);
+  }
+  const foot = el("tr");
+  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(r.total_seconds)), el("th"), el("th", { class: "n" }, money(r.amounts)));
+  t.append(foot);
+}
+
+/* ---------- timesheets ---------- */
+function tsQuery() {
+  const c = $("tsClient").value;
+  return `${rangeQuery()}${c ? `&client=${encodeURIComponent(c)}` : ""}`;
+}
+$("tsPdf").onclick = () => window.open(`/timesheet?${tsQuery()}`, "_blank");
+$("tsCsv").onclick = () => { window.location.href = `/timesheet.csv?${tsQuery()}`; };
+
+/* ---------- start ---------- */
+(async () => {
+  try { showState(await api("/api/state"), true); }
+  catch (e) { $("syncInfo").textContent = `Couldn't load: ${e.message}`; }
+  loadReport();
+  setInterval(async () => { try { showState(await api("/api/state")); } catch (_) {} }, 60000);
+})();
+</script>
+</body>
+</html>

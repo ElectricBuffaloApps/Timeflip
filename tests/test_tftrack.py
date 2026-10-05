@@ -138,3 +138,61 @@ class ApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReportsTest(unittest.TestCase):
+    def test_report_and_timesheet(self):
+        from datetime import date
+        from tftrack.reports import build_report, timesheet_csv, timesheet_rows
+        tasks = [
+            {"id": 1, "name": "Admin", "tag": None},
+            {"id": 2, "name": "Design", "tag": "Acme Ltd", "isBillable": True, "hourlyRate": 60, "currency": "POUND"},
+        ]
+        noon = datetime(2026, 9, 30, 12, 0).astimezone()
+        store = make_store([
+            {"id": 1, "taskId": 2, "startedAt": noon.astimezone(UTC).isoformat(), "duration": 5400},
+            {"id": 2, "taskId": 1, "startedAt": (noon + timedelta(days=1)).astimezone(UTC).isoformat(), "duration": 1800},
+        ], tasks=tasks)
+        r = build_report(store, date(2026, 9, 30), date(2026, 10, 1), "client")
+        self.assertEqual(r["days"], ["2026-09-30", "2026-10-01"])
+        by_name = {s["name"]: s for s in r["series"]}
+        self.assertEqual(by_name["Acme Ltd"]["values"], [5400, 0])
+        self.assertEqual(by_name["No client"]["values"], [0, 1800])
+        self.assertEqual(r["amounts"], {"£": 90.0})
+
+        rows = timesheet_rows(store, date(2026, 9, 30), date(2026, 10, 1), "acme ltd")
+        self.assertEqual([(x["task"], x["hours"], x["amount"]) for x in rows], [("Design", 1.5, 90.0)])
+        self.assertIn("Total,,,,,1.50,,,£,90.00", timesheet_csv(rows))
+
+
+class WebTest(unittest.TestCase):
+    def test_host_check_and_saving_limits(self):
+        import os
+        import urllib.error
+        import urllib.request
+        from tftrack import config as cfg, web
+        tmp = Path(tempfile.mkdtemp())
+        old = (cfg.APP_DIR, cfg.CONFIG_PATH, cfg.DB_PATH, cfg.PORT)
+        cfg.APP_DIR, cfg.CONFIG_PATH, cfg.DB_PATH = tmp, tmp / "config.json", tmp / "db.sqlite"
+        server = HTTPServer(("127.0.0.1", 0), web.Handler)
+        cfg.PORT = server.server_port
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        base = f"http://127.0.0.1:{cfg.PORT}"
+        try:
+            def post(path, body, headers):
+                req = urllib.request.Request(base + path, data=json.dumps(body).encode(), method="POST", headers=headers)
+                return opener.open(req)
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                post("/api/limits", {"limits": []}, {})
+            self.assertEqual(e.exception.code, 403)
+            resp = post("/api/limits", {"limits": [{"client": "Acme", "weekly_hours": "10", "daily_hours": ""}]},
+                        {"X-TFTrack": "1", "Content-Type": "application/json"})
+            self.assertEqual(json.load(resp)["limits"], [{"client": "Acme", "weekly_hours": 10.0}])
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                post("/api/limits", {"limits": [{"task": "A", "daily_hours": "-1"}]}, {"X-TFTrack": "1"})
+            self.assertEqual(e.exception.code, 400)
+            self.assertIn(b"TimeFlip Tracker", opener.open(base + "/").read())
+        finally:
+            server.shutdown()
+            cfg.APP_DIR, cfg.CONFIG_PATH, cfg.DB_PATH, cfg.PORT = old
