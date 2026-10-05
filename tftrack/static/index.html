@@ -131,12 +131,14 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 
   <section>
     <h2>Timesheets</h2>
-    <div class="sub">Uses the dates chosen above.</div>
+    <div class="sub" id="tsHint">Pick a client and a month.</div>
     <div class="row" style="margin-top:12px">
       <select id="tsClient" aria-label="Client"></select>
+      <input type="month" id="tsMonth" aria-label="Month">
       <button class="primary" id="tsPdf">Open timesheet (print or save as PDF)</button>
       <button id="tsCsv">Download spreadsheet (CSV)</button>
     </div>
+    <p class="sub">On the timesheet, tick <b>Exclude</b> beside any entry you won't charge for. It stays on the sheet, crossed out, and isn't counted.</p>
   </section>
 
   <section>
@@ -148,6 +150,16 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
         <option value="saturday">Saturday</option>
       </select>
     </div>
+    <h2 style="margin-top:20px;font-size:16px">How each client is invoiced</h2>
+    <table class="edit">
+      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th></tr></thead>
+      <tbody id="clientRows"></tbody>
+    </table>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="saveClients">Save invoicing settings</button>
+      <span class="sub" id="clientMsg"></span>
+    </div>
+    <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
     <p class="sub">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</p>
   </section>
 </main>
@@ -202,10 +214,12 @@ function showState(s, withLimitRows = false) {
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
   if (withLimitRows) renderLimitRows(s.limits);
+  if (withLimitRows) renderClientRows(s);
   const cur = $("tsClient").value;
   $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
     ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
   $("tsClient").value = cur;
+  updateTsHint();
 }
 
 function renderMeters(status) {
@@ -434,12 +448,65 @@ function renderTotals(r) {
 }
 
 /* ---------- timesheets ---------- */
-function tsQuery() {
-  const c = $("tsClient").value;
-  return `${rangeQuery()}${c ? `&client=${encodeURIComponent(c)}` : ""}`;
+const STYLE_LABELS = { hourly: "Hourly (list of entries)", day: "By the day, monthly", week: "By the week (Mondays in the month)" };
+function billingFor(client) {
+  const entry = Object.entries(state?.client_billing || {}).find(([k]) => k.toLowerCase() === (client || "").toLowerCase());
+  return entry ? entry[1] : { billing: "hourly", rounding: "none", block_minutes: 15 };
 }
-$("tsPdf").onclick = () => window.open(`/timesheet?${tsQuery()}`, "_blank");
-$("tsCsv").onclick = () => { window.location.href = `/timesheet.csv?${tsQuery()}`; };
+function monthBounds() {
+  const [y, m] = ($("tsMonth").value || iso(new Date()).slice(0, 7)).split("-").map(Number);
+  return [new Date(y, m - 1, 1), new Date(y, m, 0)];
+}
+function updateTsHint() {
+  const c = $("tsClient").value;
+  const b = billingFor(c).billing;
+  $("tsHint").textContent = !c ? "All clients: every entry in the month." :
+    b === "day" ? `${c} is invoiced by the day: each day's entries with a total under each day.` :
+    b === "week" ? `${c} is invoiced by the week: every week starting on a Monday in this month, with day and week totals.` :
+    `${c}: every entry in the month.`;
+}
+$("tsClient").onchange = updateTsHint;
+function tsUrl(csv) {
+  const c = $("tsClient").value, month = $("tsMonth").value;
+  if (c && billingFor(c).billing !== "hourly") {
+    const q = `client=${encodeURIComponent(c)}&month=${month}`;
+    return csv ? `/timesheet.csv?${q}` : `/invoice?${q}`;
+  }
+  const [s, e] = monthBounds();
+  const q = `start=${iso(s)}&end=${iso(e)}${c ? `&client=${encodeURIComponent(c)}` : ""}`;
+  return `/timesheet${csv ? ".csv" : ""}?${q}`;
+}
+$("tsMonth").value = iso(new Date()).slice(0, 7);
+$("tsPdf").onclick = () => window.open(tsUrl(false), "_blank");
+$("tsCsv").onclick = () => { window.location.href = tsUrl(true); };
+
+/* ---------- invoicing settings ---------- */
+function renderClientRows(s) {
+  const names = [...new Set([...s.clients, ...Object.keys(s.client_billing || {})])].sort();
+  $("clientRows").replaceChildren(...names.map((name) => {
+    const c = billingFor(name);
+    const tr = el("tr");
+    const style = el("select", { "aria-label": `How ${name} is invoiced` });
+    for (const [v, label] of Object.entries(STYLE_LABELS)) style.append(el("option", { value: v }, label));
+    style.value = c.billing;
+    const rounding = el("select", { "aria-label": `Rounding for ${name}` });
+    for (const [v, label] of [["none", "No rounding"], ["nearest", "To the nearest block"], ["up", "Always up"], ["down", "Always down"]])
+      rounding.append(el("option", { value: v }, label));
+    rounding.value = c.rounding || "none";
+    const block = el("input", { type: "number", min: "1", max: "240", step: "1", "aria-label": `Block minutes for ${name}` });
+    block.value = c.block_minutes || 15;
+    const label = s.clients.includes(name) ? name : `${name} (no tasks with this tag yet)`;
+    for (const cell of [document.createTextNode(label), style, rounding, block]) { const td = el("td"); td.append(cell); tr.append(td); }
+    tr.read = () => [name, { billing: style.value, rounding: rounding.value, block_minutes: Number(block.value) || 15 }];
+    return tr;
+  }));
+}
+$("saveClients").onclick = async () => {
+  const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
+  try { showState(await api("/api/clients", { clients }), true); $("clientMsg").textContent = "Saved."; }
+  catch (e) { $("clientMsg").textContent = e.message; }
+  setTimeout(() => ($("clientMsg").textContent = ""), 4000);
+};
 
 /* ---------- start ---------- */
 (async () => {

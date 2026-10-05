@@ -18,6 +18,12 @@ DEFAULT_CONFIG = {
     "alert_levels_percent": [80, 100],
     "duration_unit": "seconds",
     "limits": [],
+    # How each client (TimeFlip task tag) is invoiced: "hourly", "day" (monthly, by day) or "week"
+    # (weeks whose Monday is in the month). Day totals can be rounded to a block of minutes.
+    "clients": {
+        "HTB": {"billing": "day", "rounding": "nearest", "block_minutes": 15},
+        "FCY": {"billing": "week", "rounding": "none", "block_minutes": 15},
+    },
 }
 PORT = 8765
 

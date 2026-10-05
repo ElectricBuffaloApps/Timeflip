@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS alert_sent (
     PRIMARY KEY (limit_key, period_start, level)
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+-- Time entries the user has chosen not to charge for. Kept across syncs.
+CREATE TABLE IF NOT EXISTS excluded (interval_id INTEGER PRIMARY KEY, excluded_at TEXT NOT NULL);
 """
 
 
@@ -138,7 +140,7 @@ class Store:
             seconds = int((seg_end - seg_start).total_seconds())
             if seconds > 0:
                 out.append({
-                    "task_id": row["task_id"], "task": row["name"] or f"Task {row['task_id']}",
+                    "id": row["id"], "task_id": row["task_id"], "task": row["name"] or f"Task {row['task_id']}",
                     "client": row["tag"], "billable": bool(row["billable"]),
                     "hourly_rate": row["hourly_rate"], "currency": row["currency"],
                     "start": seg_start, "end": seg_end, "seconds": seconds,
@@ -164,6 +166,17 @@ class Store:
                 "INSERT OR IGNORE INTO alert_sent VALUES (?,?,?,?)",
                 (limit_key, period_start, level, datetime.now(timezone.utc).isoformat()),
             )
+
+    def excluded_ids(self) -> set[int]:
+        return {r[0] for r in self.db.execute("SELECT interval_id FROM excluded")}
+
+    def set_excluded(self, interval_id: int, excluded: bool) -> None:
+        with self.db:
+            if excluded:
+                self.db.execute("INSERT OR IGNORE INTO excluded VALUES (?, ?)",
+                                (interval_id, datetime.now(timezone.utc).isoformat()))
+            else:
+                self.db.execute("DELETE FROM excluded WHERE interval_id = ?", (interval_id,))
 
     def get_meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

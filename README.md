@@ -23,7 +23,12 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Limits:** open **Change limits**, pick a task or a client, and enter the hours per day and/or per week.
 - **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
 - **Charts:** pick a date range and choose **By task** or **By client**.
-- **Timesheets:** pick a client and click **Open timesheet** (then press **Print**, and choose **Save as PDF** if you want a PDF) or **Download spreadsheet**.
+- **Timesheets:** pick a client and a month, then click **Open timesheet** (press **Print**, then **Save as PDF** for a PDF) or **Download spreadsheet**.
+- **How each client is invoiced** (Settings):
+  - **By the day:** each day's entries, with a total under each day.
+  - **By the week:** every week whose Monday is in the month, with day and week totals. September's last week can run into October.
+  - **Rounding:** day totals can be rounded to a block of minutes, such as 15.
+- **Not charging for something:** tick **Exclude** beside the entry on the timesheet. It stays on the sheet crossed out, isn't counted in the totals, and stays excluded after future syncs.
 - **Billable amounts** use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.

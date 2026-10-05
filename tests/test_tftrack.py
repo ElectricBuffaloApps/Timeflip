@@ -218,3 +218,55 @@ class WebTest(unittest.TestCase):
         finally:
             server.shutdown()
             cfg.APP_DIR, cfg.CONFIG_PATH, cfg.DB_PATH, cfg.PORT = old
+
+
+class InvoiceTest(unittest.TestCase):
+    def test_week_months_use_mondays_in_month(self):
+        from datetime import date
+        from tftrack.reports import month_range
+        self.assertEqual(month_range(2026, 9, "week"), (date(2026, 9, 7), date(2026, 10, 4)))
+        self.assertEqual(month_range(2026, 10, "week"), (date(2026, 10, 5), date(2026, 11, 1)))
+        self.assertEqual(month_range(2026, 12, "day"), (date(2026, 12, 1), date(2026, 12, 31)))
+
+    def test_rounding(self):
+        from tftrack.reports import round_seconds
+        m = 60
+        self.assertEqual(round_seconds(52 * m, 15, "nearest"), 45 * m)
+        self.assertEqual(round_seconds(53 * m, 15, "nearest"), 60 * m)
+        self.assertEqual(round_seconds(46 * m, 15, "up"), 60 * m)
+        self.assertEqual(round_seconds(59 * m, 15, "down"), 45 * m)
+        self.assertEqual(round_seconds(59 * m, 15, "none"), 59 * m)
+
+    def test_day_invoice_rounds_days_and_skips_excluded(self):
+        from tftrack.reports import invoice
+        tasks = [{"id": 1, "name": "Build", "tag": "HTB"}, {"id": 2, "name": "Other", "tag": "FCY"}]
+        at = lambda d, h: datetime(2026, 9, d, h).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 10, "taskId": 1, "startedAt": at(3, 9), "duration": 50 * 60},
+            {"id": 11, "taskId": 1, "startedAt": at(3, 11), "duration": 20 * 60},
+            {"id": 12, "taskId": 1, "startedAt": at(4, 9), "duration": 3600},
+            {"id": 13, "taskId": 2, "startedAt": at(4, 9), "duration": 3600},
+        ], tasks=tasks)
+        store.set_excluded(11, True)
+        inv = invoice(store, "htb", 2026, 9, "day", 15, "nearest")
+        days = inv["groups"][0]["days"]
+        self.assertEqual([d["date"] for d in days], ["2026-09-03", "2026-09-04"])
+        self.assertEqual([d["billed_s"] for d in days], [45 * 60, 3600])   # 50m -> 45m; excluded 20m ignored
+        self.assertEqual(len(days[0]["entries"]), 2)                        # excluded entry still listed
+        self.assertEqual((inv["days_worked"], inv["total_billed_s"]), (2, 105 * 60))
+        store.set_excluded(11, False)
+        self.assertEqual(invoice(store, "HTB", 2026, 9, "day", 15, "nearest")["total_billed_s"], 135 * 60)
+
+    def test_week_invoice_groups_by_monday(self):
+        from tftrack.reports import invoice
+        at = lambda m, d: datetime(2026, m, d, 9).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 1), "duration": 600},    # before first Monday: August's
+            {"id": 2, "taskId": 1, "startedAt": at(9, 28), "duration": 600},
+            {"id": 3, "taskId": 1, "startedAt": at(10, 2), "duration": 600},   # belongs to w/c 28 Sep
+        ], tasks=[{"id": 1, "name": "Prog", "tag": "FCY"}])
+        inv = invoice(store, "FCY", 2026, 9, "week")
+        self.assertEqual(len(inv["groups"]), 4)
+        self.assertEqual(inv["groups"][-1]["label"], "Week commencing Mon 28 Sep 2026")
+        self.assertEqual([d["date"] for d in inv["groups"][-1]["days"]], ["2026-09-28", "2026-10-02"])
+        self.assertEqual(inv["total_billed_s"], 1200)
