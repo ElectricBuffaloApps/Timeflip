@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     # How each client (TimeFlip task tag) is invoiced: "hourly", "day" (monthly, by day) or "week"
     # (weeks whose Monday is in the month). Day totals can be rounded to a block of minutes.
     "clients": {
-        "HTB": {"billing": "day", "rounding": "nearest", "block_minutes": 15},
+        "HTB": {"billing": "day", "rounding": "up", "block_minutes": 15},
         "FCY": {"billing": "week", "rounding": "none", "block_minutes": 15},
     },
 }
