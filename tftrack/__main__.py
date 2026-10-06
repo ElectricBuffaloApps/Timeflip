@@ -65,8 +65,11 @@ def cmd_install(args) -> None:
             plistlib.dump(plist, f)
         subprocess.run(["launchctl", "load", str(path)], check=True)
 
-    with open(SHORTCUT, "wb") as f:
-        plistlib.dump({"URL": f"http://127.0.0.1:{cfg.PORT}/"}, f)
+    from .macapp import ensure_app
+    try:
+        ensure_app()
+    except Exception as e:  # the tracker works without it; the web page offers it again
+        print(f"Couldn't create the app: {e}")
     print("Installed.")
 
 
@@ -78,7 +81,9 @@ def cmd_uninstall(_args) -> None:
     conf = cfg.load_config()
     if conf.get("email"):
         cfg.delete_password(conf["email"])
-    SHORTCUT.unlink(missing_ok=True)
+    SHORTCUT.unlink(missing_ok=True)  # older versions made a Desktop shortcut
+    from .macapp import remove_app
+    remove_app()
     print("Removed.")
 
 

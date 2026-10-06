@@ -354,3 +354,20 @@ class InvoiceLinesTest(unittest.TestCase):
                                 "rate": 40, "amount": 80.0}])
         htb = invoice_lines(invoice(store, "HTB", 2026, 9, "day", 15, "up"))
         self.assertEqual(htb, [{"description": "HTB – Tue 29 Sep 2026", "hours": 0.25, "rate": None, "amount": None}])
+
+
+class MacAppTest(unittest.TestCase):
+    def test_build_app_bundle(self):
+        import os
+        import plistlib
+        import subprocess
+        from tftrack.macapp import build_app
+        app = build_app(Path(tempfile.mkdtemp()))
+        self.assertEqual(app.name, "TimeFlip Tracker.app")
+        info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+        self.assertEqual((info["CFBundleExecutable"], info["CFBundleIconFile"]), ("launcher", "AppIcon"))
+        launcher = app / "Contents" / "MacOS" / "launcher"
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertEqual(subprocess.run(["bash", "-n", str(launcher)]).returncode, 0)
+        self.assertIn("http://127.0.0.1:8765/", launcher.read_text())
+        self.assertGreater((app / "Contents" / "Resources" / "AppIcon.icns").stat().st_size, 1000)

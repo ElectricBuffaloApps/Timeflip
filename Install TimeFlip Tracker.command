@@ -53,4 +53,4 @@ unset PASSWORD
 
 sleep 2
 open "http://127.0.0.1:8765/"
-say_box "All set. Your tracker is open in your browser, and there's a 'TimeFlip Tracker' shortcut on your Desktop. Notifications will appear when you get close to a limit. You can close this window."
+say_box "All set. Your tracker is open in your browser, and the TimeFlip Tracker app is in your Applications folder (search Spotlight for it, or drag it into your Dock). Notifications will appear when you get close to a limit. You can close this window."

@@ -1,5 +1,12 @@
 [
   {
+    "version": 9,
+    "changes": [
+      "TimeFlip Tracker now has its own app with an orange clock icon, in your Applications folder. Open it from Launchpad or Spotlight, or drag it into your Dock.",
+      "Settings shows where the app is, with a Show in Finder button."
+    ]
+  },
+  {
     "version": 8,
     "changes": [
       "New look in Future You PT colours and fonts: dark header bar, orange accents, Sora headings.",

@@ -12,7 +12,7 @@ TimeFlip Tracker works with your TIMEFLIP2 cube. It:
 2. In the unzipped folder, **right-click `Install TimeFlip Tracker.command` and choose Open**. If macOS warns that it's from an unidentified developer, click **Open**.
 3. If asked, let macOS install Apple's free developer tools, then double-click the installer again.
 4. Enter your TimeFlip email and password when asked. Your account needs an email and password; Apple or Google sign-in won't work here.
-5. Your browser opens the tracker. There's also a **TimeFlip Tracker** shortcut on your Desktop.
+5. Your browser opens the tracker. To reopen it later, open the **TimeFlip Tracker** app (orange clock icon) from Applications, Launchpad or Spotlight. You can drag it into your Dock.
 
 After that, you can delete the downloaded folder.
 

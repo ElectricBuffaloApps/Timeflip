@@ -201,6 +201,10 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
       <label><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label>
     </div>
     <div class="row" style="margin-top:8px">
+      <span>App: <span id="appPath" class="sub">not created yet</span></span>
+      <button id="revealApp">Show in Finder</button>
+    </div>
+    <div class="row" style="margin-top:8px">
       <span>Version <b id="version">–</b></span>
       <button id="checkUpdate">Check for updates</button>
       <span class="sub" id="updateMsg"></span>
@@ -256,6 +260,7 @@ function showState(s, withLimitRows = false) {
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
   $("version").textContent = s.version;
+  $("appPath").textContent = s.app_path || "not created yet";
   $("autoUpdate").checked = s.auto_update;
   showNews(s.whats_new || []);
   $("weekStarts").value = s.week_starts;
@@ -582,6 +587,10 @@ async function checkForUpdate(manual) {
   } catch (e) { if (manual) $("updateMsg").textContent = e.message; }
 }
 $("checkUpdate").onclick = () => checkForUpdate(true);
+$("revealApp").onclick = async () => {
+  try { showState(await api("/api/reveal-app", {})); }
+  catch (e) { $("appPath").textContent = e.message; }
+};
 $("updateBtn").onclick = async () => {
   $("updateBtn").disabled = true; $("updateBtn").textContent = "Updating…";
   try {

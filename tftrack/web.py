@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import subprocess
 import threading
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,12 @@ def _date(value: str | None, default: date) -> date:
         return default
 
 
+def _app_path() -> str | None:
+    from .macapp import find_app
+    app = find_app()
+    return str(app) if app else None
+
+
 def state() -> dict:
     conf = cfg.load_config()
     store = service.open_store()
@@ -43,6 +50,7 @@ def state() -> dict:
     return {
         "email": conf.get("email"),
         "version": updater.current_version(),
+        "app_path": _app_path(),
         "auto_update": conf.get("auto_update", True),
         "whats_new": updater.changes_since(conf.get("last_seen_version")),
         "last_sync": store.last_sync(),
@@ -316,6 +324,12 @@ class Handler(BaseHTTPRequestHandler):
                     version = updater.update()
                     updater.restart_soon()
                     return self._send(200, {"ok": True, "version": version})
+                elif self.path == "/api/reveal-app":
+                    from .macapp import ensure_app
+                    app = ensure_app()
+                    if not app:
+                        raise ValueError("Couldn't create the app on this computer.")
+                    subprocess.run(["open", "-R", str(app)], capture_output=True)
                 elif self.path == "/api/exclude":
                     service.open_store().set_excluded(int(body["id"]), bool(body.get("excluded")))
                     return self._send(200, {"ok": True})
@@ -389,6 +403,11 @@ def _clean_limit(raw: dict) -> dict:
 
 
 def serve() -> None:
+    try:
+        from .macapp import ensure_app
+        ensure_app()  # existing installs get the app on their next restart or update
+    except Exception as e:
+        print(f"Couldn't create the app: {e}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.PORT), Handler)
     print(f"TimeFlip Tracker running at http://127.0.0.1:{cfg.PORT}")
     server.serve_forever()
