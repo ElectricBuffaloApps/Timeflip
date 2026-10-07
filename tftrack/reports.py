@@ -316,3 +316,75 @@ def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dic
     total_secs = sum(hours.values())
     return {"month": key, "clients": rows, "earned": round(earned, 2), "value": round(value, 2),
             "seconds": total_secs}
+
+
+# ---------- income and time targets ----------
+
+def _prev_month(year: int, month: int) -> tuple[int, int]:
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
+def _client_seconds(store, start: date, end: date) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for r in timesheet_rows(store, start, end):
+        if not r["excluded"] and r["client"] != NO_CLIENT:
+            out[r["client"].lower()] = out.get(r["client"].lower(), 0) + r["seconds"]
+    return out
+
+
+def estimate_rate(store, client: str, year: int, month: int, incomes: dict) -> float | None:
+    """Last month's effective hourly rate for a monthly-income client (its income ÷ its hours)."""
+    py, pm = _prev_month(year, month)
+    income, _ = income_for_month(incomes, client, f"{py}-{pm:02d}")
+    secs = _client_seconds(store, *month_range(py, pm, "day")).get(client.lower(), 0)
+    return round(income / (secs / 3600), 2) if income and secs else None
+
+
+def targets_summary(store, today: date, conf: dict) -> dict:
+    """Progress against the income targets (real money only) and per-client time targets."""
+    clients_conf = conf.get("clients", {}) or {}
+    incomes = conf.get("monthly_income", {}) or {}
+    targets = conf.get("targets", {}) or {}
+    week_starts = conf.get("week_starts", "monday")
+    from .limits import WEEKDAYS
+    week_start = today - timedelta(days=(today.weekday() - WEEKDAYS.index(week_starts)) % 7)
+    month_start, month_end = month_range(today.year, today.month, "day")
+    periods = {"day": (today, today), "week": (week_start, week_start + timedelta(days=6)),
+               "month": (month_start, month_end)}
+    monthly = [n for n, c in clients_conf.items() if c.get("billing") == "monthly"]
+    rates = {n: estimate_rate(store, n, today.year, today.month, incomes) for n in monthly}
+
+    income_rows = []
+    for period, (start, end) in periods.items():
+        target = (targets.get("income") or {}).get(period)
+        money = money_summary(store, start, end, clients_conf)
+        earned, estimated, notes = money["earned"], 0.0, []
+        secs = _client_seconds(store, start, end)
+        for name in monthly:
+            if period == "month":
+                income, carried = income_for_month(incomes, name, f"{today.year}-{today.month:02d}")
+                if income:
+                    if carried:
+                        estimated += income
+                        notes.append(f"{name} estimated from last month")
+                    else:
+                        earned += income
+            elif secs.get(name.lower()):
+                if rates[name]:
+                    estimated += secs[name.lower()] / 3600 * rates[name]
+                    notes.append(f"{name} at last month's £{rates[name]:.2f}/hour")
+                else:
+                    notes.append(f"{name} not included (no rate from last month yet)")
+        rest_day = period == "day" and today.weekday() >= 5 and not targets.get("weekends")
+        total = round(earned + estimated, 2)
+        income_rows.append({"period": period, "target": target, "amount": total, "estimated": round(estimated, 2),
+                            "notes": notes, "rest_day": rest_day})
+
+    time_rows = []
+    for client, t in sorted((targets.get("hours") or {}).items(), key=lambda kv: kv[0].lower()):
+        for period, (start, end) in periods.items():
+            hours = (t or {}).get(period)
+            if hours:
+                secs = _client_seconds(store, start, end).get(client.lower(), 0)
+                time_rows.append({"client": client, "period": period, "target_hours": float(hours), "seconds": secs})
+    return {"income": income_rows, "time": time_rows}

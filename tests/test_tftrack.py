@@ -465,3 +465,32 @@ class IgnoredTasksTest(unittest.TestCase):
         end = start + timedelta(days=1)
         self.assertEqual(Store(tmp).seconds_by_task(start, end), {1: 3600, 2: 900})
         self.assertEqual(Store(tmp, ignored_task_ids=[2]).seconds_by_task(start, end), {1: 3600})
+
+
+class TargetsTest(unittest.TestCase):
+    def test_income_and_time_targets_with_estimates(self):
+        from datetime import date
+        from tftrack.reports import targets_summary
+        at = lambda m, d, h: datetime(2026, m, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Coaching", "tag": "FYPT1"}, {"id": 2, "name": "Dev", "tag": "FYPTD"},
+                 {"id": 3, "name": "Build", "tag": "HTB"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 10, 9), "duration": 20 * 3600},   # Sept: 20h FYPT1
+            {"id": 2, "taskId": 1, "startedAt": at(10, 7, 9), "duration": 2 * 3600},    # today: 2h FYPT1
+            {"id": 3, "taskId": 3, "startedAt": at(10, 7, 12), "duration": 3600},       # today: 1h HTB
+            {"id": 4, "taskId": 2, "startedAt": at(10, 6, 9), "duration": 3 * 3600},    # this week: 3h FYPTD
+        ], tasks=tasks)
+        conf = {"week_starts": "monday",
+                "clients": {"FYPT1": {"billing": "monthly"}, "FYPTD": {"rate": 50, "notional": True},
+                            "HTB": {"rate": 40}},
+                "monthly_income": {"FYPT1": {"2026-09": 600}},
+                "targets": {"income": {"day": 200, "month": 2000}, "hours": {"FYPTD": {"week": 5}}}}
+        t = targets_summary(store, date(2026, 10, 7), conf)   # a Wednesday
+        inc = {r["period"]: r for r in t["income"]}
+        # today: HTB £40 real + FYPT1 2h at last month's £30/h = £60 estimated; FYPTD imagined value not counted
+        self.assertEqual((inc["day"]["amount"], inc["day"]["estimated"], inc["day"]["rest_day"]), (100.0, 60.0, False))
+        # month: HTB £40 + FYPT1 £600 carried as an estimate
+        self.assertEqual((inc["month"]["amount"], inc["month"]["estimated"]), (640.0, 600.0))
+        self.assertEqual([(r["client"], r["period"], r["seconds"]) for r in t["time"]], [("FYPTD", "week", 3 * 3600)])
+        # Saturday: no daily target unless weekends are on
+        self.assertTrue({r["period"]: r for r in targets_summary(store, date(2026, 10, 10), conf)["income"]}["day"]["rest_day"])

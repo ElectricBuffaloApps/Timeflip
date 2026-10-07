@@ -1,5 +1,13 @@
 [
   {
+    "version": 16,
+    "changes": [
+      "Targets: set income targets per day, week and month, and time targets per client (e.g. FYPTD hours per week) in Settings. Progress shows in a new Targets section.",
+      "Income targets count real money only. FYPT1 counts as an estimate from last month (its income, and its per-hour rate for days and weeks) until you enter the month's actual income.",
+      "The daily target is weekdays only unless you tick “Daily target on weekends too”; weekend earnings still show."
+    ]
+  },
+  {
     "version": 15,
     "changes": [
       "Fixed: saving limits or “Tasks not counted” no longer clears hourly rates you've typed but not yet saved.",

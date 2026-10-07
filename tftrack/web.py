@@ -14,7 +14,7 @@ from . import config as cfg
 from . import service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary,
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
                       timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -64,6 +64,7 @@ def state() -> dict:
         "task_list": [{"id": t["id"], "name": t["name"], "client": t["tag"]}
                       for t in sorted(tasks, key=lambda t: t["name"].lower())],
         "ignored_tasks": conf.get("ignored_tasks", []),
+        "targets": conf.get("targets", {}),
         "clients": sorted({t["tag"] for t in tasks if t["tag"]}),
         "client_billing": conf.get("clients", {}),
         "status": status,
@@ -388,6 +389,8 @@ class Handler(BaseHTTPRequestHandler):
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
                                 for r in rows],
                 })
+            if url.path == "/api/targets":
+                return self._send(200, targets_summary(service.open_store(), date.today(), cfg.load_config()))
             if url.path == "/api/month":
                 try:
                     y, mo = (int(x) for x in (q.get("month") or "").split("-"))
@@ -517,6 +520,27 @@ class Handler(BaseHTTPRequestHandler):
                     conf = cfg.load_config()
                     known = {t["id"] for t in service.open_store().tasks()}
                     conf["ignored_tasks"] = sorted({int(i) for i in body.get("ids", []) if int(i) in known})
+                    cfg.save_config(conf)
+                elif self.path == "/api/targets":
+                    def amount(v, what):
+                        if v in (None, ""):
+                            return None
+                        v = float(v)
+                        if v < 0:
+                            raise ValueError(f"{what} can't be negative.")
+                        return v
+                    conf = cfg.load_config()
+                    inc = body.get("income") or {}
+                    hours = {}
+                    for client, t in (body.get("hours") or {}).items():
+                        t = {p: amount((t or {}).get(p), "Target hours") for p in ("day", "week", "month")}
+                        if any(v for v in t.values()):
+                            hours[str(client)] = t
+                    conf["targets"] = {
+                        "income": {p: amount(inc.get(p), "Target income") for p in ("day", "week", "month")},
+                        "weekends": bool(body.get("weekends")),
+                        "hours": hours,
+                    }
                     cfg.save_config(conf)
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())

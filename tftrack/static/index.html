@@ -100,6 +100,12 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .seg:hover, .seg:focus { opacity: .8; outline: none; }
 .empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
+.target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+.tcard { background: var(--tint); border-radius: 12px; padding: 12px 16px; border-left: 3px solid var(--accent); }
+.tcard.done { border-left-color: var(--good); }
+.tcard .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; color: var(--ink-2); font-family: Sora, Inter, sans-serif; }
+.tcard .fig { font-family: Sora, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 2px 0 8px; }
+.tcard .note { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
 .ignored-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 10px; }
 .ignored-grid label { display: flex; gap: 8px; align-items: center; }
 /* today */
@@ -153,6 +159,12 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
       <div><h3 class="mini">By task</h3><div id="todayTasks"></div></div>
       <div><h3 class="mini">Entries</h3><table class="totals" id="todayEntries"></table></div>
     </div>
+  </section>
+
+  <section id="targetsCard" class="hidden">
+    <h2>Targets</h2>
+    <div class="target-grid" id="incomeTargets"></div>
+    <div id="timeTargetsWrap"><h3 class="mini" style="margin-top:20px">Time targets</h3><div class="target-grid" id="timeTargets"></div></div>
   </section>
 
   <section id="month">
@@ -240,6 +252,23 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     </div>
     <p class="sub">Tick <b>My own business</b> for your own work (e.g. FYPT): its rate is imagined, so it shows as <b>value</b>, kept separate from money <b>earned</b>, and never appears on timesheets.</p>
     <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
+    <h2 style="margin-top:28px;font-size:16px">Targets</h2>
+    <p class="sub">Income targets count real money only (not imagined values). Monthly-income clients count as an estimate from last month until you enter the month's actual income.</p>
+    <div class="row" style="margin-top:8px">
+      <label>Per day £ <input type="number" min="0" step="1" id="tDay"></label>
+      <label>Per week £ <input type="number" min="0" step="1" id="tWeek"></label>
+      <label>Per month £ <input type="number" min="0" step="1" id="tMonth"></label>
+      <label><input type="checkbox" id="tWeekends"> Daily target on weekends too</label>
+    </div>
+    <table class="edit">
+      <thead><tr><th>Time target for</th><th>Hours per day</th><th>Hours per week</th><th>Hours per month</th></tr></thead>
+      <tbody id="timeTargetRows"></tbody>
+    </table>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="saveTargets">Save targets</button>
+      <span class="sub" id="targetsMsg"></span>
+    </div>
+
     <h2 style="margin-top:28px;font-size:16px">Tasks not counted</h2>
     <p class="sub">Tick sides you don't want counted, such as breaks, timers or "off". They're left out of Today, charts, limits, This month and timesheets.</p>
     <div class="ignored-grid" id="ignoredList"></div>
@@ -321,6 +350,7 @@ function showState(s, redraw = false) {
   if (draw("limits")) renderLimitRows(s.limits);
   if (draw("clients")) renderClientRows(s);
   if (draw("ignored")) renderIgnored(s);
+  if (draw("targets")) renderTargetSettings(s);
   const cur = $("tsClient").value;
   $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
     ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
@@ -400,7 +430,7 @@ $("saveLimits").onclick = async () => {
 $("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); loadReport(); };
 $("syncBtn").onclick = async () => {
   $("syncBtn").disabled = true; $("syncBtn").textContent = "Syncing…";
-  try { showState(await api("/api/sync", {})); loadReport(); loadToday(); }
+  try { showState(await api("/api/sync", {})); loadReport(); loadToday(); loadTargets(); loadMonth(); }
   catch (e) { $("error").classList.remove("hidden"); $("error").textContent = `Couldn't reach TimeFlip: ${e.message}`; }
   $("syncBtn").disabled = false; $("syncBtn").textContent = "Sync now";
 };
@@ -543,7 +573,7 @@ function renderTotals(r) {
   head.append(el("th", {}, byClient ? "Client" : "Task"), el("th", { class: "n" }, "Time"),
               el("th", { class: "n" }, "Share"), el("th", { class: "n" }, byClient ? "Value" : "Value (before rounding)"));
   t.append(head);
-  const gbp = (v) => `£${v.toFixed(2)}`;
+  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   for (const s of r.series) {
     const tr = el("tr");
     const val = s.value == null ? "–" : `${gbp(s.value)}${s.notional ? " (imagined)" : ""}`;
@@ -622,7 +652,7 @@ $("clientRows").addEventListener("input", () => { $("clientMsg").textContent = "
 $("clientRows").addEventListener("change", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing settings."; });
 $("saveClients").onclick = async () => {
   const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadReport(); }
+  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadTargets(); loadReport(); }
   catch (e) { $("clientMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("clientMsg").textContent === "Saved.") $("clientMsg").textContent = ""; }, 4000);
 };
@@ -680,7 +710,7 @@ async function loadToday() {
   const last = t.entries.length ? ` · last entry ended ${t.entries[t.entries.length - 1].end}` : "";
   const off = t.not_counted_seconds ? ` · not counted: ${hm(t.not_counted_seconds)}` : "";
   $("todaySub").textContent = `tracked on ${day}${last}${off}`;
-  const gbp = (v) => `£${v.toFixed(2)}`;
+  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const tiles = [];
   const paid = t.money.by_client.filter((c) => !c.notional), own = t.money.by_client.filter((c) => c.notional);
   const tile = (cls, amount, label, parts) => {
@@ -733,13 +763,82 @@ $("saveIgnored").onclick = async () => {
   setTimeout(() => ($("ignoredMsg").textContent = ""), 4000);
 };
 
+/* ---------- targets ---------- */
+const PERIOD_LABEL = { day: "Today", week: "This week", month: "This month" };
+function renderTargetSettings(s) {
+  const t = s.targets || {};
+  const inc = t.income || {};
+  $("tDay").value = inc.day ?? ""; $("tWeek").value = inc.week ?? ""; $("tMonth").value = inc.month ?? "";
+  $("tWeekends").checked = !!t.weekends;
+  const names = [...new Set([...s.clients, ...Object.keys(t.hours || {})])].sort();
+  $("timeTargetRows").replaceChildren(...names.map((name) => {
+    const cur = (t.hours || {})[name] || {};
+    const tr = el("tr"); tr.dataset.client = name;
+    tr.append(el("td", {}, name));
+    for (const p of ["day", "week", "month"]) {
+      const input = el("input", { type: "number", min: "0", step: "0.25", "data-period": p, "aria-label": `${name} hours per ${p}` });
+      input.value = cur[p] ?? "";
+      const td = el("td"); td.append(input); tr.append(td);
+    }
+    return tr;
+  }));
+}
+$("saveTargets").onclick = async () => {
+  const hours = {};
+  for (const tr of $("timeTargetRows").children) {
+    const t = {};
+    for (const input of tr.querySelectorAll("input")) t[input.dataset.period] = input.value;
+    hours[tr.dataset.client] = t;
+  }
+  try {
+    showState(await api("/api/targets", { income: { day: $("tDay").value, week: $("tWeek").value, month: $("tMonth").value },
+                                          weekends: $("tWeekends").checked, hours }), "targets");
+    $("targetsMsg").textContent = "Saved."; loadTargets();
+  } catch (e) { $("targetsMsg").textContent = e.message; }
+  setTimeout(() => ($("targetsMsg").textContent = ""), 4000);
+};
+function targetCard(label, figure, pct, done, note) {
+  const card = el("div", { class: `tcard${done ? " done" : ""}` });
+  card.append(el("div", { class: "lbl" }, label), el("div", { class: "fig" }, figure));
+  if (pct != null) {
+    const track = el("div", { class: "track" }); const fill = el("div", { class: "fill" });
+    fill.style.width = `${Math.min(100, pct)}%`;
+    fill.style.background = done ? "var(--good)" : "var(--accent)";
+    track.append(fill); card.append(track);
+  }
+  if (note) card.append(el("div", { class: "note" }, note));
+  return card;
+}
+async function loadTargets() {
+  let t;
+  try { t = await api("/api/targets"); } catch (_) { return; }
+  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const income = t.income.filter((r) => r.target);
+  $("incomeTargets").replaceChildren(...income.map((r) => {
+    const est = r.estimated ? ` (incl. ${gbp(r.estimated)} estimated)` : "";
+    if (r.rest_day) return targetCard("Today (weekend)", `${gbp(r.amount)} earned`, null, false, `No daily target at weekends${est ? " ·" + est : ""}`);
+    const pct = (100 * r.amount) / r.target;
+    const done = r.amount >= r.target;
+    const note = [done ? "Target reached ✓" : `${gbp(r.target - r.amount)} to go`, ...r.notes].join(" · ") + est;
+    return targetCard(PERIOD_LABEL[r.period], `${gbp(r.amount)} of ${gbp(r.target)}`, pct, done, note);
+  }));
+  $("timeTargets").replaceChildren(...t.time.map((r) => {
+    const pct = (100 * r.seconds) / (r.target_hours * 3600);
+    const done = pct >= 100;
+    return targetCard(`${r.client} · ${PERIOD_LABEL[r.period].toLowerCase()}`, `${hm(r.seconds)} of ${r.target_hours}h`, pct, done,
+                      done ? "Target reached ✓" : `${hm(r.target_hours * 3600 - r.seconds)} to go`);
+  }));
+  $("timeTargetsWrap").classList.toggle("hidden", !t.time.length);
+  $("targetsCard").classList.toggle("hidden", !income.length && !t.time.length);
+}
+
 /* ---------- this month ---------- */
 async function loadMonth(auto = false) {
   if (auto && $("monthTable").contains(document.activeElement)) return;  // don't wipe an amount being typed
   if (!$("mMonth").value) $("mMonth").value = iso(new Date()).slice(0, 7);
   let m;
   try { m = await api(`/api/month?month=${$("mMonth").value}`); } catch (e) { $("monthMsg").textContent = e.message; return; }
-  const gbp = (v) => `£${v.toFixed(2)}`;
+  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const t = $("monthTable");
   const head = el("tr");
   head.append(el("th", {}, "Client"), el("th", { class: "n" }, "Hours"), el("th", { class: "n" }, "Money"), el("th", { class: "n" }, "Per hour"));
@@ -756,11 +855,11 @@ async function loadMonth(auto = false) {
       if (c.amount != null) input.value = c.amount;
       const save = el("button", {}, "Save");
       save.onclick = async () => {
-        try { await api("/api/income", { client: c.client, month: m.month, amount: input.value }); loadMonth(); }
+        try { await api("/api/income", { client: c.client, month: m.month, amount: input.value }); loadMonth(); loadTargets(); }
         catch (e) { $("monthMsg").textContent = e.message; }
       };
       moneyCell.append(input, document.createTextNode(" "), save);
-      if (c.carried) moneyCell.append(el("div", { class: "sub" }, "carried from an earlier month"));
+      if (c.carried) moneyCell.append(el("div", { class: "sub" }, "estimate from last month · enter the actual at month end"));
       rate = c.rate != null ? `${gbp(c.rate)} effective` : (c.amount ? "no hours yet" : "enter income");
     } else if (c.kind === "hourly" || c.kind === "imagined") {
       moneyCell = el("td", { class: "n" }, `${gbp(c.amount)}${c.kind === "imagined" ? " (imagined)" : ""}`);
@@ -786,8 +885,9 @@ $("mMonth").onchange = () => loadMonth();
   loadReport();
   checkForUpdate(false);
   loadToday();
+  loadTargets();
   loadMonth();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadMonth(true); } catch (_) {} }, 60000);
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); } catch (_) {} }, 60000);
 })();
 </script>
 </body>
