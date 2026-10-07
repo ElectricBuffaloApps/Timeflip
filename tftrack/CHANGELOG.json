@@ -1,5 +1,12 @@
 [
   {
+    "version": 15,
+    "changes": [
+      "Fixed: saving limits or “Tasks not counted” no longer clears hourly rates you've typed but not yet saved.",
+      "The invoicing settings now say “Unsaved changes” until you click Save invoicing settings."
+    ]
+  },
+  {
     "version": 14,
     "changes": [
       "Settings → Tasks not counted: tick sides such as breaks, timers or “off” to leave them out of Today, charts, limits, This month and timesheets.",

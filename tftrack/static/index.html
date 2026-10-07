@@ -301,7 +301,9 @@ async function api(path, body) {
 }
 
 /* ---------- state & limits ---------- */
-function showState(s, withLimitRows = false) {
+function showState(s, redraw = false) {
+  // redraw: true = every settings table (first load); or just the one that was saved, so unsaved edits elsewhere survive.
+  const draw = (part) => redraw === true || redraw === part;
   state = s;
   const when = s.last_sync ? new Date(s.last_sync).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "never";
   const skipped = s.unmatched_intervals ? ` · ${s.unmatched_intervals} entries skipped (their task no longer exists)` : "";
@@ -316,9 +318,9 @@ function showState(s, withLimitRows = false) {
   $("weekStarts").value = s.week_starts;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
-  if (withLimitRows) renderLimitRows(s.limits);
-  if (withLimitRows) renderClientRows(s);
-  if (withLimitRows) renderIgnored(s);
+  if (draw("limits")) renderLimitRows(s.limits);
+  if (draw("clients")) renderClientRows(s);
+  if (draw("ignored")) renderIgnored(s);
   const cur = $("tsClient").value;
   $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
     ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
@@ -390,7 +392,7 @@ $("saveLimits").onclick = async () => {
   const limits = [...$("limitRows").children].map((tr) => tr.read())
     .filter((l) => (l.task || l.client) && (l.daily_hours || l.weekly_hours));
   try {
-    showState(await api("/api/limits", { limits }), true);
+    showState(await api("/api/limits", { limits }), "limits");
     $("saveMsg").textContent = "Saved.";
   } catch (e) { $("saveMsg").textContent = e.message; }
   setTimeout(() => ($("saveMsg").textContent = ""), 4000);
@@ -616,11 +618,13 @@ function renderClientRows(s) {
     return tr;
   }));
 }
+$("clientRows").addEventListener("input", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing settings."; });
+$("clientRows").addEventListener("change", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing settings."; });
 $("saveClients").onclick = async () => {
   const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/clients", { clients }), true); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadReport(); }
-  catch (e) { $("clientMsg").textContent = e.message; }
-  setTimeout(() => ($("clientMsg").textContent = ""), 4000);
+  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadReport(); }
+  catch (e) { $("clientMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("clientMsg").textContent === "Saved.") $("clientMsg").textContent = ""; }, 4000);
 };
 
 /* ---------- updates ---------- */
@@ -723,7 +727,7 @@ function renderIgnored(s) {
 $("saveIgnored").onclick = async () => {
   const ids = [...$("ignoredList").querySelectorAll("input:checked")].map((b) => Number(b.value));
   try {
-    showState(await api("/api/ignored", { ids }), true);
+    showState(await api("/api/ignored", { ids }), "ignored");
     $("ignoredMsg").textContent = "Saved."; loadToday(); loadMonth(); loadReport();
   } catch (e) { $("ignoredMsg").textContent = e.message; }
   setTimeout(() => ($("ignoredMsg").textContent = ""), 4000);
