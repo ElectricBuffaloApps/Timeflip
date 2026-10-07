@@ -10,8 +10,9 @@ from .notify import notify
 from .store import Store
 
 
-def open_store() -> Store:
-    return Store(cfg.DB_PATH)
+def open_store(include_ignored: bool = False) -> Store:
+    ignored = () if include_ignored else cfg.load_config().get("ignored_tasks", [])
+    return Store(cfg.DB_PATH, ignored)
 
 
 def client(conf: dict) -> TimeFlipClient:

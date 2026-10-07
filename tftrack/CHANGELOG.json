@@ -1,5 +1,12 @@
 [
   {
+    "version": 14,
+    "changes": [
+      "Settings → Tasks not counted: tick sides such as breaks, timers or “off” to leave them out of Today, charts, limits, This month and timesheets.",
+      "Today shows how much time wasn't counted."
+    ]
+  },
+  {
     "version": 13,
     "changes": [
       "New This month section: hours, money and per-hour rate for each client.",

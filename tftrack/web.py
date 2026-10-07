@@ -61,6 +61,9 @@ def state() -> dict:
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
         "tasks": sorted({t["name"] for t in tasks}),
+        "task_list": [{"id": t["id"], "name": t["name"], "client": t["tag"]}
+                      for t in sorted(tasks, key=lambda t: t["name"].lower())],
+        "ignored_tasks": conf.get("ignored_tasks", []),
         "clients": sorted({t["tag"] for t in tasks if t["tag"]}),
         "client_billing": conf.get("clients", {}),
         "status": status,
@@ -371,10 +374,16 @@ class Handler(BaseHTTPRequestHandler):
                 store = service.open_store()
                 today = date.today()
                 rows = [r for r in timesheet_rows(store, today, today) if not r["excluded"]]
+                ignored = set(cfg.load_config().get("ignored_tasks", []))
+                all_store = service.open_store(include_ignored=True)
+                midnight = datetime(today.year, today.month, today.day).astimezone()
+                not_counted = sum(seg["seconds"] for seg in all_store.segments(midnight, midnight + timedelta(days=1))
+                                  if seg["task_id"] in ignored)
                 return self._send(200, {
                     "date": today.isoformat(),
                     "money": money_summary(store, today, today, cfg.load_config().get("clients", {})),
                     "total_seconds": sum(r["seconds"] for r in rows),
+                    "not_counted_seconds": not_counted,
                     "by_task": build_report(store, today, today, "task")["series"],
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
                                 for r in rows],
@@ -504,6 +513,11 @@ class Handler(BaseHTTPRequestHandler):
                         months[month] = amount
                     cfg.save_config(conf)
                     return self._send(200, {"ok": True})
+                elif self.path == "/api/ignored":
+                    conf = cfg.load_config()
+                    known = {t["id"] for t in service.open_store().tasks()}
+                    conf["ignored_tasks"] = sorted({int(i) for i in body.get("ids", []) if int(i) in known})
+                    cfg.save_config(conf)
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())
                 else:

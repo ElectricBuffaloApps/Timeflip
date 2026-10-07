@@ -451,3 +451,17 @@ class MonthlyIncomeTest(unittest.TestCase):
         self.assertEqual((rows["FYPTD"]["kind"], rows["FYPTD"]["amount"]), ("imagined", 100.0))
         self.assertEqual((rows["HTB"]["kind"], rows["HTB"]["amount"]), ("hourly", 40.0))
         self.assertEqual((m["earned"], m["value"]), (640.0, 100.0))
+
+
+class IgnoredTasksTest(unittest.TestCase):
+    def test_ignored_tasks_left_out(self):
+        from tftrack.store import Store
+        tmp = Path(tempfile.mkdtemp()) / "t.sqlite"
+        base = Store(tmp)
+        base.replace_all({"tasks": [{"id": 1, "name": "Work"}, {"id": 2, "name": "Break"}], "timeIntervals": [
+            {"id": 1, "taskId": 1, "startedAt": "2026-10-07T09:00:00Z", "duration": 3600},
+            {"id": 2, "taskId": 2, "startedAt": "2026-10-07T10:00:00Z", "duration": 900}]})
+        start = datetime(2026, 10, 7, tzinfo=UTC)
+        end = start + timedelta(days=1)
+        self.assertEqual(Store(tmp).seconds_by_task(start, end), {1: 3600, 2: 900})
+        self.assertEqual(Store(tmp, ignored_task_ids=[2]).seconds_by_task(start, end), {1: 3600})

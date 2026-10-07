@@ -100,6 +100,8 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .seg:hover, .seg:focus { opacity: .8; outline: none; }
 .empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
+.ignored-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 10px; }
+.ignored-grid label { display: flex; gap: 8px; align-items: center; }
 /* today */
 .today-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; justify-content: space-between; }
 .money-tiles { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -238,6 +240,13 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     </div>
     <p class="sub">Tick <b>My own business</b> for your own work (e.g. FYPT): its rate is imagined, so it shows as <b>value</b>, kept separate from money <b>earned</b>, and never appears on timesheets.</p>
     <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
+    <h2 style="margin-top:28px;font-size:16px">Tasks not counted</h2>
+    <p class="sub">Tick sides you don't want counted, such as breaks, timers or "off". They're left out of Today, charts, limits, This month and timesheets.</p>
+    <div class="ignored-grid" id="ignoredList"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="saveIgnored">Save</button>
+      <span class="sub" id="ignoredMsg"></span>
+    </div>
     <div class="row" style="margin-top:16px">
       <label><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label>
     </div>
@@ -309,6 +318,7 @@ function showState(s, withLimitRows = false) {
   renderMeters(s.status);
   if (withLimitRows) renderLimitRows(s.limits);
   if (withLimitRows) renderClientRows(s);
+  if (withLimitRows) renderIgnored(s);
   const cur = $("tsClient").value;
   $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
     ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
@@ -664,7 +674,8 @@ async function loadToday() {
   $("todayTotal").textContent = hm(t.total_seconds);
   const day = new Date(`${t.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const last = t.entries.length ? ` · last entry ended ${t.entries[t.entries.length - 1].end}` : "";
-  $("todaySub").textContent = `tracked on ${day}${last}`;
+  const off = t.not_counted_seconds ? ` · not counted: ${hm(t.not_counted_seconds)}` : "";
+  $("todaySub").textContent = `tracked on ${day}${last}${off}`;
   const gbp = (v) => `£${v.toFixed(2)}`;
   const tiles = [];
   const paid = t.money.by_client.filter((c) => !c.notional), own = t.money.by_client.filter((c) => c.notional);
@@ -696,6 +707,27 @@ async function loadToday() {
     return tr;
   }));
 }
+
+/* ---------- tasks not counted ---------- */
+function renderIgnored(s) {
+  const ignored = new Set(s.ignored_tasks || []);
+  $("ignoredList").replaceChildren(...(s.task_list || []).map((t) => {
+    const box = el("input", { type: "checkbox", value: String(t.id) });
+    box.checked = ignored.has(t.id);
+    const label = el("label");
+    label.append(box, document.createTextNode(t.name));
+    if (t.client) label.append(el("span", { class: "sub" }, t.client));
+    return label;
+  }));
+}
+$("saveIgnored").onclick = async () => {
+  const ids = [...$("ignoredList").querySelectorAll("input:checked")].map((b) => Number(b.value));
+  try {
+    showState(await api("/api/ignored", { ids }), true);
+    $("ignoredMsg").textContent = "Saved."; loadToday(); loadMonth(); loadReport();
+  } catch (e) { $("ignoredMsg").textContent = e.message; }
+  setTimeout(() => ($("ignoredMsg").textContent = ""), 4000);
+};
 
 /* ---------- this month ---------- */
 async function loadMonth(auto = false) {

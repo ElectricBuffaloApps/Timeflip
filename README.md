@@ -21,6 +21,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 ## Using it
 
 - **Today:** the top of the page shows your total for today, time per task and today's entries.
+- **Tasks not counted:** in Settings, tick sides like breaks, timers or "off" to leave them out of every figure. Today still shows how much time wasn't counted.
 - **Limits:** open **Change limits**, pick a task or a client, and enter the hours per day and/or per week.
 - **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
 - **Charts:** pick a date range and choose **By task** or **By client**.

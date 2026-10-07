@@ -87,7 +87,9 @@ MANUAL_ID_OFFSET = 10 ** 12
 
 
 class Store:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, ignored_task_ids=()):
+        # Tasks the user doesn't want counted (breaks, timers, "off"): left out of every figure.
+        self.ignored_task_ids = {int(i) for i in ignored_task_ids}
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
@@ -173,7 +175,7 @@ class Store:
             e = s + timedelta(seconds=row["duration_s"])
             seg_start, seg_end = max(s, start), min(e, end)
             seconds = int((seg_end - seg_start).total_seconds())
-            if seconds > 0:
+            if seconds > 0 and row["task_id"] not in self.ignored_task_ids:
                 orig = None
                 if row["adjusted"]:
                     os_ = datetime.fromisoformat(row["orig_start"])
