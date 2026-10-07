@@ -73,8 +73,26 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
             continue
         local_start, local_end = seg["start"].astimezone(), seg["end"].astimezone()
         is_excluded = seg["id"] in excluded
+        note = ""
+        if seg["manual"]:
+            note = "added by hand"
+        elif seg["original"]:
+            o = seg["original"]
+            os_, oe = o["start"].astimezone(), o["end"].astimezone()
+            when = f"{os_:%H:%M}–{oe:%H:%M}"
+            if os_.date() != seg["entry_start"].astimezone().date():
+                when = f"{os_:%a %d %b} {when}"
+            note = f"was {when}" + (f", {o['task']}" if o["task_changed"] else "")
+        es, ee = seg["entry_start"].astimezone(), seg["entry_end"].astimezone()
         rows.append({
             "id": seg["id"],
+            "task_id": seg["task_id"],
+            "adjusted": seg["adjusted"],
+            "manual": seg["manual"],
+            "note": note,
+            "entry_date": es.date().isoformat(),
+            "entry_start": es.strftime("%H:%M"),
+            "entry_end": ee.strftime("%H:%M"),
             "excluded": is_excluded,
             "seconds": seg["seconds"],
             "date": d.isoformat(),
@@ -95,11 +113,11 @@ def timesheet_csv(rows: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Date", "Start", "End", "Client", "Task", "Hours", "Billable", "Rate", "Currency", "Amount",
-                "Excluded"])
+                "Excluded", "Note"])
     for r in rows:
         w.writerow([r["date"], r["start"], r["end"], r["client"], r["task"], f"{r['hours']:.2f}",
                     "Yes" if r["billable"] else "No", "" if r["rate"] is None else r["rate"],
-                    r["currency"], f"{r['amount']:.2f}", "Yes" if r["excluded"] else ""])
+                    r["currency"], f"{r['amount']:.2f}", "Yes" if r["excluded"] else "", r["note"]])
     rows = [r for r in rows if not r["excluded"]]
     total_hours = sum(r["hours"] for r in rows)
     currencies = {r["currency"] for r in rows if r["amount"]}

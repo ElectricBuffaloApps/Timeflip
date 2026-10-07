@@ -371,3 +371,36 @@ class MacAppTest(unittest.TestCase):
         self.assertEqual(subprocess.run(["bash", "-n", str(launcher)]).returncode, 0)
         self.assertIn("http://127.0.0.1:8765/", launcher.read_text())
         self.assertGreater((app / "Contents" / "Resources" / "AppIcon.icns").stat().st_size, 1000)
+
+
+class AdjustmentTest(unittest.TestCase):
+    def test_adjust_move_add_and_reset(self):
+        from tftrack.reports import invoice, timesheet_rows
+        from datetime import date
+        at = lambda d, h, m=0: datetime(2026, 9, d, h, m).astimezone()
+        tasks = [{"id": 1, "name": "Build", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"}]
+        store = make_store([{"id": 5, "taskId": 1, "startedAt": at(3, 9).astimezone(UTC).isoformat(),
+                             "duration": 3600}], tasks=tasks)
+        # shorten to 09:00-09:40 and keep it on HTB
+        store.set_adjustment(5, at(3, 9), 40 * 60, 1)
+        row = timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3), "HTB")[0]
+        self.assertEqual((row["start"], row["end"], row["adjusted"], row["note"]), ("09:00", "09:40", True, "was 09:00–10:00"))
+        # survives a resync
+        store.replace_all({"tasks": tasks, "timeIntervals": [{"id": 5, "taskId": 1,
+                           "startedAt": at(3, 9).astimezone(UTC).isoformat(), "duration": 3600}]})
+        self.assertEqual(invoice(store, "HTB", 2026, 9, "day")["total_billed_s"], 40 * 60)
+        # move it to FCY
+        store.set_adjustment(5, at(3, 9), 40 * 60, 2)
+        self.assertEqual(timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3), "HTB"), [])
+        moved = timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3), "FCY")[0]
+        self.assertEqual(moved["note"], "was 09:00–10:00, Build")
+        # add a forgotten call, then delete it
+        mid = store.add_manual(at(3, 14), 30 * 60, 2)
+        rows = timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3), "FCY")
+        self.assertEqual([(r["start"], r["manual"]) for r in rows], [("09:00", False), ("14:00", True)])
+        store.set_adjustment(mid, at(3, 14), 45 * 60, 2)   # editing an added entry changes it in place
+        self.assertEqual(timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3), "FCY")[1]["end"], "14:45")
+        store.delete_manual(mid)
+        store.clear_adjustment(5)
+        rows = timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3))
+        self.assertEqual([(r["task"], r["end"], r["adjusted"]) for r in rows], [("Build", "10:00", False)])

@@ -5,13 +5,14 @@ import html
 import json
 import subprocess
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfg
 from . import service, updater
+from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, timesheet_csv,
                       timesheet_rows)
@@ -88,7 +89,17 @@ label.ex{cursor:pointer;font-size:12px;color:#6B7280;white-space:nowrap} input[t
 .lines td,.lines th{border-bottom-color:#FED7AA}
 button.copy{font-size:12px;padding:3px 10px;margin-left:6px;border-radius:6px}
 .copied{color:#00c853;font-size:13px}
-@media print{.bar,label.ex,.lines{display:none} body{margin:0}}
+button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
+.bar button.secondary{background:#fff;color:#111827;border-color:#D1D5DB}
+.bar button.secondary:hover{background:#fff;border-color:#F97316}
+.tag.adj{color:#c2410c;font-style:italic}
+dialog{border:none;border-radius:12px;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);min-width:340px}
+dialog::backdrop{background:rgba(15,18,25,.45)}
+dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:4px}
+dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
+dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
+.err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
+@media print{.bar,label.ex,.lines,button.edit{display:none} body{margin:0}}
 """
 
 PAGE_SCRIPT = """<script>
@@ -103,6 +114,46 @@ for (const b of document.querySelectorAll("button.copy")) {
     const old = b.textContent; b.textContent = "Copied ✓"; setTimeout(() => (b.textContent = old), 1500);
   });
 }
+async function post(path, body) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-TFTrack": "1"},
+                               body: JSON.stringify(body)});
+  if (!r.ok) throw new Error((await r.json()).error || "Couldn't save that change.");
+}
+const dlg = document.getElementById("entryDialog");
+const $f = (id) => document.getElementById(id);
+let editing = null;
+function openEntry(entry) {
+  editing = entry;
+  const defaults = JSON.parse(document.body.dataset.defaults);
+  $f("dlgTitle").textContent = entry ? "Edit entry" : "Add entry";
+  $f("fDate").value = entry ? entry.date : defaults.date;
+  $f("fStart").value = entry ? entry.start : "09:00";
+  $f("fEnd").value = entry ? entry.end : "10:00";
+  if (entry) $f("fTask").value = String(entry.task_id);
+  else if (defaults.client) {
+    const match = [...$f("fTask").options].find((o) => o.textContent.endsWith(`(${defaults.client})`));
+    if (match) $f("fTask").value = match.value;
+  }
+  $f("fReset").style.display = entry && entry.adjusted ? "" : "none";
+  $f("fDelete").style.display = entry && entry.manual ? "" : "none";
+  $f("fErr").textContent = "";
+  dlg.showModal();
+}
+for (const b of document.querySelectorAll("button.edit")) b.addEventListener("click", () => openEntry(JSON.parse(b.dataset.entry)));
+$f("addEntry").addEventListener("click", () => openEntry(null));
+$f("fCancel").addEventListener("click", () => dlg.close());
+async function act(fn) {
+  try { await fn(); location.reload(); } catch (e) { $f("fErr").textContent = e.message; }
+}
+$f("entryForm").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const body = {date: $f("fDate").value, start: $f("fStart").value, end: $f("fEnd").value, task_id: Number($f("fTask").value)};
+  act(() => editing ? post("/api/entry/adjust", {...body, id: editing.id}) : post("/api/entry/add", body));
+});
+$f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", {id: editing.id})));
+$f("fDelete").addEventListener("click", () => {
+  if (confirm("Delete this added entry?")) act(() => post("/api/entry/delete", {id: editing.id}));
+});
 for (const box of document.querySelectorAll("input[data-id]")) {
   box.addEventListener("change", async () => {
     box.disabled = true;
@@ -123,19 +174,59 @@ def _hm(seconds: int) -> str:
 def _exclude_cell(r: dict) -> str:
     checked = " checked" if r["excluded"] else ""
     note = '<span class="tag">not charged</span>' if r["excluded"] else ""
+    entry = html.escape(json.dumps({
+        "id": r["id"], "date": r["entry_date"], "start": r["entry_start"], "end": r["entry_end"],
+        "task_id": r["task_id"], "adjusted": r["adjusted"], "manual": r["manual"],
+    }))
     return (f'<td class="keep">{note}<label class="ex"><input type="checkbox" data-id="{int(r["id"])}"{checked}> '
-            f'Exclude</label></td>')
+            f'Exclude</label><button class="edit" data-entry="{entry}">Edit</button></td>')
 
 
-def _page(title: str, heading: str, subtitle: str, table: str) -> str:
+def _task_cell(r: dict) -> str:
+    """Task name, plus a visible (and printed) note when the entry was adjusted or added by hand."""
+    note = ""
+    if r["manual"]:
+        note = ' <span class="tag adj">added</span>'
+    elif r["adjusted"]:
+        note = f' <span class="tag adj">adjusted · {html.escape(r["note"])}</span>'
+    return f"<td>{html.escape(r['task'])}{note}</td>"
+
+
+def _task_options() -> str:
+    tasks = service.open_store().tasks()
+    return "".join(
+        f'<option value="{t["id"]}">{html.escape(t["name"])}{" (" + html.escape(t["tag"]) + ")" if t["tag"] else ""}</option>'
+        for t in sorted(tasks, key=lambda t: ((t["tag"] or "~").lower(), t["name"].lower()))
+    )
+
+
+def _page(title: str, heading: str, subtitle: str, table: str, default_date: date | None = None,
+          client: str | None = None) -> str:
     esc = html.escape
+    dialog = f"""<dialog id="entryDialog"><form method="dialog" id="entryForm">
+<h2 id="dlgTitle" style="margin-top:0">Edit entry</h2>
+<label>Date<br><input type="date" id="fDate" required></label>
+<div style="display:flex;gap:12px;margin-top:10px">
+<label>Start<br><input type="time" id="fStart" required></label>
+<label>End<br><input type="time" id="fEnd" required></label></div>
+<label style="display:block;margin-top:10px">Task<br><select id="fTask">{_task_options()}</select></label>
+<p class="err" id="fErr"></p>
+<div class="dlg-buttons">
+<button type="button" id="fDelete" class="danger">Delete</button>
+<button type="button" id="fReset">Back to original</button>
+<span style="flex:1"></span>
+<button type="button" id="fCancel">Cancel</button>
+<button type="submit" id="fSave" class="primary">Save</button></div>
+</form></dialog>"""
+    defaults = esc(json.dumps({"date": (default_date or date.today()).isoformat(), "client": client or ""}))
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <title>{esc(title)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
-<style>{PAGE_STYLE}</style></head><body>
+<style>{PAGE_STYLE}</style></head><body data-defaults="{defaults}">
 <div class="bar"><button onclick="window.print()">Print or save as PDF</button>
-<span>Tick <b>Exclude</b> on any entry you won't charge for. It stays on the sheet, crossed out.</span></div>
-<h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{PAGE_SCRIPT}</body></html>"""
+<button id="addEntry" class="secondary">+ Add entry</button>
+<span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
+<h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}</body></html>"""
 
 
 def timesheet_page(rows: list[dict], start: date, end: date, client: str | None) -> str:
@@ -143,7 +234,7 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
     body = "".join(
         f"<tr class=\"{'x' if r['excluded'] else ''}\"><td>{date.fromisoformat(r['date']):%a %d %b}</td>"
         f"<td>{esc(r['start'])}–{esc(r['end'])}</td>"
-        f"<td>{esc(r['client'])}</td><td>{esc(r['task'])}</td><td class=n>{r['hours']:.2f}</td>"
+        f"<td>{esc(r['client'])}</td>{_task_cell(r)}<td class=n>{r['hours']:.2f}</td>"
         f"<td class=n>{esc(r['currency']) + format(r['amount'], '.2f') if r['amount'] else '–'}</td>"
         f"{_exclude_cell(r)}</tr>"
         for r in rows
@@ -159,7 +250,8 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
 <tbody>{body or '<tr><td colspan=7>No time recorded in this period.</td></tr>'}</tbody>
 <tfoot><tr class="grand"><td colspan=4>Total</td><td class=n>{hours:.2f}</td><td class=n>{esc(total)}</td><td></td></tr>
 </tfoot></table>"""
-    return _page(f"Timesheet – {who}", f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", table)
+    return _page(f"Timesheet – {who}", f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", table,
+                 start, client)
 
 
 def invoice_page(inv: dict) -> str:
@@ -179,7 +271,7 @@ def invoice_page(inv: dict) -> str:
             day = date.fromisoformat(d["date"])
             for r in d["entries"]:
                 rows.append(f'<tr class="{"x" if r["excluded"] else ""}"><td>{day:%a %d %b}</td>'
-                            f'<td>{esc(r["start"])}–{esc(r["end"])}</td><td>{esc(r["task"])}</td>'
+                            f'<td>{esc(r["start"])}–{esc(r["end"])}</td>{_task_cell(r)}'
                             f'<td class=n>{_hm(r["seconds"])}</td>{_exclude_cell(r)}</tr>')
             actual = "" if d["actual_s"] == d["billed_s"] else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
             rows.append(f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
@@ -199,7 +291,7 @@ def invoice_page(inv: dict) -> str:
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
-                 f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table)
+                 f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"])
 
 
 def _lines_panel(inv: dict) -> str:
@@ -330,6 +422,26 @@ class Handler(BaseHTTPRequestHandler):
                     if not app:
                         raise ValueError("Couldn't create the app on this computer.")
                     subprocess.run(["open", "-R", str(app)], capture_output=True)
+                elif self.path in ("/api/entry/adjust", "/api/entry/add"):
+                    start, seconds = _entry_times(body)
+                    task_id = int(body["task_id"])
+                    store = service.open_store()
+                    if task_id not in {t["id"] for t in store.tasks()}:
+                        raise ValueError("Choose a task.")
+                    if self.path.endswith("add"):
+                        store.add_manual(start, seconds, task_id)
+                    else:
+                        store.set_adjustment(int(body["id"]), start, seconds, task_id)
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/entry/reset":
+                    service.open_store().clear_adjustment(int(body["id"]))
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/entry/delete":
+                    entry_id = int(body["id"])
+                    if entry_id > -MANUAL_ID_OFFSET:
+                        raise ValueError("Only entries you added can be deleted. Use Exclude instead.")
+                    service.open_store().delete_manual(entry_id)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/exclude":
                     service.open_store().set_excluded(int(body["id"]), bool(body.get("excluded")))
                     return self._send(200, {"ok": True})
@@ -349,6 +461,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": str(e)})
         except Exception as e:
             return self._send(500, {"error": str(e)})
+
+
+def _entry_times(body: dict) -> tuple[datetime, int]:
+    """Local date + start/end times from the form -> aware start and length in seconds."""
+    try:
+        day = date.fromisoformat(body["date"])
+        sh, sm = (int(x) for x in body["start"].split(":")[:2])
+        eh, em = (int(x) for x in body["end"].split(":")[:2])
+    except (KeyError, ValueError):
+        raise ValueError("Enter a date, a start time and an end time.")
+    start = datetime(day.year, day.month, day.day, sh, sm).astimezone()
+    end = datetime(day.year, day.month, day.day, eh, em).astimezone()
+    if end <= start:
+        raise ValueError("The end time must be after the start time.")
+    return start, int((end - start).total_seconds())
 
 
 def _clean_client(raw: dict) -> dict:

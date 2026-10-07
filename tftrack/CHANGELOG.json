@@ -1,5 +1,13 @@
 [
   {
+    "version": 10,
+    "changes": [
+      "Edit any entry on a timesheet: change its date, start and end times, or move it to a different task or client.",
+      "Add entries for time you didn't track on the cube, with + Add entry at the top of a timesheet.",
+      "Adjusted entries are marked “adjusted” with the original time, and added ones “added”, including on printed sheets. Back to original undoes an edit."
+    ]
+  },
+  {
     "version": 9,
     "changes": [
       "TimeFlip Tracker now has its own app with an orange clock icon, in your Applications folder. Open it from Launchpad or Spotlight, or drag it into your Dock.",
