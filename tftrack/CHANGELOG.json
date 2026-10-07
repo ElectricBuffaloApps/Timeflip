@@ -1,5 +1,12 @@
 [
   {
+    "version": 13,
+    "changes": [
+      "New This month section: hours, money and per-hour rate for each client.",
+      "Set a client (e.g. FYPT1) to “Monthly income” in Settings, enter what it brings in, and see your effective hourly rate. The amount carries forward to later months until you change it."
+    ]
+  },
+  {
     "version": 12,
     "changes": [
       "Today now shows money earned from paying clients, using the hourly rates in Settings and the same rounding as your invoices.",

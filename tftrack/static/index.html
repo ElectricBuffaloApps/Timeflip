@@ -153,6 +153,16 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     </div>
   </section>
 
+  <section id="month">
+    <h2>This month</h2>
+    <div class="row" style="margin-top:8px">
+      <input type="month" id="mMonth" aria-label="Month">
+      <span class="sub">Money and your effective hourly rate per client. Monthly income carries forward until you change it.</span>
+    </div>
+    <table class="totals" id="monthTable"></table>
+    <p class="sub" id="monthMsg"></p>
+  </section>
+
   <section>
     <h2>Limits</h2>
     <div class="sub">You get a Mac notification at <span id="levels">80% and 100%</span> of each limit.</div>
@@ -536,7 +546,8 @@ function renderTotals(r) {
 }
 
 /* ---------- timesheets ---------- */
-const STYLE_LABELS = { hourly: "Hourly (list of entries)", day: "By the day, monthly", week: "By the week (Mondays in the month)" };
+const STYLE_LABELS = { hourly: "Hourly (list of entries)", day: "By the day, monthly", week: "By the week (Mondays in the month)",
+                       monthly: "Monthly income (e.g. coaching)" };
 function billingFor(client) {
   const entry = Object.entries(state?.client_billing || {}).find(([k]) => k.toLowerCase() === (client || "").toLowerCase());
   return entry ? entry[1] : { billing: "hourly", rounding: "none", block_minutes: 15 };
@@ -597,7 +608,7 @@ function renderClientRows(s) {
 }
 $("saveClients").onclick = async () => {
   const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/clients", { clients }), true); $("clientMsg").textContent = "Saved."; }
+  try { showState(await api("/api/clients", { clients }), true); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadReport(); }
   catch (e) { $("clientMsg").textContent = e.message; }
   setTimeout(() => ($("clientMsg").textContent = ""), 4000);
 };
@@ -686,6 +697,52 @@ async function loadToday() {
   }));
 }
 
+/* ---------- this month ---------- */
+async function loadMonth(auto = false) {
+  if (auto && $("monthTable").contains(document.activeElement)) return;  // don't wipe an amount being typed
+  if (!$("mMonth").value) $("mMonth").value = iso(new Date()).slice(0, 7);
+  let m;
+  try { m = await api(`/api/month?month=${$("mMonth").value}`); } catch (e) { $("monthMsg").textContent = e.message; return; }
+  const gbp = (v) => `£${v.toFixed(2)}`;
+  const t = $("monthTable");
+  const head = el("tr");
+  head.append(el("th", {}, "Client"), el("th", { class: "n" }, "Hours"), el("th", { class: "n" }, "Money"), el("th", { class: "n" }, "Per hour"));
+  t.replaceChildren(head);
+  for (const c of m.clients) {
+    const tr = el("tr");
+    const name = el("td", {}, c.client);
+    let moneyCell, rate;
+    if (c.kind === "monthly") {
+      name.append(el("span", { class: "sub" }, " · monthly income"));
+      moneyCell = el("td", { class: "n" });
+      const input = el("input", { type: "number", min: "0", step: "1", placeholder: "income £", "aria-label": `Income from ${c.client} this month` });
+      input.style.width = "110px";
+      if (c.amount != null) input.value = c.amount;
+      const save = el("button", {}, "Save");
+      save.onclick = async () => {
+        try { await api("/api/income", { client: c.client, month: m.month, amount: input.value }); loadMonth(); }
+        catch (e) { $("monthMsg").textContent = e.message; }
+      };
+      moneyCell.append(input, document.createTextNode(" "), save);
+      if (c.carried) moneyCell.append(el("div", { class: "sub" }, "carried from an earlier month"));
+      rate = c.rate != null ? `${gbp(c.rate)} effective` : (c.amount ? "no hours yet" : "enter income");
+    } else if (c.kind === "hourly" || c.kind === "imagined") {
+      moneyCell = el("td", { class: "n" }, `${gbp(c.amount)}${c.kind === "imagined" ? " (imagined)" : ""}`);
+      rate = gbp(c.rate);
+    } else {
+      moneyCell = el("td", { class: "n" }, "–");
+      rate = "no rate set";
+    }
+    tr.append(name, el("td", { class: "n" }, hm(c.seconds)), moneyCell, el("td", { class: "n" }, rate));
+    t.append(tr);
+  }
+  const foot = el("tr");
+  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(m.seconds)),
+              el("th", { class: "n" }, `Earned ${gbp(m.earned)}${m.value ? ` · own-business ${gbp(m.value)}` : ""}`), el("th"));
+  t.append(foot);
+}
+$("mMonth").onchange = () => loadMonth();
+
 /* ---------- start ---------- */
 (async () => {
   try { showState(await api("/api/state"), true); }
@@ -693,7 +750,8 @@ async function loadToday() {
   loadReport();
   checkForUpdate(false);
   loadToday();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); } catch (_) {} }, 60000);
+  loadMonth();
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadMonth(true); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

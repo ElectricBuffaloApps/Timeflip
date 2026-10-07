@@ -14,7 +14,7 @@ from . import config as cfg
 from . import service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary,
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary,
                       timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -379,6 +379,15 @@ class Handler(BaseHTTPRequestHandler):
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
                                 for r in rows],
                 })
+            if url.path == "/api/month":
+                try:
+                    y, mo = (int(x) for x in (q.get("month") or "").split("-"))
+                    date(y, mo, 1)
+                except ValueError:
+                    y, mo = date.today().year, date.today().month
+                conf = cfg.load_config()
+                return self._send(200, month_summary(service.open_store(), y, mo, conf.get("clients", {}),
+                                                     conf.get("monthly_income", {})))
             if url.path == "/api/report":
                 group = "client" if q.get("group") == "client" else "task"
                 store = service.open_store()
@@ -473,6 +482,28 @@ class Handler(BaseHTTPRequestHandler):
                         if str(name).strip()
                     }
                     cfg.save_config(conf)
+                elif self.path == "/api/income":
+                    client = str(body.get("client") or "").strip()
+                    month = str(body.get("month") or "")
+                    try:
+                        y, mo = (int(x) for x in month.split("-"))
+                        date(y, mo, 1)
+                    except ValueError:
+                        raise ValueError("Choose a month.")
+                    if not client:
+                        raise ValueError("Choose a client.")
+                    conf = cfg.load_config()
+                    incomes = conf.setdefault("monthly_income", {})
+                    months = incomes.setdefault(client, {})
+                    if body.get("amount") in (None, ""):
+                        months.pop(month, None)  # back to carrying the previous month's figure
+                    else:
+                        amount = float(body["amount"])
+                        if amount < 0:
+                            raise ValueError("Income can't be negative.")
+                        months[month] = amount
+                    cfg.save_config(conf)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())
                 else:

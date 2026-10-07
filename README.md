@@ -34,6 +34,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Adding time you didn't track:** **+ Add entry** at the top of a timesheet. Added entries are marked "added" and can be edited or deleted.
 - **Not charging for something:** tick **Exclude** beside the entry on the timesheet. It stays on the sheet crossed out, isn't counted in the totals, and stays excluded after future syncs.
 - **Money:** Today and "Where your time went" price time with the hourly rates in Settings (same rounding as invoices; excluded entries left out). Tick **My own business** for clients like FYPT1/FYPTD to give them an imagined rate: shown separately as own-business value, never on timesheets.
+- **This month:** hours, money and per-hour rate for each client. Set a client to **Monthly income** (Settings) for work paid by the month, such as coaching; enter the month's income and it shows your effective hourly rate (income ÷ hours). The amount carries forward until you change it.
 - **Billable amounts** on the plain (hourly) timesheet use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.

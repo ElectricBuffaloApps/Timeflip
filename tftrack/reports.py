@@ -132,7 +132,7 @@ def timesheet_csv(rows: list[dict]) -> str:
 
 # ---------- monthly invoices: by day or by week ----------
 
-BILLING_STYLES = ("hourly", "day", "week")
+BILLING_STYLES = ("hourly", "day", "week", "monthly")
 ROUNDING_MODES = ("none", "nearest", "up", "down")
 
 
@@ -228,7 +228,8 @@ def _client_conf(clients_conf: dict, client: str | None) -> dict | None:
     if not client:
         return None
     for name, c in (clients_conf or {}).items():
-        if name.lower() == client.lower() and c.get("rate"):
+        # Monthly-income clients aren't priced per hour; see month_summary.
+        if name.lower() == client.lower() and c.get("rate") and c.get("billing") != "monthly":
             return c
     return None
 
@@ -266,3 +267,52 @@ def money_summary(store, start: date, end: date, clients_conf: dict) -> dict:
         "by_client": sorted(by_client, key=lambda c: (c["notional"], -c["amount"])),
         "by_task": {k: {"amount": round(v["amount"], 2), "notional": v["notional"]} for k, v in by_task.items()},
     }
+
+
+# ---------- monthly income and effective hourly rate ----------
+
+def income_for_month(incomes: dict, client: str, month: str) -> tuple[float | None, bool]:
+    """(amount, carried) for a client in 'YYYY-MM': the month's own figure, else the latest earlier one."""
+    entries = {}
+    for name, months in (incomes or {}).items():
+        if name.lower() == client.lower():
+            entries = months
+    if month in entries:
+        return float(entries[month]), False
+    earlier = sorted(m for m in entries if m < month)
+    return (float(entries[earlier[-1]]), True) if earlier else (None, False)
+
+
+def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dict) -> dict:
+    """Per client for one calendar month: hours, and earned money / effective rate / imagined value."""
+    start, end = month_range(year, month, "day")
+    key = f"{year}-{month:02d}"
+    hours: dict[str, int] = {}
+    for r in timesheet_rows(store, start, end):
+        if not r["excluded"] and r["client"] != NO_CLIENT:
+            hours[r["client"]] = hours.get(r["client"], 0) + r["seconds"]
+    money = money_summary(store, start, end, clients_conf)
+    priced = {c["client"].lower(): c for c in money["by_client"]}
+    names = set(hours) | {n for n, c in (clients_conf or {}).items() if c.get("billing") == "monthly"}
+    rows, earned, value = [], 0.0, 0.0
+    for name in sorted(names, key=str.lower):
+        conf = next((c for n, c in (clients_conf or {}).items() if n.lower() == name.lower()), {})
+        secs = hours.get(name, 0)
+        row = {"client": name, "seconds": secs, "kind": "none", "amount": None, "rate": None}
+        if conf.get("billing") == "monthly":
+            income, carried = income_for_month(incomes, name, key)
+            row.update(kind="monthly", amount=income, carried=carried,
+                       rate=round(income / (secs / 3600), 2) if income and secs else None)
+            earned += income or 0
+        elif name.lower() in priced:
+            p = priced[name.lower()]
+            row.update(kind="imagined" if p["notional"] else "hourly", amount=p["amount"],
+                       rate=float(conf.get("rate")))
+            if p["notional"]:
+                value += p["amount"]
+            else:
+                earned += p["amount"]
+        rows.append(row)
+    total_secs = sum(hours.values())
+    return {"month": key, "clients": rows, "earned": round(earned, 2), "value": round(value, 2),
+            "seconds": total_secs}

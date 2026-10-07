@@ -426,3 +426,28 @@ class MoneyTest(unittest.TestCase):
         self.assertEqual((m["earned"], m["value"]), (40.0, 75.0))
         self.assertEqual([(c["client"], c["notional"]) for c in m["by_client"]], [("HTB", False), ("FYPT1", True)])
         self.assertNotIn("Admin", m["by_task"])
+
+
+class MonthlyIncomeTest(unittest.TestCase):
+    def test_effective_rate_and_carry_forward(self):
+        from tftrack.reports import income_for_month, month_summary
+        at = lambda m, d, h: datetime(2026, m, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Coaching", "tag": "FYPT1"}, {"id": 2, "name": "Dev", "tag": "FYPTD"},
+                 {"id": 3, "name": "Build", "tag": "HTB"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(10, 6, 9), "duration": 10 * 3600},
+            {"id": 2, "taskId": 1, "startedAt": at(10, 7, 9), "duration": 5 * 3600},
+            {"id": 3, "taskId": 2, "startedAt": at(10, 8, 9), "duration": 2 * 3600},
+            {"id": 4, "taskId": 3, "startedAt": at(10, 9, 9), "duration": 50 * 60},
+        ], tasks=tasks)
+        conf = {"FYPT1": {"billing": "monthly"}, "FYPTD": {"rate": 50, "notional": True},
+                "HTB": {"rate": 40, "rounding": "up", "block_minutes": 15}}
+        incomes = {"FYPT1": {"2026-09": 600}}
+        self.assertEqual(income_for_month(incomes, "fypt1", "2026-10"), (600.0, True))
+        self.assertEqual(income_for_month(incomes, "FYPT1", "2026-08"), (None, False))
+        m = month_summary(store, 2026, 10, conf, incomes)
+        rows = {r["client"]: r for r in m["clients"]}
+        self.assertEqual((rows["FYPT1"]["kind"], rows["FYPT1"]["amount"], rows["FYPT1"]["rate"]), ("monthly", 600.0, 40.0))
+        self.assertEqual((rows["FYPTD"]["kind"], rows["FYPTD"]["amount"]), ("imagined", 100.0))
+        self.assertEqual((rows["HTB"]["kind"], rows["HTB"]["amount"]), ("hourly", 40.0))
+        self.assertEqual((m["earned"], m["value"]), (640.0, 100.0))
