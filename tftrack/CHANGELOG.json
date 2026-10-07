@@ -1,5 +1,13 @@
 [
   {
+    "version": 12,
+    "changes": [
+      "Today now shows money earned from paying clients, using the hourly rates in Settings and the same rounding as your invoices.",
+      "Tick “My own business” beside a client (e.g. FYPT1, FYPTD) to give its time an imagined rate. It shows separately as own-business value and never appears on timesheets.",
+      "“Where your time went” shows the value of each client or task, with earned and own-business totals."
+    ]
+  },
+  {
     "version": 11,
     "changes": [
       "New Today section at the top: your total for today, time per task, and today's entries.",

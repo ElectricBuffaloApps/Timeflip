@@ -220,3 +220,49 @@ def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
             for d in g["days"]:
                 add(f"{inv['client']} – {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])
     return lines
+
+
+# ---------- money from the per-client rates in Settings ----------
+
+def _client_conf(clients_conf: dict, client: str | None) -> dict | None:
+    if not client:
+        return None
+    for name, c in (clients_conf or {}).items():
+        if name.lower() == client.lower() and c.get("rate"):
+            return c
+    return None
+
+
+def money_summary(store, start: date, end: date, clients_conf: dict) -> dict:
+    """Earnings (paying clients) and imagined value (own-business clients) for a date range.
+
+    Per client, each day's charged time is rounded the same way as its invoices, then priced at its rate.
+    Per task the figures are before rounding, so they can differ from the client totals by a few pence.
+    """
+    per_client_day: dict[str, dict[str, int]] = {}
+    by_task: dict[str, dict] = {}
+    for r in timesheet_rows(store, start, end):
+        conf = _client_conf(clients_conf, r["client"] if r["client"] != NO_CLIENT else None)
+        if r["excluded"] or not conf:
+            continue
+        days = per_client_day.setdefault(r["client"], {})
+        days[r["date"]] = days.get(r["date"], 0) + r["seconds"]
+        t = by_task.setdefault(r["task"], {"amount": 0.0, "notional": bool(conf.get("notional"))})
+        t["amount"] += r["seconds"] / 3600 * float(conf["rate"])
+    by_client, earned, value = [], 0.0, 0.0
+    for client, days in per_client_day.items():
+        conf = _client_conf(clients_conf, client)
+        billed = sum(round_seconds(sec, conf.get("block_minutes", 15), conf.get("rounding", "none"))
+                     for sec in days.values())
+        amount = round(billed / 3600 * float(conf["rate"]), 2)
+        notional = bool(conf.get("notional"))
+        by_client.append({"client": client, "amount": amount, "notional": notional})
+        if notional:
+            value += amount
+        else:
+            earned += amount
+    return {
+        "earned": round(earned, 2), "value": round(value, 2),
+        "by_client": sorted(by_client, key=lambda c: (c["notional"], -c["amount"])),
+        "by_task": {k: {"amount": round(v["amount"], 2), "notional": v["notional"]} for k, v in by_task.items()},
+    }

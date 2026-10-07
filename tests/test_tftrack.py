@@ -404,3 +404,25 @@ class AdjustmentTest(unittest.TestCase):
         store.clear_adjustment(5)
         rows = timesheet_rows(store, date(2026, 9, 3), date(2026, 9, 3))
         self.assertEqual([(r["task"], r["end"], r["adjusted"]) for r in rows], [("Build", "10:00", False)])
+
+
+class MoneyTest(unittest.TestCase):
+    def test_earned_and_imagined_value_kept_apart(self):
+        from datetime import date
+        from tftrack.reports import money_summary
+        at = lambda h, m=0: datetime(2026, 10, 7, h, m).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Build", "tag": "HTB"}, {"id": 2, "name": "Coaching", "tag": "FYPT1"},
+                 {"id": 3, "name": "Admin", "tag": None}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9), "duration": 50 * 60},      # HTB 50m -> 1h rounded up
+            {"id": 2, "taskId": 1, "startedAt": at(11), "duration": 20 * 60},     # excluded below
+            {"id": 3, "taskId": 2, "startedAt": at(13), "duration": 90 * 60},     # FYPT1 1.5h imagined
+            {"id": 4, "taskId": 3, "startedAt": at(15), "duration": 3600},        # untagged: not counted
+        ], tasks=tasks)
+        store.set_excluded(2, True)
+        conf = {"HTB": {"rate": 40, "rounding": "up", "block_minutes": 15},
+                "FYPT1": {"rate": 50, "notional": True}}
+        m = money_summary(store, date(2026, 10, 7), date(2026, 10, 7), conf)
+        self.assertEqual((m["earned"], m["value"]), (40.0, 75.0))
+        self.assertEqual([(c["client"], c["notional"]) for c in m["by_client"]], [("HTB", False), ("FYPT1", True)])
+        self.assertNotIn("Admin", m["by_task"])

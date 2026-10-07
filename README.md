@@ -33,7 +33,8 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Fixing entries:** click **Edit** beside an entry on a timesheet to change its date, times or task (which can move it to another client). It's marked "adjusted" with the original time, also on the printed sheet. **Back to original** undoes it. Edits stay on your Mac and survive syncs; TimeFlip's own data isn't changed.
 - **Adding time you didn't track:** **+ Add entry** at the top of a timesheet. Added entries are marked "added" and can be edited or deleted.
 - **Not charging for something:** tick **Exclude** beside the entry on the timesheet. It stays on the sheet crossed out, isn't counted in the totals, and stays excluded after future syncs.
-- **Billable amounts** use the hourly rate and the billable switch you set on each task in the TimeFlip app.
+- **Money:** Today and "Where your time went" price time with the hourly rates in Settings (same rounding as invoices; excluded entries left out). Tick **My own business** for clients like FYPT1/FYPTD to give them an imagined rate: shown separately as own-business value, never on timesheets.
+- **Billable amounts** on the plain (hourly) timesheet use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.
 

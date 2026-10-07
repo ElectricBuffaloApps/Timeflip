@@ -14,8 +14,8 @@ from . import config as cfg
 from . import service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, timesheet_csv,
-                      timesheet_rows)
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary,
+                      timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
 # One writer at a time: syncs and config saves must not interleave.
@@ -373,6 +373,7 @@ class Handler(BaseHTTPRequestHandler):
                 rows = [r for r in timesheet_rows(store, today, today) if not r["excluded"]]
                 return self._send(200, {
                     "date": today.isoformat(),
+                    "money": money_summary(store, today, today, cfg.load_config().get("clients", {})),
                     "total_seconds": sum(r["seconds"] for r in rows),
                     "by_task": build_report(store, today, today, "task")["series"],
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
@@ -380,7 +381,16 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if url.path == "/api/report":
                 group = "client" if q.get("group") == "client" else "task"
-                return self._send(200, build_report(service.open_store(), start, end, group))
+                store = service.open_store()
+                report = build_report(store, start, end, group)
+                m = money_summary(store, start, end, cfg.load_config().get("clients", {}))
+                lookup = ({c["client"]: c for c in m["by_client"]} if group == "client" else m["by_task"])
+                for series in report["series"]:
+                    hit = lookup.get(series["name"])
+                    series["value"] = hit["amount"] if hit else None
+                    series["notional"] = hit["notional"] if hit else False
+                report["money"] = {"earned": m["earned"], "value": m["value"]}
+                return self._send(200, report)
             if url.path == "/invoice":
                 return self._send(200, invoice_page(_invoice(q)), "text/html; charset=utf-8")
             if url.path in ("/timesheet", "/timesheet.csv"):
@@ -499,7 +509,8 @@ def _clean_client(raw: dict) -> dict:
     rate = None if rate in (None, "") else float(rate)
     if rate is not None and rate < 0:
         raise ValueError("Hourly rate can't be negative.")
-    return {"billing": billing, "rounding": rounding, "block_minutes": block, "rate": rate}
+    return {"billing": billing, "rounding": rounding, "block_minutes": block, "rate": rate,
+            "notional": bool(raw.get("notional"))}
 
 
 def _client_settings(conf: dict, client: str) -> dict:

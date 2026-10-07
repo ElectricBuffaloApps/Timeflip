@@ -101,6 +101,12 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .seg:hover, .seg:focus { opacity: .8; outline: none; }
 .empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
 /* today */
+.today-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; justify-content: space-between; }
+.money-tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.mtile { background: var(--tint); border-left: 3px solid var(--accent); border-radius: 12px; padding: 10px 16px; min-width: 170px; }
+.mtile.value { border-left-color: var(--bar); }
+.mtile .amt { font-family: Sora, Inter, sans-serif; font-size: 24px; font-weight: 700; }
+.mtile .lbl { font-size: 12px; color: var(--ink-2); }
 .hero { font-family: Sora, Inter, sans-serif; font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin-top: 8px; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 28px; margin-top: 18px; }
 @media (max-width: 760px) { .today-grid { grid-template-columns: 1fr; } }
@@ -139,6 +145,7 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     <h2>Today</h2>
     <div class="today-head">
       <div><div class="hero" id="todayTotal">–</div><div class="sub" id="todaySub">tracked today</div></div>
+      <div class="money-tiles" id="todayMoney"></div>
     </div>
     <div class="today-grid">
       <div><h3 class="mini">By task</h3><div id="todayTasks"></div></div>
@@ -212,13 +219,14 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     </div>
     <h2 style="margin-top:20px;font-size:16px">How each client is invoiced</h2>
     <table class="edit">
-      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th><th>Hourly rate (£)</th></tr></thead>
+      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th><th>Hourly rate (£)</th><th>My own business</th></tr></thead>
       <tbody id="clientRows"></tbody>
     </table>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="saveClients">Save invoicing settings</button>
       <span class="sub" id="clientMsg"></span>
     </div>
+    <p class="sub">Tick <b>My own business</b> for your own work (e.g. FYPT): its rate is imagined, so it shows as <b>value</b>, kept separate from money <b>earned</b>, and never appears on timesheets.</p>
     <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
     <div class="row" style="margin-top:16px">
       <label><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label>
@@ -509,17 +517,21 @@ function renderTotals(r) {
   t.replaceChildren();
   if (!r.series.length) return;
   const head = el("tr");
-  head.append(el("th", {}, $("group").value === "client" ? "Client" : "Task"), el("th", { class: "n" }, "Time"),
-              el("th", { class: "n" }, "Share"), el("th", { class: "n" }, "Billable amount"));
+  const byClient = $("group").value === "client";
+  head.append(el("th", {}, byClient ? "Client" : "Task"), el("th", { class: "n" }, "Time"),
+              el("th", { class: "n" }, "Share"), el("th", { class: "n" }, byClient ? "Value" : "Value (before rounding)"));
   t.append(head);
+  const gbp = (v) => `£${v.toFixed(2)}`;
   for (const s of r.series) {
     const tr = el("tr");
+    const val = s.value == null ? "–" : `${gbp(s.value)}${s.notional ? " (imagined)" : ""}`;
     tr.append(el("td", {}, s.name), el("td", { class: "n" }, hm(s.total)),
-              el("td", { class: "n" }, `${Math.round((100 * s.total) / r.total_seconds)}%`), el("td", { class: "n" }, money(s.amounts)));
+              el("td", { class: "n" }, `${Math.round((100 * s.total) / r.total_seconds)}%`), el("td", { class: "n" }, val));
     t.append(tr);
   }
   const foot = el("tr");
-  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(r.total_seconds)), el("th"), el("th", { class: "n" }, money(r.amounts)));
+  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(r.total_seconds)), el("th"),
+              el("th", { class: "n" }, `Earned ${gbp(r.money.earned)}${r.money.value ? ` · own-business ${gbp(r.money.value)}` : ""}`));
   t.append(foot);
 }
 
@@ -574,9 +586,12 @@ function renderClientRows(s) {
     const label = s.clients.includes(name) ? name : `${name} (no tasks with this tag yet)`;
     const rate = el("input", { type: "number", min: "0", step: "0.01", placeholder: "optional", "aria-label": `Hourly rate for ${name}` });
     rate.value = c.rate ?? "";
-    for (const cell of [document.createTextNode(label), style, rounding, block, rate]) { const td = el("td"); td.append(cell); tr.append(td); }
+    const own = el("input", { type: "checkbox", "aria-label": `${name} is my own business (imagined rate)` });
+    own.checked = !!c.notional;
+    const ownLabel = el("label", { class: "sub" }); ownLabel.append(own, document.createTextNode(" imagined rate"));
+    for (const cell of [document.createTextNode(label), style, rounding, block, rate, ownLabel]) { const td = el("td"); td.append(cell); tr.append(td); }
     tr.read = () => [name, { billing: style.value, rounding: rounding.value, block_minutes: Number(block.value) || 15,
-                             rate: rate.value === "" ? null : Number(rate.value) }];
+                             rate: rate.value === "" ? null : Number(rate.value), notional: own.checked }];
     return tr;
   }));
 }
@@ -639,6 +654,18 @@ async function loadToday() {
   const day = new Date(`${t.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const last = t.entries.length ? ` · last entry ended ${t.entries[t.entries.length - 1].end}` : "";
   $("todaySub").textContent = `tracked on ${day}${last}`;
+  const gbp = (v) => `£${v.toFixed(2)}`;
+  const tiles = [];
+  const paid = t.money.by_client.filter((c) => !c.notional), own = t.money.by_client.filter((c) => c.notional);
+  const tile = (cls, amount, label, parts) => {
+    const d = el("div", { class: `mtile ${cls}` });
+    d.append(el("div", { class: "amt" }, gbp(amount)), el("div", { class: "lbl" }, label));
+    if (parts.length > 1) d.append(el("div", { class: "lbl" }, parts.map((c) => `${c.client} ${gbp(c.amount)}`).join(" · ")));
+    return d;
+  };
+  if (paid.length) tiles.push(tile("", t.money.earned, "earned today", paid));
+  if (own.length) tiles.push(tile("value", t.money.value, "own-business value today (imagined)", own));
+  $("todayMoney").replaceChildren(...tiles);
   const max = Math.max(1, ...t.by_task.map((s) => s.total));
   $("todayTasks").replaceChildren(...(t.by_task.length ? t.by_task.map((s) => {
     const row = el("div", { class: "tbar" });
