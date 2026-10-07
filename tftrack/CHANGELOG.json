@@ -1,5 +1,12 @@
 [
   {
+    "version": 11,
+    "changes": [
+      "New Today section at the top: your total for today, time per task, and today's entries.",
+      "The settings tables now scroll sideways in a narrow window instead of spilling off the page."
+    ]
+  },
+  {
     "version": 10,
     "changes": [
       "Edit any entry on a timesheet: change its date, start and end times, or move it to a different task or client.",

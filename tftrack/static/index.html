@@ -80,7 +80,7 @@ summary::marker { color: var(--accent); }
 .state { font-size: 13px; color: var(--ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: center; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 /* limit editor */
-table.edit { width: 100%; border-collapse: collapse; margin-top: 12px; }
+table.edit { width: 100%; border-collapse: collapse; margin-top: 12px; display: block; overflow-x: auto; }
 table.edit th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 13px; padding: 4px 6px; }
 table.edit td { padding: 4px 6px; }
 table.edit select.name { min-width: 160px; max-width: 100%; }
@@ -100,6 +100,18 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .seg:hover, .seg:focus { opacity: .8; outline: none; }
 .empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
+/* today */
+.hero { font-family: Sora, Inter, sans-serif; font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin-top: 8px; }
+.today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 28px; margin-top: 18px; }
+@media (max-width: 760px) { .today-grid { grid-template-columns: 1fr; } }
+h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); margin: 0 0 8px; }
+.tbar { margin-bottom: 12px; }
+.tbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.tbar .top span:last-child { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.tbar .track { margin-top: 4px; }
+.tbar .fill { background: var(--accent); }
+#todayEntries td { padding: 6px 8px; font-size: 14px; }
+.chip { font-size: 11px; color: var(--accent-deep); margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -122,6 +134,17 @@ table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
     <span id="updateText">A new version of TimeFlip Tracker is available.</span>
     <button class="primary" id="updateBtn">Update now</button>
   </div>
+
+  <section id="today">
+    <h2>Today</h2>
+    <div class="today-head">
+      <div><div class="hero" id="todayTotal">–</div><div class="sub" id="todaySub">tracked today</div></div>
+    </div>
+    <div class="today-grid">
+      <div><h3 class="mini">By task</h3><div id="todayTasks"></div></div>
+      <div><h3 class="mini">Entries</h3><table class="totals" id="todayEntries"></table></div>
+    </div>
+  </section>
 
   <section>
     <h2>Limits</h2>
@@ -347,7 +370,7 @@ $("saveLimits").onclick = async () => {
 $("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); loadReport(); };
 $("syncBtn").onclick = async () => {
   $("syncBtn").disabled = true; $("syncBtn").textContent = "Syncing…";
-  try { showState(await api("/api/sync", {})); loadReport(); }
+  try { showState(await api("/api/sync", {})); loadReport(); loadToday(); }
   catch (e) { $("error").classList.remove("hidden"); $("error").textContent = `Couldn't reach TimeFlip: ${e.message}`; }
   $("syncBtn").disabled = false; $("syncBtn").textContent = "Sync now";
 };
@@ -608,13 +631,42 @@ $("updateBtn").onclick = async () => {
   }
 };
 
+/* ---------- today ---------- */
+async function loadToday() {
+  let t;
+  try { t = await api("/api/today"); } catch (_) { return; }
+  $("todayTotal").textContent = hm(t.total_seconds);
+  const day = new Date(`${t.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const last = t.entries.length ? ` · last entry ended ${t.entries[t.entries.length - 1].end}` : "";
+  $("todaySub").textContent = `tracked on ${day}${last}`;
+  const max = Math.max(1, ...t.by_task.map((s) => s.total));
+  $("todayTasks").replaceChildren(...(t.by_task.length ? t.by_task.map((s) => {
+    const row = el("div", { class: "tbar" });
+    const top = el("div", { class: "top" });
+    top.append(el("span", {}, s.name), el("span", {}, hm(s.total)));
+    const track = el("div", { class: "track" }); const fill = el("div", { class: "fill" });
+    fill.style.width = `${(100 * s.total) / max}%`;
+    track.append(fill); row.append(top, track);
+    return row;
+  }) : [el("div", { class: "empty" }, "Nothing tracked yet today.")]));
+  $("todayEntries").replaceChildren(...t.entries.map((e) => {
+    const tr = el("tr");
+    const task = el("td", {}, e.task);
+    if (e.client) task.append(el("span", { class: "sub" }, ` · ${e.client}`));
+    if (e.adjusted || e.manual) task.append(el("span", { class: "chip" }, e.manual ? "added" : "adjusted"));
+    tr.append(el("td", {}, `${e.start}–${e.end}`), task, el("td", { class: "n" }, hm(e.seconds)));
+    return tr;
+  }));
+}
+
 /* ---------- start ---------- */
 (async () => {
   try { showState(await api("/api/state"), true); }
   catch (e) { $("syncInfo").textContent = `Couldn't load: ${e.message}`; }
   loadReport();
   checkForUpdate(false);
-  setInterval(async () => { try { showState(await api("/api/state")); } catch (_) {} }, 60000);
+  loadToday();
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

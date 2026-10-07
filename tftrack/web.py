@@ -367,6 +367,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {**updater.check(), "can_update": updater.is_installed_copy()})
             if url.path == "/api/state":
                 return self._send(200, state())
+            if url.path == "/api/today":
+                store = service.open_store()
+                today = date.today()
+                rows = [r for r in timesheet_rows(store, today, today) if not r["excluded"]]
+                return self._send(200, {
+                    "date": today.isoformat(),
+                    "total_seconds": sum(r["seconds"] for r in rows),
+                    "by_task": build_report(store, today, today, "task")["series"],
+                    "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
+                                for r in rows],
+                })
             if url.path == "/api/report":
                 group = "client" if q.get("group") == "client" else "task"
                 return self._send(200, build_report(service.open_store(), start, end, group))
