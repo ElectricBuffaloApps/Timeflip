@@ -8,136 +8,282 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>
-/* Future You PT brand: dark frame, light content, orange accents, zing green sparingly. */
+/* Future You PT brand: dark frame, light tiles, orange accents, zing green sparingly. */
 :root {
   color-scheme: light;
-  --page: #E5E7EB; --surface: #FFFFFF; --ink: #111827; --ink-2: #6B7280; --muted: #6B7280;
-  --grid: #E5E7EB; --axis: #D1D5DB; --border: #E5E7EB; --tint: #FFF7ED;
-  --frame: #1E2530; --frame-ink: #f1f5f9; --frame-muted: #94a3b8;
-  --accent: #F97316; --accent-deep: #c2410c; --accent-soft: #FED7AA; --zing: #00E676; --zing-deep: #00c853;
-  --bar: #273344; --good: #00c853; --warning: #F97316; --critical: #d03b3b; --other: #9CA3AF;
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --page: #E5E7EB; --surface: #FFFFFF; --sunk: #F3F4F6; --ink: #111827; --ink-2: #6B7280; --muted: #6B7280;
+  --grid: #E5E7EB; --axis: #D1D5DB; --border: #E2E4E9; --tint: #FFF7ED;
+  --frame: #1E2530; --frame-2: #273344; --frame-ink: #f1f5f9; --frame-muted: #94a3b8; --frame-line: #33405280;
+  --hero: #1E2530; --hero-ink: #f8fafc; --hero-muted: #9aa8bc; --hero-track: #2f3b4d;
+  --accent: #F97316; --accent-deep: #c2410c; --accent-soft: #FED7AA; --on-accent: #ffffff;
+  --zing: #00E676; --zing-deep: #00a344;
+  --bar: #273344; --bar-soft: #CBD2DC; --good: #00a344; --good-bg: #E3F7EA; --warning: #c2410c; --warning-bg: #FFEDD5;
+  --critical: #c62f2f; --critical-bg: #FDE4E4; --other: #9CA3AF;
+  --shadow: 0 1px 2px rgba(17,24,39,.05), 0 4px 14px rgba(17,24,39,.06);
   --s1:#F97316; --s2:#2a78d6; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+  --r: 16px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #0f1219; --surface: #1E2530; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
-    --grid: #2a3342; --axis: #2a3342; --border: #2a3342; --tint: #273344;
-    --frame: #1E2530; --bar: #94a3b8; --other: #64748b; --shadow: 0 2px 12px rgba(0,0,0,0.3);
+    --page: #0f1219; --surface: #1a212c; --sunk: #141a23; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
+    --grid: #2a3342; --axis: #334155; --border: #263042; --tint: #273344;
+    --frame: #0b0e14; --frame-2: #1a212c; --frame-line: #26304280;
+    --hero: #273344; --hero-ink: #f8fafc; --hero-muted: #a3b1c4; --hero-track: #3a475b;
+    --accent: #F97316; --accent-deep: #fb923c; --accent-soft: #7c2d12;
+    --bar: #64748b; --bar-soft: #334155; --good: #22c55e; --good-bg: #12301f; --warning: #fb923c; --warning-bg: #3a2414;
+    --critical: #f87171; --critical-bg: #3b1a1a; --other: #64748b;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
     --s1:#ea580c; --s2:#3987e5; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0f1219; --surface: #1E2530; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
-  --grid: #2a3342; --axis: #2a3342; --border: #2a3342; --tint: #273344;
-  --frame: #0f1219; --bar: #94a3b8; --other: #64748b; --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --page: #0f1219; --surface: #1a212c; --sunk: #141a23; --ink: #f1f5f9; --ink-2: #94a3b8; --muted: #94a3b8;
+  --grid: #2a3342; --axis: #334155; --border: #263042; --tint: #273344;
+  --frame: #0b0e14; --frame-2: #1a212c; --frame-line: #26304280;
+  --hero: #273344; --hero-ink: #f8fafc; --hero-muted: #a3b1c4; --hero-track: #3a475b;
+  --accent: #F97316; --accent-deep: #fb923c; --accent-soft: #7c2d12;
+  --bar: #64748b; --bar-soft: #334155; --good: #22c55e; --good-bg: #12301f; --warning: #fb923c; --warning-bg: #3a2414;
+  --critical: #f87171; --critical-bg: #3b1a1a; --other: #64748b;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
   --s1:#ea580c; --s2:#3987e5; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 Inter, -apple-system, BlinkMacSystemFont, sans-serif; }
-h1, h2, h3, button, .label { font-family: Sora, Inter, sans-serif; letter-spacing: -0.02em; }
-.topbar { background: var(--frame); color: var(--frame-ink); border-bottom: 1px solid #2a3342; }
-.topbar-inner { max-width: 1040px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; gap: 12px;
-  align-items: center; justify-content: space-between; }
-.topbar h1 { font-size: 22px; font-weight: 700; margin: 0; }
-.topbar h1 span { color: var(--accent); }
-.topbar .sub { color: var(--frame-muted); }
-.topbar button { background: transparent; color: var(--frame-ink); border-color: var(--frame-muted); }
-.topbar button:hover { border-color: var(--accent); color: var(--accent); }
-main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
-h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
-h2::before { content: ""; display: block; width: 40px; height: 3px; border-radius: 2px; background: var(--accent); margin-bottom: 14px; }
-.sub { color: var(--ink-2); font-size: 13px; }
-section { background: var(--surface); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); }
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-button, select, input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 12px; }
-button { cursor: pointer; font-weight: 600; font-size: 14px; letter-spacing: 0.01em; }
-button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
-button.link { border: none; background: none; color: var(--accent); padding: 4px; }
-button:disabled { opacity: .5; cursor: default; }
-select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-input[type=number] { width: 84px; }
-input[type=checkbox] { accent-color: var(--accent); }
-summary { color: var(--ink); }
-summary::marker { color: var(--accent); }
-.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; background: var(--surface); box-shadow: var(--shadow);
-  border-left: 3px solid var(--critical); }
+html { scroll-padding-top: 120px; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.55 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+h1, h2, h3, button, .lbl, .fig, .hero-fig { font-family: Sora, Inter, -apple-system, sans-serif; }
 .hidden { display: none !important; }
-.banner.news { border-left-color: var(--zing-deep); background: var(--tint); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
-.banner.news ul { margin: 6px 0 0; padding-left: 20px; }
-.banner.update { border-left-color: var(--accent); background: var(--tint); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
-/* limit meters */
-.meters { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
-.meter { border-radius: 12px; padding: 14px 16px; background: var(--tint); border-left: 3px solid var(--accent); }
-.meter .name { font-family: Sora, Inter, sans-serif; font-weight: 600; overflow-wrap: anywhere; }
-.meter .fig { font-family: Sora, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 2px 0 8px; }
-.track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
-.fill { height: 100%; border-radius: 4px; background: var(--bar); }
-.state { font-size: 13px; color: var(--ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: center; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
-/* limit editor */
-table.edit { width: 100%; border-collapse: collapse; margin-top: 12px; display: block; overflow-x: auto; }
-table.edit th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 13px; padding: 4px 6px; }
-table.edit td { padding: 4px 6px; }
-table.edit select.name { min-width: 160px; max-width: 100%; }
-/* chart */
-.chart-wrap { position: relative; margin-top: 16px; }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,.15);
-  border-radius: 8px; padding: 8px 10px; font-size: 13px; min-width: 150px; z-index: 5; }
-.tip b { font-size: 15px; }
-.tip .k { display: inline-block; width: 12px; height: 2px; margin-right: 6px; vertical-align: middle; }
-table.totals { width: 100%; border-collapse: collapse; margin-top: 16px; }
-table.totals th, table.totals td { padding: 8px; border-bottom: 1px solid var(--grid); text-align: left; }
-table.totals th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+
+/* ---------- top bar ---------- */
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--frame); color: var(--frame-ink); border-bottom: 1px solid var(--frame-line); }
+.topbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.brand-mark { width: 34px; height: 34px; border-radius: 10px; background: var(--accent); display: grid; place-items: center; flex: none; }
+.brand h1 { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -0.02em; white-space: nowrap; }
+.brand h1 span { color: var(--accent); }
+.tabs { display: flex; gap: 2px; padding: 3px; background: var(--frame-2); border-radius: 12px; overflow-x: auto; scrollbar-width: none; }
+.tabs button { border: 0; background: transparent; color: var(--frame-muted); padding: 7px 14px; border-radius: 9px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.tabs button:hover { color: var(--frame-ink); }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
+.sync { display: flex; align-items: center; gap: 10px; }
+.pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--frame-muted); white-space: nowrap; }
+.pill .dot { background: var(--zing); box-shadow: 0 0 0 3px #00e67626; }
+.pill.bad .dot { background: var(--critical); box-shadow: none; }
+.topbar .sync button { background: transparent; color: var(--frame-ink); border: 1px solid #475569; padding: 6px 12px; font-size: 13px; }
+.topbar .sync button:hover { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 860px) {
+  .tabs { order: 3; width: 100%; }
+  .tabs button { flex: 1; }
+}
+
+/* ---------- layout ---------- */
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 64px; }
+.board { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.board > * { min-width: 0; }
+.c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; }
+.c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+.stretch { align-self: stretch; }
+.stack { display: grid; gap: 16px; align-content: start; }
+@media (max-width: 1020px) { .c3 { grid-column: span 6; } .c4, .c5, .c7, .c8 { grid-column: span 12; } }
+@media (max-width: 760px) { .board > * { grid-column: span 12 !important; } }
+
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 18px 20px; box-shadow: var(--shadow); }
+.tile-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.tile-head h2 { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.tile-head .meta { font-size: 12px; color: var(--ink-2); }
+.lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: var(--ink-2); }
+.sub { color: var(--ink-2); font-size: 13px; }
+.note { color: var(--ink-2); font-size: 12px; margin: 10px 0 0; }
+.scroll { max-height: 330px; overflow-y: auto; margin-inline: -4px; padding-inline: 4px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.empty { color: var(--ink-2); font-size: 13px; padding: 6px 0; grid-column: 1 / -1; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
-.seg:hover, .seg:focus { opacity: .8; outline: none; }
-.empty { color: var(--ink-2); padding: 12px 0; grid-column: 1 / -1; }
-.target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
-.tcard { background: var(--tint); border-radius: 12px; padding: 12px 16px; border-left: 3px solid var(--accent); }
-.tcard.done { border-left-color: var(--good); }
-.tcard .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; color: var(--ink-2); font-family: Sora, Inter, sans-serif; }
-.tcard .fig { font-family: Sora, Inter, sans-serif; font-size: 20px; font-weight: 700; margin: 2px 0 8px; }
-.tcard .note { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
-.ignored-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 10px; }
-.ignored-grid label { display: flex; gap: 8px; align-items: center; }
-/* today */
-.today-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; justify-content: space-between; }
-.money-tiles { display: flex; flex-wrap: wrap; gap: 12px; }
-.mtile { background: var(--tint); border-left: 3px solid var(--accent); border-radius: 12px; padding: 10px 16px; min-width: 170px; }
-.mtile.value { border-left-color: var(--bar); }
-.mtile .amt { font-family: Sora, Inter, sans-serif; font-size: 24px; font-weight: 700; }
-.mtile .lbl { font-size: 12px; color: var(--ink-2); }
-.hero { font-family: Sora, Inter, sans-serif; font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin-top: 8px; }
-.today-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 28px; margin-top: 18px; }
-@media (max-width: 760px) { .today-grid { grid-template-columns: 1fr; } }
-h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); margin: 0 0 8px; }
+
+/* ---------- controls ---------- */
+button, select, input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 9px; padding: 7px 11px; }
+button { cursor: pointer; font-weight: 600; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+button.primary:hover { background: #c2410c; border-color: #c2410c; }
+button.link { border: none; background: none; color: var(--accent-deep); padding: 4px; }
+button:disabled { opacity: .5; cursor: default; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input[type=number] { width: 84px; }
+input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+label.check { display: inline-flex; gap: 8px; align-items: center; }
+
+/* ---------- banners ---------- */
+.banner { border-radius: var(--r); padding: 12px 16px; margin-bottom: 16px; background: var(--critical-bg); color: var(--ink);
+  border: 1px solid var(--border); display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.banner.news, .banner.update { background: var(--tint); }
+.banner ul { margin: 6px 0 0; padding-left: 20px; max-height: 140px; overflow-y: auto; font-size: 13px; }
+
+/* ---------- hero (today) ---------- */
+.hero { background: var(--hero); color: var(--hero-ink); border: none; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; }
+.hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 180px; height: 180px; border-radius: 50%;
+  background: radial-gradient(circle, #f9731640, transparent 70%); pointer-events: none; }
+.hero .lbl { color: var(--accent); }
+.hero-day { font-size: 13px; color: var(--hero-muted); }
+.hero-fig { font-size: 56px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.hero-fig small { font-size: 0.42em; font-weight: 600; color: var(--hero-muted); letter-spacing: -0.01em; margin-left: 2px; }
+.hero-sub { font-size: 12px; color: var(--hero-muted); }
+.hero-money { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hero-money div { border-top: 1px solid var(--hero-track); padding-top: 8px; }
+.hero-money b { display: block; font-family: Sora, Inter, sans-serif; font-size: 18px; font-variant-numeric: tabular-nums; }
+.hero-money span { font-size: 11px; color: var(--hero-muted); }
+.strip { position: relative; height: 26px; border-radius: 6px; background: var(--hero-track); }
+.strip i { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+.strip i.own { background: var(--hero-muted); }
+.strip-ticks { position: relative; height: 14px; font-size: 10px; color: var(--hero-muted); font-variant-numeric: tabular-nums; }
+.strip-ticks span { position: absolute; transform: translateX(-50%); }
+.strip .now { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--zing); border-radius: 1px; }
+
+/* ---------- KPI tiles ---------- */
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1020px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .kpi .fig { font-size: 22px; } .kpi .fig small { display: block; font-size: 12px; } .hero-fig { font-size: 48px; } }
+@media (max-width: 380px) { .kpis { grid-template-columns: 1fr; } }
+.kpi { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; }
+.kpi .fig { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi .fig small { font-size: 14px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.kpi .foot { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12px; color: var(--ink-2); margin-top: auto; }
+.kpi .track { margin-top: 4px; }
+.kpi .why { font-size: 11px; color: var(--ink-2); }
+
+/* ---------- meters, chips, bars ---------- */
+.track { height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: var(--sunk); color: var(--ink-2); white-space: nowrap; }
+.chip.good { background: var(--good-bg); color: var(--good); }
+.chip.warning { background: var(--warning-bg); color: var(--warning); }
+.chip.critical { background: var(--critical-bg); color: var(--critical); }
+.chip.tag { background: var(--tint); color: var(--accent-deep); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: currentColor; }
+.mlist { display: grid; gap: 14px; }
+.mrow .top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 5px; }
+.mrow .top b { font-weight: 600; overflow-wrap: anywhere; }
+.mrow .top span { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mrow .bottom { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--ink-2); }
+.group-lbl { margin: 18px 0 10px; }
+.group-lbl:first-child { margin-top: 0; }
+
+/* ---------- week chart ---------- */
+.week-tile { display: flex; flex-direction: column; }
+.week { flex: 1; min-height: 190px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.week .col { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; min-width: 0; }
+.week .val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.week .bar { width: min(44px, 100%); border-radius: 6px 6px 2px 2px; background: var(--bar-soft); min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
+.week .bar i { display: block; width: 100%; }
+.week .day { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.week .today .day { color: var(--accent-deep); }
+.week .future .val { color: var(--ink-2); font-weight: 400; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ---------- today lists ---------- */
 .tbar { margin-bottom: 12px; }
-.tbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.tbar:last-child { margin-bottom: 0; }
+.tbar .top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 5px; }
 .tbar .top span:last-child { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
-.tbar .track { margin-top: 4px; }
-.tbar .fill { background: var(--accent); }
-#todayEntries td { padding: 6px 8px; font-size: 14px; }
-.chip { font-size: 11px; color: var(--accent-deep); margin-left: 6px; }
+.tbar .top em { font-style: normal; color: var(--ink-2); }
+.entries { display: grid; gap: 2px; }
+.entry { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 7px 8px; border-radius: 8px; font-size: 13px; }
+.entry:nth-child(odd) { background: var(--sunk); }
+.entry .when { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.entry .what { overflow-wrap: anywhere; }
+.entry .what .chip { margin-left: 6px; }
+.entry .dur { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+
+/* ---------- this month ---------- */
+.month-head { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.month-head h2 { font-size: 15px; margin: 0; }
+.month-sum { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.month-sum div { display: flex; flex-direction: column; }
+.month-sum b { font-family: Sora, Inter, sans-serif; font-size: 18px; font-variant-numeric: tabular-nums; }
+.month-sum span { font-size: 11px; color: var(--ink-2); }
+.clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.ccard { background: var(--sunk); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.ccard .name { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-family: Sora, Inter, sans-serif; font-weight: 700; font-size: 14px; }
+.ccard .fig { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.ccard .meta { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ccard .inc { display: flex; gap: 6px; margin-top: 6px; }
+.ccard .inc input { width: 100%; min-width: 0; flex: 1; }
+
+/* ---------- reports ---------- */
+.chart-wrap { position: relative; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  border-radius: 10px; padding: 8px 10px; font-size: 12px; min-width: 150px; z-index: 5; }
+.tip b { font-size: 14px; }
+.tip .k { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.seg:hover, .seg:focus { opacity: .8; outline: none; }
+.blist { display: grid; gap: 2px; }
+.brow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 8px; }
+.brow:nth-child(odd) { background: var(--sunk); }
+.brow i { width: 10px; height: 10px; border-radius: 3px; }
+.brow .nm { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.brow .nm span { display: block; font-weight: 400; font-size: 11px; color: var(--ink-2); }
+.brow .tm { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+.brow .tm span { display: block; font-size: 11px; color: var(--ink-2); }
+.bfoot { display: flex; justify-content: space-between; gap: 10px; padding: 12px 6px 0; margin-top: 8px; border-top: 1px solid var(--grid); font-size: 13px; flex-wrap: wrap; }
+.bfoot b { font-variant-numeric: tabular-nums; }
+
+/* ---------- timesheets ---------- */
+.form { display: grid; gap: 12px; }
+.form label.field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.form select, .form input { width: 100%; }
+.callout { background: var(--tint); border-radius: 12px; padding: 12px 14px; font-size: 13px; }
+.steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; font-size: 13px; counter-increment: s; }
+.steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; background: var(--tint); color: var(--accent-deep);
+  font: 700 12px Sora, Inter, sans-serif; display: grid; place-items: center; }
+
+/* ---------- settings ---------- */
+.tablewrap { overflow-x: auto; }
+table.edit { width: 100%; border-collapse: collapse; }
+table.edit th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 4px 6px 8px; white-space: nowrap; }
+table.edit td { padding: 4px 6px; }
+table.edit td:first-child { font-weight: 600; }
+table.edit select.name { min-width: 150px; max-width: 100%; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fields label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.fields input { width: 100%; }
+.ignored-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 16px; }
+.ignored-grid label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.ignored-grid label .sub { font-size: 11px; }
+.kv { display: grid; gap: 12px; }
+.kv > div { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.kv .k { font-size: 13px; }
+.kv .v { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
-<div class="topbar">
+<header class="topbar">
   <div class="topbar-inner">
-    <div>
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
       <h1>TimeFlip <span>Tracker</span></h1>
-      <div class="sub" id="syncInfo">Loading…</div>
     </div>
-    <button id="syncBtn">Sync now</button>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
+      <button role="tab" data-tab="reports" aria-selected="false">Reports</button>
+      <button role="tab" data-tab="timesheets" aria-selected="false">Timesheets</button>
+      <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+    <div class="sync">
+      <span class="pill" id="syncPill"><span class="dot"></span><span id="syncInfo">Loading…</span></span>
+      <button id="syncBtn">Sync now</button>
+    </div>
   </div>
-</div>
+</header>
+
 <main>
   <div class="banner hidden" id="error"></div>
   <div class="banner news hidden" id="newsBanner">
@@ -149,147 +295,201 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
     <button class="primary" id="updateBtn">Update now</button>
   </div>
 
-  <section id="today">
-    <h2>Today</h2>
-    <div class="today-head">
-      <div><div class="hero" id="todayTotal">–</div><div class="sub" id="todaySub">tracked today</div></div>
-      <div class="money-tiles" id="todayMoney"></div>
-    </div>
-    <div class="today-grid">
-      <div><h3 class="mini">By task</h3><div id="todayTasks"></div></div>
-      <div><h3 class="mini">Entries</h3><table class="totals" id="todayEntries"></table></div>
-    </div>
-  </section>
+  <!-- ================= DASHBOARD ================= -->
+  <div class="board" data-panel="dashboard" role="tabpanel">
+    <section class="tile hero c4 stretch" id="today" aria-label="Today">
+      <div>
+        <div class="lbl">Today</div>
+        <div class="hero-day" id="todayDay">–</div>
+      </div>
+      <div>
+        <div class="hero-fig" id="todayTotal">–</div>
+        <div class="hero-sub" id="todaySub">tracked today</div>
+      </div>
+      <div>
+        <div class="strip" id="todayStrip" aria-hidden="true"></div>
+        <div class="strip-ticks" id="todayTicks" aria-hidden="true"></div>
+      </div>
+      <div class="hero-money" id="todayMoney"></div>
+    </section>
 
-  <section id="targetsCard" class="hidden">
-    <h2>Targets</h2>
-    <div class="target-grid" id="incomeTargets"></div>
-    <div id="timeTargetsWrap"><h3 class="mini" style="margin-top:20px">Time targets</h3><div class="target-grid" id="timeTargets"></div></div>
-  </section>
+    <div class="kpis c8" id="incomeTargets" aria-label="Money and targets"></div>
 
-  <section id="month">
-    <h2>This month</h2>
-    <div class="row" style="margin-top:8px">
-      <input type="month" id="mMonth" aria-label="Month">
-      <span class="sub">Money and your effective hourly rate per client. Monthly income carries forward until you change it.</span>
+    <section class="tile c8 stretch week-tile">
+      <div class="tile-head"><h2>This week</h2><span class="meta" id="weekMeta"></span></div>
+      <div class="week" id="weekChart"></div>
+      <div class="legend" id="weekLegend"></div>
+    </section>
+
+    <section class="tile c4 stretch">
+      <div class="tile-head"><h2>Targets &amp; limits</h2><button class="link" data-goto="settings">Change</button></div>
+      <div id="timeTargetsWrap"><div class="lbl group-lbl">Time targets</div><div class="mlist" id="timeTargets"></div></div>
+      <div class="lbl group-lbl">Limits <span style="text-transform:none;letter-spacing:0;font-weight:400">· alerts at <span id="levels">80% and 100%</span></span></div>
+      <div class="mlist" id="meters"></div>
+    </section>
+
+    <section class="tile c5 stretch">
+      <div class="tile-head"><h2>Today by task</h2><span class="meta" id="todayTaskMeta"></span></div>
+      <div id="todayTasks"></div>
+    </section>
+
+    <section class="tile c7 stretch">
+      <div class="tile-head"><h2>Today's entries</h2><span class="meta">Edit or exclude on the timesheet</span></div>
+      <div class="scroll"><div class="entries" id="todayEntries"></div></div>
+    </section>
+
+    <section class="tile c12" id="month">
+      <div class="month-head">
+        <div class="row"><h2>Month</h2><input type="month" id="mMonth" aria-label="Month"></div>
+        <div class="month-sum" id="monthSum"></div>
+      </div>
+      <div class="clients" id="monthTable"></div>
+      <p class="note" id="monthMsg">Monthly income carries forward as an estimate until you enter the actual amount.</p>
+    </section>
+  </div>
+
+  <!-- ================= REPORTS ================= -->
+  <div class="board hidden" data-panel="reports" role="tabpanel">
+    <section class="tile c8">
+      <div class="tile-head">
+        <h2>Where your time went</h2>
+        <div class="row">
+          <select id="range" aria-label="Date range">
+            <option value="thisWeek">This week</option>
+            <option value="lastWeek">Last week</option>
+            <option value="thisMonth">This month</option>
+            <option value="lastMonth">Last month</option>
+            <option value="last30">Last 30 days</option>
+            <option value="custom">Choose dates…</option>
+          </select>
+          <select id="group" aria-label="Group by">
+            <option value="task">By task</option>
+            <option value="client">By client</option>
+          </select>
+        </div>
+      </div>
+      <div id="customDates" class="row hidden" style="margin-bottom:12px">
+        <input type="date" id="start" aria-label="From"> to <input type="date" id="end" aria-label="To">
+      </div>
+      <div class="chart-wrap" id="chartWrap"><div class="tip hidden" id="tip"></div></div>
+      <div class="legend" id="legend"></div>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>Breakdown</h2><span class="meta" id="totalsMeta"></span></div>
+      <div id="totals"></div>
+    </section>
+  </div>
+
+  <!-- ================= TIMESHEETS ================= -->
+  <div class="board hidden" data-panel="timesheets" role="tabpanel">
+    <section class="tile c5">
+      <div class="tile-head"><h2>Make a timesheet</h2></div>
+      <div class="form">
+        <label class="field">Client<select id="tsClient"></select></label>
+        <label class="field">Month<input type="month" id="tsMonth"></label>
+        <div class="callout" id="tsHint">Pick a client and a month.</div>
+        <button class="primary" id="tsPdf">Open timesheet</button>
+        <button id="tsCsv">Download spreadsheet (CSV)</button>
+      </div>
+    </section>
+    <section class="tile c7">
+      <div class="tile-head"><h2>On the timesheet</h2></div>
+      <ol class="steps">
+        <li><span><b>Invoice lines</b> at the top: one line per day or week, with <b>Copy</b> buttons for your Revolut Business invoice. They don't print.</span></li>
+        <li><span><b>Edit</b> an entry to change its date, times or task. It's marked “adjusted” with the original time, also on the printed sheet.</span></li>
+        <li><span><b>Exclude</b> anything you won't charge for. It stays on the sheet, crossed out, and isn't counted.</span></li>
+        <li><span><b>+ Add entry</b> for time you didn't track. Added entries are marked “added”.</span></li>
+        <li><span>Press <b>Print</b>, then <b>Save as PDF</b>, for a PDF to send.</span></li>
+      </ol>
+    </section>
+  </div>
+
+  <!-- ================= SETTINGS ================= -->
+  <div class="board hidden" data-panel="settings" role="tabpanel">
+    <section class="tile c12">
+      <div class="tile-head"><h2>How each client is invoiced</h2><span class="meta">Clients are the tags you give tasks in the TimeFlip app</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Client</th><th>Invoiced</th><th>Round each day</th><th>Block (min)</th><th>Hourly rate £</th><th>Own business</th></tr></thead>
+          <tbody id="clientRows"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="primary" id="saveClients">Save invoicing</button>
+        <span class="sub" id="clientMsg"></span>
+      </div>
+      <p class="note"><b>Own business</b> (e.g. FYPTD): an imagined rate, shown as <b>value</b>, kept apart from money earned and never on timesheets. “By the week” covers every week whose Monday is in the month.</p>
+    </section>
+
+    <div class="c6 stack">
+    <section class="tile">
+      <div class="tile-head"><h2>Targets</h2></div>
+      <div class="lbl group-lbl">Income (real money only)</div>
+      <div class="fields">
+        <label>Per day £<input type="number" min="0" step="1" id="tDay"></label>
+        <label>Per week £<input type="number" min="0" step="1" id="tWeek"></label>
+        <label>Per month £<input type="number" min="0" step="1" id="tMonth"></label>
+      </div>
+      <label class="check sub" style="margin-top:10px"><input type="checkbox" id="tWeekends"> Daily target on weekends too</label>
+      <div class="lbl group-lbl">Time per client (hours)</div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Client</th><th>Day</th><th>Week</th><th>Month</th></tr></thead>
+          <tbody id="timeTargetRows"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="primary" id="saveTargets">Save targets</button>
+        <span class="sub" id="targetsMsg"></span>
+      </div>
+      <p class="note">Monthly-income clients count as an estimate from last month until you enter the month's actual income.</p>
+    </section>
+    <section class="tile">
+      <div class="tile-head"><h2>Tasks not counted</h2></div>
+      <p class="sub" style="margin:0 0 12px">Breaks, timers or “off”: left out of every figure.</p>
+      <div class="ignored-grid" id="ignoredList"></div>
+      <div class="actions">
+        <button class="primary" id="saveIgnored">Save</button>
+        <span class="sub" id="ignoredMsg"></span>
+      </div>
+    </section>
+
     </div>
-    <table class="totals" id="monthTable"></table>
-    <p class="sub" id="monthMsg"></p>
-  </section>
 
-  <section>
-    <h2>Limits</h2>
-    <div class="sub">You get a Mac notification at <span id="levels">80% and 100%</span> of each limit.</div>
-    <div class="meters" id="meters"></div>
-    <details id="editLimits" style="margin-top:16px">
-      <summary style="cursor:pointer;font-weight:600">Change limits</summary>
-      <table class="edit">
-        <thead><tr><th>Limit applies to</th><th>Name</th><th>Per day (hours)</th><th>Per week (hours)</th><th></th></tr></thead>
-        <tbody id="limitRows"></tbody>
-      </table>
-      <div class="row" style="margin-top:10px">
+
+    <div class="c6 stack">
+    <section class="tile" id="editLimits">
+      <div class="tile-head"><h2>Limits</h2><span class="meta">Mac notification at each alert level</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Applies to</th><th>Name</th><th>Per day</th><th>Per week</th><th></th></tr></thead>
+          <tbody id="limitRows"></tbody>
+        </table>
+      </div>
+      <div class="actions">
         <button id="addLimit">+ Add a limit</button>
         <button class="primary" id="saveLimits">Save limits</button>
         <span class="sub" id="saveMsg"></span>
       </div>
-      <p class="sub">Clients are the <b>tags</b> you give tasks in the TimeFlip app. Leave a box empty for no limit.</p>
-    </details>
-  </section>
+      <p class="note">Hours. Leave a box empty for no limit.</p>
+    </section>
 
-  <section>
-    <h2>Where your time went</h2>
-    <div class="row" style="margin-top:12px">
-      <select id="range" aria-label="Date range">
-        <option value="thisWeek">This week</option>
-        <option value="lastWeek">Last week</option>
-        <option value="thisMonth">This month</option>
-        <option value="lastMonth">Last month</option>
-        <option value="last30">Last 30 days</option>
-        <option value="custom">Choose dates…</option>
-      </select>
-      <span id="customDates" class="row hidden">
-        <input type="date" id="start" aria-label="From"> to <input type="date" id="end" aria-label="To">
-      </span>
-      <select id="group" aria-label="Group by">
-        <option value="task">By task</option>
-        <option value="client">By client</option>
-      </select>
+    <section class="tile">
+      <div class="tile-head"><h2>App &amp; updates</h2><span class="meta">Version <b id="version">–</b></span></div>
+      <div class="kv">
+        <div><label class="k" for="weekStarts">Weeks start on</label>
+          <select id="weekStarts">
+            <option value="monday">Monday</option><option value="sunday">Sunday</option>
+            <option value="saturday">Saturday</option>
+          </select></div>
+        <div><label class="check k"><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label></div>
+        <div><span class="k">Updates <span class="v" id="updateMsg"></span></span><button id="checkUpdate">Check for updates</button></div>
+        <div><span class="k">App <span class="v" id="appPath">not created yet</span></span><button id="revealApp">Show in Finder</button></div>
+        <div><span class="v">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</span></div>
+      </div>
+    </section>
     </div>
-    <div class="chart-wrap" id="chartWrap"><div class="tip hidden" id="tip"></div></div>
-    <div class="legend" id="legend"></div>
-    <table class="totals" id="totals"></table>
-  </section>
-
-  <section>
-    <h2>Timesheets</h2>
-    <div class="sub" id="tsHint">Pick a client and a month.</div>
-    <div class="row" style="margin-top:12px">
-      <select id="tsClient" aria-label="Client"></select>
-      <input type="month" id="tsMonth" aria-label="Month">
-      <button class="primary" id="tsPdf">Open timesheet (print or save as PDF)</button>
-      <button id="tsCsv">Download spreadsheet (CSV)</button>
-    </div>
-    <p class="sub">On the timesheet, tick <b>Exclude</b> beside any entry you won't charge for. It stays on the sheet, crossed out, and isn't counted.</p>
-  </section>
-
-  <section>
-    <h2>Settings</h2>
-    <div class="row" style="margin-top:8px">
-      <label for="weekStarts">Weeks start on</label>
-      <select id="weekStarts">
-        <option value="monday">Monday</option><option value="sunday">Sunday</option>
-        <option value="saturday">Saturday</option>
-      </select>
-    </div>
-    <h2 style="margin-top:20px;font-size:16px">How each client is invoiced</h2>
-    <table class="edit">
-      <thead><tr><th>Client (tag)</th><th>Invoiced</th><th>Round each day's total</th><th>Block (minutes)</th><th>Hourly rate (£)</th><th>My own business</th></tr></thead>
-      <tbody id="clientRows"></tbody>
-    </table>
-    <div class="row" style="margin-top:10px">
-      <button class="primary" id="saveClients">Save invoicing settings</button>
-      <span class="sub" id="clientMsg"></span>
-    </div>
-    <p class="sub">Tick <b>My own business</b> for your own work (e.g. FYPT): its rate is imagined, so it shows as <b>value</b>, kept separate from money <b>earned</b>, and never appears on timesheets.</p>
-    <p class="sub">“By the week” covers every week whose Monday is in the month, so the last week can run into the next month.</p>
-    <h2 style="margin-top:28px;font-size:16px">Targets</h2>
-    <p class="sub">Income targets count real money only (not imagined values). Monthly-income clients count as an estimate from last month until you enter the month's actual income.</p>
-    <div class="row" style="margin-top:8px">
-      <label>Per day £ <input type="number" min="0" step="1" id="tDay"></label>
-      <label>Per week £ <input type="number" min="0" step="1" id="tWeek"></label>
-      <label>Per month £ <input type="number" min="0" step="1" id="tMonth"></label>
-      <label><input type="checkbox" id="tWeekends"> Daily target on weekends too</label>
-    </div>
-    <table class="edit">
-      <thead><tr><th>Time target for</th><th>Hours per day</th><th>Hours per week</th><th>Hours per month</th></tr></thead>
-      <tbody id="timeTargetRows"></tbody>
-    </table>
-    <div class="row" style="margin-top:10px">
-      <button class="primary" id="saveTargets">Save targets</button>
-      <span class="sub" id="targetsMsg"></span>
-    </div>
-
-    <h2 style="margin-top:28px;font-size:16px">Tasks not counted</h2>
-    <p class="sub">Tick sides you don't want counted, such as breaks, timers or "off". They're left out of Today, charts, limits, This month and timesheets.</p>
-    <div class="ignored-grid" id="ignoredList"></div>
-    <div class="row" style="margin-top:10px">
-      <button class="primary" id="saveIgnored">Save</button>
-      <span class="sub" id="ignoredMsg"></span>
-    </div>
-    <div class="row" style="margin-top:16px">
-      <label><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <span>App: <span id="appPath" class="sub">not created yet</span></span>
-      <button id="revealApp">Show in Finder</button>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <span>Version <b id="version">–</b></span>
-      <button id="checkUpdate">Check for updates</button>
-      <span class="sub" id="updateMsg"></span>
-    </div>
-    <p class="sub">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</p>
-  </section>
+  </div>
 </main>
 
 <script>
@@ -297,6 +497,7 @@ h3.mini { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-s
 const $ = (id) => document.getElementById(id);
 const SLOTS = 8;
 let state = null;
+let weekKpi = null;
 
 function el(tag, attrs = {}, text) {
   const e = document.createElement(tag);
@@ -313,11 +514,25 @@ function hm(seconds) {
   const m = Math.round(seconds / 60);
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
-function money(amounts) {
-  const parts = Object.entries(amounts || {}).map(([sym, v]) => `${sym}${v.toFixed(2)}`);
-  return parts.length ? parts.join(" + ") : "–";
-}
+const hShort = (sec) => { const m = Math.round(sec / 60); return m % 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : `${m / 60}h`; };
+const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const gbp0 = (v) => `£${Math.round(v).toLocaleString("en-GB")}`;
 function iso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function chip(cls, text) { const c = el("span", { class: `chip ${cls}` }); c.append(el("span", { class: "dot" }), document.createTextNode(text)); return c; }
+function meterRow(name, figure, pct, level, stateText, note) {
+  // One compact meter: name and figure on top, bar, then a status chip.
+  const row = el("div", { class: "mrow" });
+  const top = el("div", { class: "top" });
+  top.append(el("b", {}, name), el("span", {}, figure));
+  const track = el("div", { class: "track" }); const fill = el("div", { class: "fill" });
+  fill.style.width = `${Math.min(100, pct)}%`;
+  fill.style.background = { good: "var(--good)", warning: "var(--accent)", critical: "var(--critical)", plain: "var(--bar)" }[level];
+  track.append(fill);
+  const bottom = el("div", { class: "bottom" });
+  bottom.append(chip(level === "plain" ? "" : level, stateText), el("span", {}, note || `${Math.round(pct)}%`));
+  row.append(top, track, bottom);
+  return row;
+}
 
 async function api(path, body) {
   const opts = body === undefined ? {} : {
@@ -329,14 +544,31 @@ async function api(path, body) {
   return data;
 }
 
+/* ---------- tabs ---------- */
+const TABS = ["dashboard", "reports", "timesheets", "settings"];
+function showTab(name) {
+  if (!TABS.includes(name)) name = "dashboard";
+  for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  for (const p of document.querySelectorAll("[data-panel]")) p.classList.toggle("hidden", p.dataset.panel !== name);
+  if (name === "reports") loadReport();
+}
+for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.tab}`); showTab(b.dataset.tab); };
+for (const b of document.querySelectorAll("[data-goto]")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.goto}`); showTab(b.dataset.goto); window.scrollTo(0, 0); };
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+
 /* ---------- state & limits ---------- */
 function showState(s, redraw = false) {
   // redraw: true = every settings table (first load); or just the one that was saved, so unsaved edits elsewhere survive.
   const draw = (part) => redraw === true || redraw === part;
   state = s;
-  const when = s.last_sync ? new Date(s.last_sync).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "never";
-  const skipped = s.unmatched_intervals ? ` · ${s.unmatched_intervals} entries skipped (their task no longer exists)` : "";
-  $("syncInfo").textContent = `Last synced with TimeFlip: ${when}${skipped}`;
+  const d = s.last_sync ? new Date(s.last_sync) : null;
+  const sameDay = d && iso(d) === iso(new Date());
+  const when = !d ? "never" : sameDay ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+                                      : d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  $("syncInfo").textContent = `Synced ${when}`;
+  $("syncPill").title = `Last synced with TimeFlip: ${d ? d.toLocaleString("en-GB") : "never"}` +
+    (s.unmatched_intervals ? ` · ${s.unmatched_intervals} entries skipped (their task no longer exists)` : "");
+  $("syncPill").classList.toggle("bad", !!s.last_error);
   $("error").classList.toggle("hidden", !s.last_error);
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
@@ -360,31 +592,19 @@ function showState(s, redraw = false) {
 
 function renderMeters(status) {
   const box = $("meters");
-  box.replaceChildren();
   if (!status.length) {
-    box.append(el("div", { class: "empty" }, "No limits yet. Open “Change limits” below to add one."));
-    $("editLimits").open = true;
+    const e = el("div", { class: "empty" }, "No limits yet. ");
+    const b = el("button", { class: "link" }, "Add one in Settings");
+    b.onclick = () => { history.replaceState(null, "", "#settings"); showTab("settings"); };
+    e.append(b);
+    box.replaceChildren(e);
     return;
   }
-  for (const s of status) {
-    const m = el("div", { class: "meter" });
-    m.append(el("div", { class: "name" }, s.label));
-    m.append(el("div", { class: "sub" }, s.period === "daily" ? "Today" : "This week"));
-    m.append(el("div", { class: "fig" }, `${hm(s.seconds)} of ${s.hours}h`));
-    const track = el("div", { class: "track" });
-    const fill = el("div", { class: "fill" });
-    fill.style.width = `${Math.min(100, s.percent)}%`;
+  box.replaceChildren(...status.map((s) => {
     const level = s.percent >= 100 ? ["critical", "Limit reached"] : s.percent >= 80 ? ["warning", "Getting close"] : ["good", "On track"];
-    fill.style.background = s.percent >= 80 ? `var(--${level[0]})` : "var(--bar)";
-    track.append(fill);
-    m.append(track);
-    const st = el("div", { class: "state" });
-    const dot = el("span", { class: "dot" });
-    dot.style.background = `var(--${level[0]})`;
-    st.append(dot, document.createTextNode(`${level[1]} · ${Math.round(s.percent)}%`));
-    m.append(st);
-    box.append(m);
-  }
+    return meterRow(`${s.label} · ${s.period === "daily" ? "today" : "this week"}`, `${hm(s.seconds)} / ${s.hours}h`,
+                    s.percent, s.percent >= 80 ? level[0] : "plain", level[1]);
+  }));
 }
 
 function limitRow(lim = {}) {
@@ -427,19 +647,24 @@ $("saveLimits").onclick = async () => {
   } catch (e) { $("saveMsg").textContent = e.message; }
   setTimeout(() => ($("saveMsg").textContent = ""), 4000);
 };
-$("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); loadReport(); };
+$("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); refreshAll(); };
 $("syncBtn").onclick = async () => {
   $("syncBtn").disabled = true; $("syncBtn").textContent = "Syncing…";
-  try { showState(await api("/api/sync", {})); loadReport(); loadToday(); loadTargets(); loadMonth(); }
+  try { showState(await api("/api/sync", {})); refreshAll(); }
   catch (e) { $("error").classList.remove("hidden"); $("error").textContent = `Couldn't reach TimeFlip: ${e.message}`; }
   $("syncBtn").disabled = false; $("syncBtn").textContent = "Sync now";
 };
 
 /* ---------- date range ---------- */
-function rangeDates() {
+function weekStartDate() {
   const t = new Date(); t.setHours(0, 0, 0, 0);
   const startsOn = { monday: 1, sunday: 0, saturday: 6 }[state?.week_starts || "monday"];
-  const weekStart = new Date(t); weekStart.setDate(t.getDate() - ((t.getDay() - startsOn + 7) % 7));
+  const w = new Date(t); w.setDate(t.getDate() - ((t.getDay() - startsOn + 7) % 7));
+  return w;
+}
+function rangeDates() {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const weekStart = weekStartDate();
   const add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   switch ($("range").value) {
     case "thisWeek": return [weekStart, add(weekStart, 6)];
@@ -464,6 +689,7 @@ $("start").onchange = $("end").onchange = $("group").onchange = () => loadReport
 
 /* ---------- report chart ---------- */
 async function loadReport() {
+  if ($("chartWrap").closest("[data-panel]").classList.contains("hidden")) return;  // drawn when the tab opens
   const wrap = $("chartWrap");
   wrap.style.opacity = 0.5;
   try {
@@ -472,7 +698,7 @@ async function loadReport() {
     renderTotals(r);
   } catch (e) {
     wrap.querySelector("svg")?.remove();
-    $("totals").replaceChildren(el("tr", {}, `Couldn't load the report: ${e.message}`));
+    $("totals").replaceChildren(el("div", { class: "empty" }, `Couldn't load the report: ${e.message}`));
   }
   wrap.style.opacity = 1;
 }
@@ -482,7 +708,8 @@ function foldSeries(series) {
   if (series.length <= SLOTS) return series.map((s, i) => ({ ...s, color: `var(--s${i + 1})` }));
   const keep = series.slice(0, SLOTS - 1).map((s, i) => ({ ...s, color: `var(--s${i + 1})` }));
   const rest = series.slice(SLOTS - 1);
-  const other = { name: `Other (${rest.length})`, color: "var(--other)", total: 0, values: rest[0].values.map(() => 0), amounts: {} };
+  const other = { name: `Other (${rest.length})`, color: "var(--other)", total: 0, values: rest[0].values.map(() => 0), amounts: {},
+                  value: rest.some((s) => s.value != null) ? rest.reduce((a, s) => a + (s.value || 0), 0) : null };
   for (const s of rest) { s.values.forEach((v, i) => (other.values[i] += v)); other.total += s.total; }
   return [...keep, other];
 }
@@ -498,7 +725,7 @@ function renderChart(r) {
     svg.append(t); wrap.append(svg); return;
   }
   const series = foldSeries(r.series);
-  const n = r.days.length, W = 960, H = 300, L = 44, B = 28, T = 8;
+  const n = r.days.length, W = 720, H = 300, L = 36, B = 28, T = 8;
   const dayTotals = r.days.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
   const maxH = Math.max(1, Math.ceil(Math.max(...dayTotals) / 3600));
   const step = maxH <= 4 ? 1 : maxH <= 10 ? 2 : maxH <= 24 ? 4 : 10;
@@ -507,16 +734,16 @@ function renderChart(r) {
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Hours tracked per day" });
   for (let h = 0; h <= top; h += step) {
     svg.append(svgEl("line", { x1: L, x2: W, y1: y(h * 3600), y2: y(h * 3600), stroke: h ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
-    const lab = svgEl("text", { x: L - 8, y: y(h * 3600) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 12 });
+    const lab = svgEl("text", { x: L - 8, y: y(h * 3600) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 });
     lab.textContent = `${h}h`; svg.append(lab);
   }
-  const slot = (W - L) / n, bw = Math.max(4, Math.min(48, slot * 0.6));
-  const labelEvery = Math.ceil(n / 14);
+  const slot = (W - L) / n, bw = Math.max(4, Math.min(44, slot * 0.6));
+  const labelEvery = Math.ceil(n / 12);
   r.days.forEach((d, i) => {
     const cx = L + slot * i + slot / 2, x = cx - bw / 2;
     const date = new Date(`${d}T12:00:00`);
     if (i % labelEvery === 0) {
-      const lab = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle", fill: "var(--muted)", "font-size": 12 });
+      const lab = svgEl("text", { x: cx, y: H - 8, "text-anchor": "middle", fill: "var(--muted)", "font-size": 11 });
       lab.textContent = n <= 7 ? date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })
                                : date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       svg.append(lab);
@@ -543,7 +770,7 @@ function renderChart(r) {
         tip.classList.remove("hidden");
         const box = wrap.getBoundingClientRect();
         const px = ev.clientX ?? seg.getBoundingClientRect().right, py = ev.clientY ?? seg.getBoundingClientRect().top;
-        tip.style.left = `${Math.min(px - box.left + 12, box.width - tip.offsetWidth)}px`;
+        tip.style.left = `${Math.max(0, Math.min(px - box.left + 12, box.width - tip.offsetWidth))}px`;
         tip.style.top = `${py - box.top - tip.offsetHeight - 8}px`;
       };
       seg.addEventListener("pointermove", show);
@@ -565,26 +792,64 @@ function roundedTop(x, y, w, h, r) {
 }
 
 function renderTotals(r) {
-  const t = $("totals");
-  t.replaceChildren();
-  if (!r.series.length) return;
-  const head = el("tr");
+  const box = $("totals");
+  $("totalsMeta").textContent = r.total_seconds ? hm(r.total_seconds) : "";
+  if (!r.series.length) { box.replaceChildren(el("div", { class: "empty" }, "Nothing tracked in this period.")); return; }
+  const series = foldSeries(r.series);
   const byClient = $("group").value === "client";
-  head.append(el("th", {}, byClient ? "Client" : "Task"), el("th", { class: "n" }, "Time"),
-              el("th", { class: "n" }, "Share"), el("th", { class: "n" }, byClient ? "Value" : "Value (before rounding)"));
-  t.append(head);
-  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  for (const s of r.series) {
-    const tr = el("tr");
-    const val = s.value == null ? "–" : `${gbp(s.value)}${s.notional ? " (imagined)" : ""}`;
-    tr.append(el("td", {}, s.name), el("td", { class: "n" }, hm(s.total)),
-              el("td", { class: "n" }, `${Math.round((100 * s.total) / r.total_seconds)}%`), el("td", { class: "n" }, val));
-    t.append(tr);
+  const list = el("div", { class: "blist" });
+  for (const s of series) {
+    const row = el("div", { class: "brow" });
+    const sw = el("i"); sw.style.background = s.color;
+    const nm = el("div", { class: "nm" }, s.name);
+    if (s.value != null) nm.append(el("span", {}, `${gbp(s.value)}${s.notional ? " imagined" : ""}${byClient ? "" : " before rounding"}`));
+    const tm = el("div", { class: "tm" }, hm(s.total));
+    tm.append(el("span", {}, `${Math.round((100 * s.total) / r.total_seconds)}%`));
+    row.append(sw, nm, tm);
+    list.append(row);
   }
-  const foot = el("tr");
-  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(r.total_seconds)), el("th"),
-              el("th", { class: "n" }, `Earned ${gbp(r.money.earned)}${r.money.value ? ` · own-business ${gbp(r.money.value)}` : ""}`));
-  t.append(foot);
+  const foot = el("div", { class: "bfoot" });
+  const earned = el("span", {}, "Earned "); earned.append(el("b", {}, gbp(r.money.earned)));
+  foot.append(earned);
+  if (r.money.value) { const v = el("span", { class: "sub" }, "Own business "); v.append(el("b", {}, gbp(r.money.value))); foot.append(v); }
+  box.replaceChildren(list, foot);
+}
+
+/* ---------- this week (dashboard) ---------- */
+async function loadWeek() {
+  const ws = weekStartDate();
+  const we = new Date(ws); we.setDate(ws.getDate() + 6);
+  let r;
+  try { r = await api(`/api/report?start=${iso(ws)}&end=${iso(we)}&group=client`); } catch (_) { return; }
+  const series = foldSeries(r.series);
+  const totals = r.days.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const max = Math.max(3600, ...totals);
+  const today = iso(new Date());
+  const worked = totals.filter((t) => t > 0).length;
+  weekKpi = { seconds: r.total_seconds, days: worked };
+  fillWeekKpi();
+  $("weekMeta").textContent = r.total_seconds
+    ? `${hm(r.total_seconds)} · ${worked} day${worked === 1 ? "" : "s"} worked · ${gbp(r.money.earned)} earned` : "Nothing tracked yet";
+  $("weekChart").replaceChildren(...r.days.map((d, i) => {
+    const date = new Date(`${d}T12:00:00`);
+    const col = el("div", { class: `col${d === today ? " today" : ""}${d > today ? " future" : ""}` });
+    col.title = `${date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}: ${hm(totals[i])}`;
+    const bar = el("div", { class: "bar" });
+    bar.style.height = `${Math.max(2, (100 * totals[i]) / max) * 0.72}%`;
+    for (const s of series) {
+      if (!s.values[i]) continue;
+      const seg = el("i"); seg.style.background = s.color; seg.style.height = `${(100 * s.values[i]) / totals[i]}%`;
+      bar.append(seg);
+    }
+    col.append(el("div", { class: "val" }, totals[i] ? hShort(totals[i]) : d > today ? "" : "–"),
+               bar, el("div", { class: "day" }, date.toLocaleDateString("en-GB", { weekday: "short" })));
+    return col;
+  }));
+  $("weekLegend").replaceChildren(...series.map((s) => {
+    const item = el("span"); const sw = el("i"); sw.style.background = s.color;
+    item.append(sw, document.createTextNode(`${s.name} ${hm(s.total)}`));
+    return item;
+  }));
 }
 
 /* ---------- timesheets ---------- */
@@ -636,23 +901,25 @@ function renderClientRows(s) {
     rounding.value = c.rounding || "none";
     const block = el("input", { type: "number", min: "1", max: "240", step: "1", "aria-label": `Block minutes for ${name}` });
     block.value = c.block_minutes || 15;
-    const label = s.clients.includes(name) ? name : `${name} (no tasks with this tag yet)`;
+    block.style.width = "64px";
+    const label = el("span", {}, name);
+    if (!s.clients.includes(name)) label.append(el("span", { class: "sub" }, " (no tasks yet)"));
     const rate = el("input", { type: "number", min: "0", step: "0.01", placeholder: "optional", "aria-label": `Hourly rate for ${name}` });
     rate.value = c.rate ?? "";
     const own = el("input", { type: "checkbox", "aria-label": `${name} is my own business (imagined rate)` });
     own.checked = !!c.notional;
-    const ownLabel = el("label", { class: "sub" }); ownLabel.append(own, document.createTextNode(" imagined rate"));
-    for (const cell of [document.createTextNode(label), style, rounding, block, rate, ownLabel]) { const td = el("td"); td.append(cell); tr.append(td); }
+    const ownLabel = el("label", { class: "check sub" }); ownLabel.append(own, document.createTextNode("imagined rate"));
+    for (const cell of [label, style, rounding, block, rate, ownLabel]) { const td = el("td"); td.append(cell); tr.append(td); }
     tr.read = () => [name, { billing: style.value, rounding: rounding.value, block_minutes: Number(block.value) || 15,
                              rate: rate.value === "" ? null : Number(rate.value), notional: own.checked }];
     return tr;
   }));
 }
-$("clientRows").addEventListener("input", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing settings."; });
-$("clientRows").addEventListener("change", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing settings."; });
+$("clientRows").addEventListener("input", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing."; });
+$("clientRows").addEventListener("change", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing."; });
 $("saveClients").onclick = async () => {
   const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; loadMonth(); loadToday(); loadTargets(); loadReport(); }
+  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; refreshAll(); }
   catch (e) { $("clientMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("clientMsg").textContent === "Saved.") $("clientMsg").textContent = ""; }, 4000);
 };
@@ -675,7 +942,7 @@ async function checkForUpdate(manual) {
     $("updateBanner").classList.toggle("hidden", !(u.available && u.can_update));
     $("updateText").textContent = `A new version of TimeFlip Tracker is available (version ${u.latest}; you have ${u.current}).`;
     if (manual) $("updateMsg").textContent = u.available
-      ? (u.can_update ? "An update is available: use the Update now button at the top." : "An update is available, but this copy can't update itself.")
+      ? (u.can_update ? "Available: use Update now at the top." : "Available, but this copy can't update itself.")
       : "You're up to date.";
   } catch (e) { if (manual) $("updateMsg").textContent = e.message; }
 }
@@ -702,27 +969,51 @@ $("updateBtn").onclick = async () => {
 };
 
 /* ---------- today ---------- */
+const mins = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+function renderStrip(t) {
+  // The working day as a strip: each entry is a block between its start and end.
+  const ents = t.entries.filter((e) => e.start && e.end && e.start <= e.end);
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const first = Math.min(8 * 60, ...ents.map((e) => mins(e.start)));
+  const last = Math.max(18 * 60, ...ents.map((e) => mins(e.end)), t.date === iso(now) ? nowMin : 0);
+  const from = Math.floor(first / 60) * 60, to = Math.min(24 * 60, Math.ceil(last / 60) * 60);
+  const pos = (m) => `${(100 * (m - from)) / (to - from)}%`;
+  const own = new Set((t.money.by_client || []).filter((c) => c.notional).map((c) => c.client));
+  $("todayStrip").replaceChildren(...ents.map((e) => {
+    const b = el("i", { class: own.has(e.client) ? "own" : "" });
+    b.style.left = pos(mins(e.start)); b.style.width = `calc(${pos(mins(e.end))} - ${pos(mins(e.start))})`;
+    b.title = `${e.start}–${e.end} ${e.task}`;
+    return b;
+  }));
+  if (t.date === iso(now) && nowMin >= from && nowMin <= to) {
+    const n = el("span", { class: "now" }); n.style.left = pos(nowMin); n.title = "Now"; $("todayStrip").append(n);
+  }
+  const span = (to - from) / 60, every = span <= 12 ? 3 : 4;
+  const ticks = [];
+  for (let h = from / 60; h <= to / 60; h += every) { const s = el("span", {}, String(h).padStart(2, "0")); s.style.left = pos(h * 60); ticks.push(s); }
+  $("todayTicks").replaceChildren(...ticks);
+}
 async function loadToday() {
   let t;
   try { t = await api("/api/today"); } catch (_) { return; }
-  $("todayTotal").textContent = hm(t.total_seconds);
-  const day = new Date(`${t.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-  const last = t.entries.length ? ` · last entry ended ${t.entries[t.entries.length - 1].end}` : "";
-  const off = t.not_counted_seconds ? ` · not counted: ${hm(t.not_counted_seconds)}` : "";
-  $("todaySub").textContent = `tracked on ${day}${last}${off}`;
-  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const tiles = [];
+  const [h, m] = hm(t.total_seconds).split(" ");
+  $("todayTotal").replaceChildren(document.createTextNode(h.replace("h", "")), el("small", {}, "h "),
+                                  document.createTextNode(m.replace("m", "")), el("small", {}, "m"));
+  $("todayDay").textContent = new Date(`${t.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const last = t.entries.length ? `last entry ended ${t.entries[t.entries.length - 1].end}` : "nothing tracked yet";
+  const off = t.not_counted_seconds ? ` · ${hm(t.not_counted_seconds)} not counted` : "";
+  $("todaySub").textContent = `${last}${off}`;
+  renderStrip(t);
   const paid = t.money.by_client.filter((c) => !c.notional), own = t.money.by_client.filter((c) => c.notional);
-  const tile = (cls, amount, label, parts) => {
-    const d = el("div", { class: `mtile ${cls}` });
-    d.append(el("div", { class: "amt" }, gbp(amount)), el("div", { class: "lbl" }, label));
-    if (parts.length > 1) d.append(el("div", { class: "lbl" }, parts.map((c) => `${c.client} ${gbp(c.amount)}`).join(" · ")));
+  const cell = (amount, label, parts) => {
+    const d = el("div");
+    d.append(el("b", {}, gbp(amount)), el("span", {}, parts.length > 1 ? `${label} · ${parts.map((c) => `${c.client} ${gbp0(c.amount)}`).join(" · ")}` : label));
     return d;
   };
-  if (paid.length) tiles.push(tile("", t.money.earned, "earned today", paid));
-  if (own.length) tiles.push(tile("value", t.money.value, "own-business value today (imagined)", own));
-  $("todayMoney").replaceChildren(...tiles);
+  $("todayMoney").replaceChildren(cell(t.money.earned, "earned", paid), ...(own.length ? [cell(t.money.value, "own-business value", own)] : []));
   const max = Math.max(1, ...t.by_task.map((s) => s.total));
+  $("todayTaskMeta").textContent = t.by_task.length ? `${t.by_task.length} task${t.by_task.length === 1 ? "" : "s"}` : "";
   $("todayTasks").replaceChildren(...(t.by_task.length ? t.by_task.map((s) => {
     const row = el("div", { class: "tbar" });
     const top = el("div", { class: "top" });
@@ -732,14 +1023,14 @@ async function loadToday() {
     track.append(fill); row.append(top, track);
     return row;
   }) : [el("div", { class: "empty" }, "Nothing tracked yet today.")]));
-  $("todayEntries").replaceChildren(...t.entries.map((e) => {
-    const tr = el("tr");
-    const task = el("td", {}, e.task);
-    if (e.client) task.append(el("span", { class: "sub" }, ` · ${e.client}`));
-    if (e.adjusted || e.manual) task.append(el("span", { class: "chip" }, e.manual ? "added" : "adjusted"));
-    tr.append(el("td", {}, `${e.start}–${e.end}`), task, el("td", { class: "n" }, hm(e.seconds)));
-    return tr;
-  }));
+  $("todayEntries").replaceChildren(...(t.entries.length ? [...t.entries].reverse().map((e) => {
+    const row = el("div", { class: "entry" });
+    const what = el("div", { class: "what" }, e.task);
+    if (e.client) what.append(el("span", { class: "sub" }, ` · ${e.client}`));
+    if (e.adjusted || e.manual) what.append(chip("tag", e.manual ? "added" : "adjusted"));
+    row.append(el("div", { class: "when" }, `${e.start}–${e.end}`), what, el("div", { class: "dur" }, hm(e.seconds)));
+    return row;
+  }) : [el("div", { class: "empty" }, "No entries yet today.")]));
 }
 
 /* ---------- tasks not counted ---------- */
@@ -758,13 +1049,14 @@ $("saveIgnored").onclick = async () => {
   const ids = [...$("ignoredList").querySelectorAll("input:checked")].map((b) => Number(b.value));
   try {
     showState(await api("/api/ignored", { ids }), "ignored");
-    $("ignoredMsg").textContent = "Saved."; loadToday(); loadMonth(); loadReport();
+    $("ignoredMsg").textContent = "Saved."; refreshAll();
   } catch (e) { $("ignoredMsg").textContent = e.message; }
   setTimeout(() => ($("ignoredMsg").textContent = ""), 4000);
 };
 
 /* ---------- targets ---------- */
 const PERIOD_LABEL = { day: "Today", week: "This week", month: "This month" };
+const EARNED_LABEL = { day: "Earned today", week: "Earned this week", month: "Earned this month" };
 function renderTargetSettings(s) {
   const t = s.targets || {};
   const inc = t.income || {};
@@ -778,6 +1070,7 @@ function renderTargetSettings(s) {
     for (const p of ["day", "week", "month"]) {
       const input = el("input", { type: "number", min: "0", step: "0.25", "data-period": p, "aria-label": `${name} hours per ${p}` });
       input.value = cur[p] ?? "";
+      input.style.width = "72px";
       const td = el("td"); td.append(input); tr.append(td);
     }
     return tr;
@@ -797,39 +1090,58 @@ $("saveTargets").onclick = async () => {
   } catch (e) { $("targetsMsg").textContent = e.message; }
   setTimeout(() => ($("targetsMsg").textContent = ""), 4000);
 };
-function targetCard(label, figure, pct, done, note) {
-  const card = el("div", { class: `tcard${done ? " done" : ""}` });
-  card.append(el("div", { class: "lbl" }, label), el("div", { class: "fig" }, figure));
-  if (pct != null) {
+function kpiTile(r) {
+  // Money for one period, with progress towards its target when one is set.
+  const tile = el("section", { class: "tile kpi" });
+  tile.append(el("div", { class: "lbl" }, EARNED_LABEL[r.period]));
+  const fig = el("div", { class: "fig" }, gbp(r.amount));
+  if (r.target && !r.rest_day) fig.append(el("small", {}, ` / ${gbp0(r.target)}`));
+  tile.append(fig);
+  const foot = el("div", { class: "foot" });
+  if (r.rest_day) {
+    foot.append(chip("", "Weekend"), document.createTextNode("No daily target"));
+  } else if (r.target) {
+    const pct = (100 * r.amount) / r.target;
+    const done = r.amount >= r.target;
     const track = el("div", { class: "track" }); const fill = el("div", { class: "fill" });
     fill.style.width = `${Math.min(100, pct)}%`;
     fill.style.background = done ? "var(--good)" : "var(--accent)";
-    track.append(fill); card.append(track);
+    track.append(fill); tile.append(track);
+    foot.append(done ? chip("good", "Target reached") : chip("", `${Math.round(pct)}%`),
+                document.createTextNode(done ? "" : `${gbp(r.target - r.amount)} to go`));
+  } else {
+    foot.append(document.createTextNode("No target set"));
   }
-  if (note) card.append(el("div", { class: "note" }, note));
-  return card;
+  tile.append(foot);
+  if (r.estimated) {
+    const why = el("div", { class: "why" }, `Includes ${gbp(r.estimated)} estimated`);
+    why.title = r.notes.join(" · ");
+    tile.append(why);
+  } else if (r.notes.length) {
+    tile.append(el("div", { class: "why" }, r.notes.join(" · ")));
+  }
+  return tile;
 }
 async function loadTargets() {
   let t;
   try { t = await api("/api/targets"); } catch (_) { return; }
-  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const income = t.income.filter((r) => r.target);
-  $("incomeTargets").replaceChildren(...income.map((r) => {
-    const est = r.estimated ? ` (incl. ${gbp(r.estimated)} estimated)` : "";
-    if (r.rest_day) return targetCard("Today (weekend)", `${gbp(r.amount)} earned`, null, false, `No daily target at weekends${est ? " ·" + est : ""}`);
-    const pct = (100 * r.amount) / r.target;
-    const done = r.amount >= r.target;
-    const note = [done ? "Target reached ✓" : `${gbp(r.target - r.amount)} to go`, ...r.notes].join(" · ") + est;
-    return targetCard(PERIOD_LABEL[r.period], `${gbp(r.amount)} of ${gbp(r.target)}`, pct, done, note);
-  }));
+  const hoursTile = el("section", { class: "tile kpi" });
+  hoursTile.append(el("div", { class: "lbl" }, "Hours this week"), el("div", { class: "fig", id: "kpiWeekHours" }, $("kpiWeekHours")?.textContent || "–"),
+                   el("div", { class: "foot", id: "kpiWeekFoot" }, $("kpiWeekFoot")?.textContent || ""));
+  $("incomeTargets").replaceChildren(...t.income.map(kpiTile), hoursTile);
+  fillWeekKpi();
   $("timeTargets").replaceChildren(...t.time.map((r) => {
     const pct = (100 * r.seconds) / (r.target_hours * 3600);
     const done = pct >= 100;
-    return targetCard(`${r.client} · ${PERIOD_LABEL[r.period].toLowerCase()}`, `${hm(r.seconds)} of ${r.target_hours}h`, pct, done,
-                      done ? "Target reached ✓" : `${hm(r.target_hours * 3600 - r.seconds)} to go`);
+    return meterRow(`${r.client} · ${PERIOD_LABEL[r.period].toLowerCase()}`, `${hm(r.seconds)} / ${r.target_hours}h`, pct,
+                    done ? "good" : "plain", done ? "Reached" : `${hm(r.target_hours * 3600 - r.seconds)} to go`);
   }));
   $("timeTargetsWrap").classList.toggle("hidden", !t.time.length);
-  $("targetsCard").classList.toggle("hidden", !income.length && !t.time.length);
+}
+function fillWeekKpi() {
+  if (!weekKpi || !$("kpiWeekHours")) return;
+  $("kpiWeekHours").textContent = hm(weekKpi.seconds);
+  $("kpiWeekFoot").textContent = weekKpi.days ? `${hm(weekKpi.seconds / weekKpi.days)} a day worked on average` : "Nothing tracked yet";
 }
 
 /* ---------- this month ---------- */
@@ -838,56 +1150,50 @@ async function loadMonth(auto = false) {
   if (!$("mMonth").value) $("mMonth").value = iso(new Date()).slice(0, 7);
   let m;
   try { m = await api(`/api/month?month=${$("mMonth").value}`); } catch (e) { $("monthMsg").textContent = e.message; return; }
-  const gbp = (v) => `£${v.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const t = $("monthTable");
-  const head = el("tr");
-  head.append(el("th", {}, "Client"), el("th", { class: "n" }, "Hours"), el("th", { class: "n" }, "Money"), el("th", { class: "n" }, "Per hour"));
-  t.replaceChildren(head);
-  for (const c of m.clients) {
-    const tr = el("tr");
-    const name = el("td", {}, c.client);
-    let moneyCell, rate;
+  const sum = (big, small) => { const d = el("div"); d.append(el("b", {}, big), el("span", {}, small)); return d; };
+  $("monthSum").replaceChildren(sum(hm(m.seconds), "tracked"), sum(gbp(m.earned), "earned"),
+                                ...(m.value ? [sum(gbp(m.value), "own-business value")] : []));
+  const cards = m.clients.map((c) => {
+    const card = el("div", { class: "ccard" });
+    const name = el("div", { class: "name" }, c.client);
+    const kindChip = { monthly: chip("tag", "monthly"), imagined: chip("", "imagined") }[c.kind];
+    if (kindChip) name.append(kindChip);
+    card.append(name, el("div", { class: "fig" }, hm(c.seconds)));
     if (c.kind === "monthly") {
-      name.append(el("span", { class: "sub" }, " · monthly income"));
-      moneyCell = el("td", { class: "n" });
-      const input = el("input", { type: "number", min: "0", step: "1", placeholder: "income £", "aria-label": `Income from ${c.client} this month` });
-      input.style.width = "110px";
+      card.append(el("div", { class: "meta" }, c.rate != null ? `${gbp(c.amount)} · ${gbp(c.rate)} an hour effective` : (c.amount ? "no hours yet" : "enter this month's income")));
+      const inc = el("div", { class: "inc" });
+      const input = el("input", { type: "number", min: "0", step: "1", placeholder: "Income £", "aria-label": `Income from ${c.client} this month` });
       if (c.amount != null) input.value = c.amount;
       const save = el("button", {}, "Save");
       save.onclick = async () => {
         try { await api("/api/income", { client: c.client, month: m.month, amount: input.value }); loadMonth(); loadTargets(); }
         catch (e) { $("monthMsg").textContent = e.message; }
       };
-      moneyCell.append(input, document.createTextNode(" "), save);
-      if (c.carried) moneyCell.append(el("div", { class: "sub" }, "estimate from last month · enter the actual at month end"));
-      rate = c.rate != null ? `${gbp(c.rate)} effective` : (c.amount ? "no hours yet" : "enter income");
+      inc.append(input, save);
+      card.append(inc);
+      if (c.carried) card.append(el("div", { class: "meta" }, "Estimate from last month: enter the actual at month end."));
     } else if (c.kind === "hourly" || c.kind === "imagined") {
-      moneyCell = el("td", { class: "n" }, `${gbp(c.amount)}${c.kind === "imagined" ? " (imagined)" : ""}`);
-      rate = gbp(c.rate);
+      card.append(el("div", { class: "meta" }, `${gbp(c.amount)}${c.kind === "imagined" ? " value" : ""} · ${gbp(c.rate)} an hour`));
     } else {
-      moneyCell = el("td", { class: "n" }, "–");
-      rate = "no rate set";
+      card.append(el("div", { class: "meta" }, "No rate set"));
     }
-    tr.append(name, el("td", { class: "n" }, hm(c.seconds)), moneyCell, el("td", { class: "n" }, rate));
-    t.append(tr);
-  }
-  const foot = el("tr");
-  foot.append(el("th", {}, "Total"), el("th", { class: "n" }, hm(m.seconds)),
-              el("th", { class: "n" }, `Earned ${gbp(m.earned)}${m.value ? ` · own-business ${gbp(m.value)}` : ""}`), el("th"));
-  t.append(foot);
+    return card;
+  });
+  $("monthTable").replaceChildren(...(cards.length ? cards : [el("div", { class: "empty" }, "Nothing tracked this month.")]));
 }
 $("mMonth").onchange = () => loadMonth();
 
 /* ---------- start ---------- */
+function refreshAll(auto = false) {
+  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport();
+}
 (async () => {
   try { showState(await api("/api/state"), true); }
   catch (e) { $("syncInfo").textContent = `Couldn't load: ${e.message}`; }
-  loadReport();
+  showTab(location.hash.slice(1));
   checkForUpdate(false);
-  loadToday();
-  loadTargets();
-  loadMonth();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); } catch (_) {} }, 60000);
+  refreshAll();
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

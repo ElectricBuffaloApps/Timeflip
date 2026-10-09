@@ -1,5 +1,15 @@
 [
   {
+    "version": 17,
+    "changes": [
+      "New design: a dashboard of small tiles instead of full-width sections, with tabs for Dashboard, Reports, Timesheets and Settings.",
+      "Today tile shows your hours, a strip of when you worked (with a marker for now), money earned and own-business value.",
+      "Earned today, this week and this month tiles each show progress to their target, plus hours this week.",
+      "This week chart: hours per day, coloured by client. Targets and limits sit together in one tile.",
+      "This month shows one card per client; monthly income is entered on its card."
+    ]
+  },
+  {
     "version": 16,
     "changes": [
       "Targets: set income targets per day, week and month, and time targets per client (e.g. FYPTD hours per week) in Settings. Progress shows in a new Targets section.",

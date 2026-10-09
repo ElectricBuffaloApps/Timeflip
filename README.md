@@ -20,9 +20,10 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 
 ## Using it
 
-- **Today:** the top of the page shows your total for today, time per task and today's entries.
+- **Tabs:** **Dashboard** (today, money and targets, this week, limits, this month), **Reports** (charts), **Timesheets** and **Settings**.
+- **Today:** the Dashboard opens with your total for today, a strip showing when you worked, time per task and today's entries.
 - **Tasks not counted:** in Settings, tick sides like breaks, timers or "off" to leave them out of every figure. Today still shows how much time wasn't counted.
-- **Limits:** open **Change limits**, pick a task or a client, and enter the hours per day and/or per week.
+- **Limits:** in **Settings → Limits**, pick a task or a client, and enter the hours per day and/or per week.
 - **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
 - **Charts:** pick a date range and choose **By task** or **By client**.
 - **Timesheets:** pick a client and a month, then click **Open timesheet** (press **Print**, then **Save as PDF** for a PDF) or **Download spreadsheet**.
@@ -36,7 +37,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Not charging for something:** tick **Exclude** beside the entry on the timesheet. It stays on the sheet crossed out, isn't counted in the totals, and stays excluded after future syncs.
 - **Money:** Today and "Where your time went" price time with the hourly rates in Settings (same rounding as invoices; excluded entries left out). Tick **My own business** for clients like FYPT1/FYPTD to give them an imagined rate: shown separately as own-business value, never on timesheets.
 - **This month:** hours, money and per-hour rate for each client. Set a client to **Monthly income** (Settings) for work paid by the month, such as coaching; enter the month's income and it shows your effective hourly rate (income ÷ hours). The amount carries forward until you change it.
-- **Targets:** income targets per day/week/month (real money only) and time targets per client, set in Settings, shown in the Targets section. Monthly-income clients count as an estimate from last month until the month's actual income is entered.
+- **Targets:** income targets per day/week/month (real money only) and time targets per client, set in Settings, shown on the Dashboard. Monthly-income clients count as an estimate from last month until the month's actual income is entered.
 - **Billable amounts** on the plain (hourly) timesheet use the hourly rate and the billable switch you set on each task in the TimeFlip app.
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.
