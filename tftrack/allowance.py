@@ -2,7 +2,7 @@
 
 Each month's pot is the weekly hours shared across its working days (weekdays that aren't England and Wales
 bank holidays), so a week split across two months is shared by its weekdays. Each day's time on the task is
-rounded the same way as the client's invoice, and the pot is rounded down to whole blocks. Hours brought
+rounded the same way as the client's invoice, and the pot is rounded down to whole blocks. A credit (hours charged ahead) is used up by the month's work first. Hours brought
 forward are billed first, then the month's own days in date order; whatever doesn't fit in the pot carries
 into the next month. Spare hours in a quiet week absorb a busy week's; a week marked "charge" has its hours
 over that week's max billed straight away instead.
@@ -94,6 +94,7 @@ def run(store, allowance: dict, conf: dict, year: int, month: int, holidays: set
     carry = round(float(allowance.get("opening_hours") or 0) * 3600)
     per_day = float(allowance["hours_per_week"]) * 3600 / 5
     choices = (conf.get("allowance_choices") or {}).get(task, {})
+    entered = (conf.get("allowance_charged") or {}).get(task, {})   # hours you actually charged, by week
     months = []
     y, m = sy, sm
     while (y, m) <= (year, month):
@@ -117,10 +118,13 @@ def run(store, allowance: dict, conf: dict, year: int, month: int, holidays: set
             w["working_days"] += d.weekday() < 5 and d not in holidays
             w["worked_s"] += worked.get(d.isoformat(), 0)
         brought = carry
-        used_brought = min(brought, pot)
+        used_brought = max(0, min(brought, pot))
         room = pot - used_brought
-        balance = brought
-        days = {}
+        credit = max(0, -brought)   # hours charged ahead: this month's work uses them up before anything is billed
+        b_key = f"{key}|brought"
+        brought_billed = round(entered[b_key] * 3600) if b_key in entered else used_brought
+        balance = brought - brought_billed
+        days, extras = {}, []
         for monday in sorted(weeks):
             w = weeks[monday]
             w["max_s"] = whole(round(per_day * w["working_days"]))
@@ -128,31 +132,55 @@ def run(store, allowance: dict, conf: dict, year: int, month: int, holidays: set
             w["choice"] = "charge" if choices.get(w["key"]) == "charge" and w["over_s"] > 0 else "roll"
             cap_left = w["max_s"]
             w["charged_s"] = 0
+            wdays = []
+            room_before = room
             for n in range(7):
                 d = (monday + timedelta(days=n)).isoformat()
                 if d not in worked:
                     continue
+                wdays.append(d)
                 within = worked[d]
                 if w["choice"] == "charge":   # hours over this week's max are billed now, outside the pot
                     within = min(within, cap_left)
                     cap_left -= within
-                billed = min(room, within)
+                credited = min(credit, within)
+                credit -= credited
+                billed = min(room, within - credited)
                 room -= billed
                 charged = worked[d] - within
                 w["charged_s"] += charged
-                days[d] = {"worked_s": worked[d], "billed_s": billed + charged, "carried_s": within - billed,
-                           "charged_s": charged}
-            balance += w["over_s"] - w["charged_s"]   # charged hours are settled, so they leave the balance
+                days[d] = {"worked_s": worked[d], "billed_s": billed + charged, "carried_s": within - credited - billed,
+                           "charged_s": charged, "credited_s": credited}
+            # What you actually charged for the week, if you've entered it, replaces the suggestion.
+            w["suggested_s"] = sum(days[d]["billed_s"] for d in wdays)
+            w["entered"] = w["key"] in entered
+            w["billed_s"] = round(entered[w["key"]] * 3600) if w["entered"] else w["suggested_s"]
+            delta = w["billed_s"] - w["suggested_s"]
+            if w["entered"]:   # the allowance caps what's charged, so later weeks get whatever this one left
+                room = max(0, room_before - w["billed_s"])
+            for d in reversed(wdays):   # charged less: the latest days carry first
+                if delta >= 0:
+                    break
+                take = min(-delta, days[d]["billed_s"])
+                days[d]["billed_s"] -= take
+                days[d]["carried_s"] += take
+                delta += take
+            if delta > 0 and wdays:     # charged more: shown on the week's last day worked
+                days[wdays[-1]]["billed_s"] += delta
+                days[wdays[-1]]["carried_s"] -= delta
+            elif delta > 0:
+                extras.append({"monday": w["monday"], "seconds": delta})
+            balance += w["worked_s"] - w["billed_s"]
             w["balance_s"] = balance
         worked_s = sum(worked.values())
-        carried_now = sum(v["carried_s"] for v in days.values())
-        carry = brought - used_brought + carried_now
+        carry = balance
         months.append({
             "month": key, "task": task, "client": client, "working_days": days_n,
-            "pot_s": pot, "brought_s": brought, "brought_used_s": used_brought, "worked_s": worked_s,
-            "billed_s": used_brought + worked_s - carried_now,
+            "pot_s": pot, "brought_s": brought, "brought_used_s": brought_billed, "brought_key": b_key,
+            "brought_suggested_s": used_brought, "brought_entered": b_key in entered,
+            "worked_s": worked_s, "billed_s": brought_billed + sum(w["billed_s"] for w in weeks.values()),
             "charged_s": sum(v["charged_s"] for v in days.values()),
-            "carried_s": carry, "days": days, "weeks": [weeks[k] for k in sorted(weeks)],
+            "carried_s": carry, "days": days, "extras": extras, "weeks": [weeks[k] for k in sorted(weeks)],
         })
         y, m = _next_month(y, m)
     return months
@@ -181,10 +209,12 @@ def apply(inv: dict, month: dict) -> dict:
         for d in g["days"]:
             day = month["days"].get(d["date"])
             d["carried_s"] = day["carried_s"] if day else 0
-            d["billed_s"] -= d["carried_s"]
+            d["credited_s"] = day["credited_s"] if day else 0
+            d["billed_s"] -= d["carried_s"] + d["credited_s"]
         g["billed_s"] = sum(d["billed_s"] for d in g["days"])
     inv["allowance"] = month
-    inv["total_billed_s"] = sum(g["billed_s"] for g in inv["groups"]) + month["brought_used_s"]
+    inv["total_billed_s"] = (sum(g["billed_s"] for g in inv["groups"]) + month["brought_used_s"]
+                             + sum(e["seconds"] for e in month.get("extras", [])))
     return inv
 
 
@@ -196,8 +226,8 @@ def summary(store, conf: dict, today: date) -> dict:
         months = run(store, a, conf, today.year, today.month, holidays or set())
         if months:
             m = dict(months[-1])
-            m.pop("days")
-            m.pop("weeks")
+            for k in ("days", "weeks", "extras"):
+                m.pop(k)
             m["hours_per_week"] = a["hours_per_week"]
             out.append(m)
     return {"allowances": out, "holidays_loaded": holidays is not None,

@@ -583,6 +583,37 @@ class AllowanceTest(unittest.TestCase):
                          {"task": "Justin", "weekly_hours": 6.0, "allowance": True, "allowance_start": "2026-09",
                           "opening_hours": 0.0})
 
+    def test_entering_what_was_actually_charged(self):
+        from tftrack import allowance
+        from tftrack.reports import invoice
+        week1 = "2026-09|2026-08-31"
+        # charged 3h instead of the suggested 4h 15m: 2h carries (taken off the latest day)
+        conf = dict(self.conf, allowance_charged={"Justin": {week1: 3}})
+        sep, oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())
+        w = sep["weeks"][0]
+        self.assertEqual((w["suggested_s"], w["billed_s"], w["entered"]), (255 * 60, 3 * 3600, True))
+        self.assertEqual((sep["carried_s"], sep["days"]["2026-09-04"]["billed_s"]), (2 * 3600, 0))
+        self.assertEqual((oct_["brought_used_s"], oct_["billed_s"], oct_["carried_s"]), (2 * 3600, 3 * 3600, 0))
+        # charged 6h for 5h worked: a 1h credit, used up by October's 1h, so October charges nothing more
+        conf = dict(self.conf, allowance_charged={"Justin": {week1: 6}})
+        sep, oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())
+        self.assertEqual(sep["carried_s"], -3600)
+        self.assertEqual((oct_["brought_used_s"], oct_["billed_s"], oct_["carried_s"]), (0, 0, 0))
+        inv = allowance.apply(invoice(self.store, "HTB", 2026, 9, "day", 15, "up"), sep)
+        self.assertEqual(inv["total_billed_s"], 6 * 3600 + 30 * 60)   # 6h Justin + 30m other HTB work
+        inv_oct = allowance.apply(invoice(self.store, "HTB", 2026, 10, "day", 15, "up"), oct_)
+        self.assertEqual(inv_oct["total_billed_s"], 0)
+        # the brought-forward row can be overridden too
+        conf = dict(self.conf, allowance_charged={"Justin": {"2026-10|brought": 0.5}})
+        oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())[1]
+        self.assertEqual((oct_["brought_s"], oct_["brought_used_s"], oct_["carried_s"]), (45 * 60, 30 * 60, 15 * 60))
+        # charging less than suggested leaves room in the allowance for later weeks
+        late = dict(self.conf, allowance_charged={"Justin": {week1: 4}})
+        self.store.add_manual(datetime(2026, 9, 7, 9).astimezone(), 3600, 1)   # 1h on Mon 7 Sep
+        sep = allowance.run(self.store, self.a, late, 2026, 9, set())[0]
+        self.assertEqual(sep["weeks"][1]["suggested_s"], 15 * 60)   # 4h 15m pot - 4h charged
+        self.assertEqual(sep["carried_s"], 5 * 3600 + 3600 - 4 * 3600 - 15 * 60)
+
     def test_bank_holidays_download_and_copy(self):
         from unittest import mock
         from tftrack import allowance, config

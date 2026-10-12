@@ -218,6 +218,9 @@ def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
         y, m = (int(x) for x in inv["month"].split("-"))
         before = date(y, m, 1) - timedelta(days=1)
         add(f"{inv['client']} – {al['task']}, brought forward from {before:%B %Y}", al["brought_used_s"])
+    for e in (al or {}).get("extras", []):
+        add(f"{inv['client']} – {al['task']}, extra hours charged, week commencing "
+            f"{date.fromisoformat(e['monday']):%a %d %b %Y}", e["seconds"])
     for g in inv["groups"]:
         if inv["style"] == "week":
             add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}", g["billed_s"])

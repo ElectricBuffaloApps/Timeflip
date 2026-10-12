@@ -1,5 +1,15 @@
 [
   {
+    "version": 21,
+    "changes": [
+      "Allowance table: a 'Charged (h)' box on each week and on the brought-forward row. It shows a suggestion; type what you actually charged to replace it, or clear it to go back.",
+      "What carries into next month is the hours worked minus the hours you charged.",
+      "Charging more than was worked leaves a credit, which next month's hours use up before anything more is charged.",
+      "Charging less in one week leaves room in the allowance for later weeks that month.",
+      "The table stays open after you change something."
+    ]
+  },
+  {
     "version": 20,
     "changes": [
       "Allowances are now part of Limits: tick 'Bill as allowance' on a task's weekly limit, then choose the month it starts from and any hours brought in. Your existing allowance has moved across.",
