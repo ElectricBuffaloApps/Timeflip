@@ -550,6 +550,20 @@ class AllowanceTest(unittest.TestCase):
         self.assertIn("carried to October 2026", page)
         self.assertIn("Justin allowance, September 2026", page)
 
+    def test_weeks_and_charging_a_week(self):
+        from tftrack import allowance
+        conf = dict(self.conf)
+        sep = allowance.run(self.store, conf["allowances"][0], conf, 2026, 9, set())[0]
+        w = sep["weeks"][0]   # w/c 31 Aug: only Tue 1 – Sun 6 Sep are September's (4 weekdays)
+        self.assertEqual((w["monday"], w["from"], w["working_days"], w["max_s"]), ("2026-08-31", "2026-09-01", 4, 45 * 60))
+        self.assertEqual((w["worked_s"], w["over_s"], w["choice"]), (5 * 3600, 255 * 60, "roll"))
+        # charge that week: its 4h 15m over the week's max is billed now; nothing carries
+        conf["allowance_choices"] = {"Justin": {w["key"]: "charge"}}
+        sep = allowance.run(self.store, conf["allowances"][0], conf, 2026, 9, set())[0]
+        self.assertEqual((sep["charged_s"], sep["carried_s"], sep["billed_s"]), (255 * 60, 0, 5 * 3600))
+        self.assertEqual(sep["days"]["2026-09-04"]["charged_s"], 2 * 3600)   # 3 Sept used the 45m max first
+        self.assertEqual(sep["weeks"][0]["balance_s"], 0)
+
     def test_bank_holidays_download_and_copy(self):
         from unittest import mock
         from tftrack import allowance, config
@@ -568,3 +582,4 @@ class AllowanceTest(unittest.TestCase):
             self.assertTrue((Path(tmp) / "bank-holidays.json").exists())
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(config, "APP_DIR", Path(tmp)):
             self.assertEqual(allowance.bank_holidays(fetch=False), (None, None))
+

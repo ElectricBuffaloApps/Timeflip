@@ -1,5 +1,13 @@
 [
   {
+    "version": 19,
+    "changes": [
+      "The allowance box on the timesheet opens into a week-by-week table showing each week's maximum, Justin's hours, over or under, and the running balance.",
+      "Spare hours in a quiet week still take up a busy week's extra hours. For a week that's over, choose Roll over (the default) or Charge to bill that week's extra hours this month.",
+      "Printed timesheets show the table with your choices, without the buttons."
+    ]
+  },
+  {
     "version": 18,
     "changes": [
       "Monthly allowances (Settings): cap a task, such as Justin, at so many hours a week. Each month's allowance is the weekly hours shared across its working days, so a week split across two months is shared by its weekdays.",

@@ -83,6 +83,10 @@ th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabul
 tr.sub td{font-weight:600;background:#FFF7ED}
 tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;border-bottom:2px solid #D1D5DB}
 .allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
+.allow summary{cursor:pointer} .allow summary::marker{color:#F97316}
+.allow table{margin-top:10px;background:#fff;border-radius:8px} .allow td,.allow th{border-bottom-color:#FED7AA}
+.allow td.over{color:#c2410c;font-weight:600} .allow .hint{margin:10px 0 0;font-size:12px}
+.allow .printed{display:none} .choice{display:inline-flex;gap:12px} input[type=radio]{accent-color:#F97316}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
 .grand td{font-family:Sora,Inter,sans-serif;font-weight:700;border-top:2px solid #1E2530;border-bottom:none;font-size:15px}
@@ -106,7 +110,7 @@ dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5D
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
 dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
-@media print{.bar,label.ex,.lines,button.edit{display:none} body{margin:0}}
+@media print{.bar,label.ex,.lines,button.edit,.allow .hint{display:none} body{margin:0} .allow .printed{display:inline}}
 """
 
 PAGE_SCRIPT = """<script>
@@ -161,6 +165,12 @@ $f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", 
 $f("fDelete").addEventListener("click", () => {
   if (confirm("Delete this added entry?")) act(() => post("/api/entry/delete", {id: editing.id}));
 });
+for (const radio of document.querySelectorAll("input[data-week]")) {
+  radio.addEventListener("change", async () => {
+    try { await post("/api/allowance/choice", {task: radio.dataset.task, key: radio.dataset.week, choice: radio.value}); location.reload(); }
+    catch (e) { alert(e.message); }
+  });
+}
 for (const box of document.querySelectorAll("input[data-id]")) {
   box.addEventListener("change", async () => {
     box.disabled = true;
@@ -289,6 +299,9 @@ def invoice_page(inv: dict) -> str:
             if carried:
                 actual += (f' <span class="tag adj">{esc(al["task"])} {_hm(carried)} over the allowance,'
                            f' carried to {allowance.next_month_name(inv["month"])}</span>')
+            charged = al["days"].get(d["date"], {}).get("charged_s", 0) if al else 0
+            if charged:
+                actual += f' <span class="tag adj">{esc(al["task"])} {_hm(charged)} over the week\'s max, charged</span>'
             rows.append(f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
                         f'<td class=n>{_hm(d["billed_s"])}</td><td class=n>{d["billed_s"] / 3600:.2f} h</td></tr>')
             if week_rows:
@@ -316,11 +329,7 @@ def invoice_page(inv: dict) -> str:
             brought_line = (f'<tr class="grand"><td colspan=3>{esc(al["task"])}: brought forward from '
                             f'{allowance.previous_month_name(inv["month"])}</td><td class=n>{_hm(al["brought_used_s"])}</td>'
                             f'<td class=n>{al["brought_used_s"] / 3600:.2f} h</td></tr>')
-        summary = (f'<div class="allow"><b>{esc(al["task"])} allowance, {month:%B %Y}:</b> '
-                   f'{_hm(al["pot_s"])} ({al["working_days"]} working days) · '
-                   f'brought forward {_hm(al["brought_s"])} · worked {_hm(al["worked_s"])} · '
-                   f'billed {_hm(al["billed_s"])} · carried to {allowance.next_month_name(inv["month"])} '
-                   f'{_hm(al["carried_s"])}</div>')
+        summary = _allowance_table(al, month)
     table = summary + f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}{brought_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
@@ -330,6 +339,41 @@ def invoice_page(inv: dict) -> str:
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"])
+
+
+def _signed(seconds: int) -> str:
+    return ("+" if seconds > 0 else "−" if seconds < 0 else "") + _hm(abs(seconds))
+
+
+def _allowance_table(al: dict, month: date) -> str:
+    """The month's allowance week by week, with a Charge / Roll over choice on each week that's over."""
+    esc = html.escape
+    rows = []
+    for w in al["weeks"]:
+        start, end = date.fromisoformat(w["from"]), date.fromisoformat(w["to"])
+        span = "" if (end - start).days == 6 else f' <span class="tag">({start:%a %d}–{end:%a %d %b} only)</span>'
+        if w["over_s"] > 0:
+            key = esc(w["key"])
+            pick = lambda v, label: (f'<label class="ex"><input type="radio" name="{key}" value="{v}" data-week="{key}" data-task="{esc(al["task"])}"'
+                                     f'{" checked" if w["choice"] == v else ""}> {label}</label>')
+            choice = (f'<span class="choice">{pick("roll", "Roll over")} {pick("charge", "Charge")}</span>'
+                      f'<span class="printed">{"Charged" if w["choice"] == "charge" else "Rolled over"}</span>')
+        else:
+            choice = ""
+        rows.append(f'<tr><td>w/c {date.fromisoformat(w["monday"]):%a %d %b}{span}</td><td class=n>{_hm(w["max_s"])}</td>'
+                    f'<td class=n>{_hm(w["worked_s"])}</td><td class="n{" over" if w["over_s"] > 0 else ""}">'
+                    f'{_signed(w["over_s"])}</td><td class=n>{_signed(w["balance_s"])}</td><td>{choice}</td></tr>')
+    nxt = allowance.next_month_name(al["month"])
+    charged = f' · charged {_hm(al["charged_s"])}' if al["charged_s"] else ""
+    return f"""<details class="allow"><summary><b>{esc(al["task"])} allowance, {month:%B %Y}:</b>
+max {_hm(al["pot_s"])} ({al["working_days"]} working days) · brought forward {_hm(al["brought_s"])} ·
+worked {_hm(al["worked_s"])} · billed {_hm(al["billed_s"])}{charged} · <b>carried to {nxt} {_hm(al["carried_s"])}</b></summary>
+<table><thead><tr><th>Week</th><th class=n>Max</th><th class=n>{esc(al["task"])}</th><th class=n>Over / under</th>
+<th class=n>Running balance</th><th>Hours over</th></tr></thead><tbody>
+<tr><td colspan=4>Brought forward</td><td class=n>{_signed(al["brought_s"])}</td><td></td></tr>{"".join(rows)}</tbody></table>
+<p class="hint">Spare hours in a quiet week take up a busy week's extra hours. <b>Roll over</b> leaves a week's extra hours
+to that, and anything still over at the end of the month carries into {nxt}. <b>Charge</b> bills that week's extra hours this month.</p>
+</details>"""
 
 
 def _lines_panel(inv: dict) -> str:
@@ -582,6 +626,22 @@ class Handler(BaseHTTPRequestHandler):
                     conf = cfg.load_config()
                     conf["allowances"] = [_clean_allowance(a) for a in body.get("allowances", []) if a.get("task")]
                     cfg.save_config(conf)
+                elif self.path == "/api/allowance/choice":
+                    key, choice = str(body.get("key") or ""), body.get("choice")
+                    if choice not in ("roll", "charge") or "|" not in key:
+                        raise ValueError("Choose Roll over or Charge.")
+                    conf = cfg.load_config()
+                    tasks = [a["task"] for a in conf.get("allowances") or []]
+                    task = body.get("task") or (tasks[0] if len(tasks) == 1 else None)
+                    if task not in tasks:
+                        raise ValueError("Unknown allowance.")
+                    picks = conf.setdefault("allowance_choices", {}).setdefault(task, {})
+                    if choice == "charge":
+                        picks[key] = "charge"
+                    else:
+                        picks.pop(key, None)
+                    cfg.save_config(conf)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())
                 else:
