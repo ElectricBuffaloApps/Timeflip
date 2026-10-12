@@ -35,6 +35,24 @@ def load_config() -> dict:
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH) as f:
             conf.update(json.load(f))
+    return migrate(conf)
+
+
+def migrate(conf: dict) -> dict:
+    """Older versions kept monthly allowances apart from limits; they're now a tick box on a task's limit."""
+    legacy = conf.pop("allowances", None)
+    if not legacy:
+        return conf
+    limits = [dict(l) for l in conf.get("limits") or []]
+    for a in legacy:
+        fields = {"weekly_hours": float(a["hours_per_week"]), "allowance": True,
+                  "allowance_start": a["start"], "opening_hours": float(a.get("opening_hours") or 0)}
+        match = next((l for l in limits if (l.get("task") or "").lower() == a["task"].lower()), None)
+        if match:
+            match.update(fields)
+        else:
+            limits.append({"task": a["task"], **fields})
+    conf["limits"] = limits
     return conf
 
 

@@ -508,22 +508,23 @@ class AllowanceTest(unittest.TestCase):
             {"id": 4, "taskId": 1, "startedAt": at(10, 5, 9), "duration": 3600},
         ], tasks=tasks)
         self.conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15}},
-                     "allowances": [{"task": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}]}
+                     "limits": [{"task": "Justin", "weekly_hours": 1, "allowance": True, "allowance_start": "2026-09"}]}
+        self.a = {"task": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}
 
     def test_pot_and_carry_over(self):
         from datetime import date
         from tftrack import allowance
-        sep, oct_ = allowance.run(self.store, self.conf["allowances"][0], self.conf, 2026, 10, set())
+        sep, oct_ = allowance.run(self.store, self.a, self.conf, 2026, 10, set())
         # 22 weekdays x 12 minutes = 4h 24m, rounded down to whole 15-minute blocks: 4h 15m
         self.assertEqual((sep["working_days"], sep["pot_s"]), (22, 255 * 60))
         self.assertEqual((sep["worked_s"], sep["billed_s"], sep["carried_s"]), (5 * 3600, 255 * 60, 45 * 60))
         self.assertEqual(sep["days"]["2026-09-04"]["carried_s"], 45 * 60)   # later days carry first
         self.assertEqual((oct_["brought_s"], oct_["billed_s"], oct_["carried_s"]), (45 * 60, 105 * 60, 0))
         # a bank holiday shrinks the pot
-        sep_h = allowance.run(self.store, self.conf["allowances"][0], self.conf, 2026, 9, {date(2026, 9, 7)})[0]
+        sep_h = allowance.run(self.store, self.a, self.conf, 2026, 9, {date(2026, 9, 7)})[0]
         self.assertEqual((sep_h["working_days"], sep_h["pot_s"]), (21, 240 * 60))
         # hours brought in at the start are billed first
-        a = dict(self.conf["allowances"][0], opening_hours=1)
+        a = dict(self.a, opening_hours=1)
         sep_o = allowance.run(self.store, a, self.conf, 2026, 9, set())[0]
         self.assertEqual((sep_o["brought_used_s"], sep_o["carried_s"]), (3600, 105 * 60))
 
@@ -553,16 +554,34 @@ class AllowanceTest(unittest.TestCase):
     def test_weeks_and_charging_a_week(self):
         from tftrack import allowance
         conf = dict(self.conf)
-        sep = allowance.run(self.store, conf["allowances"][0], conf, 2026, 9, set())[0]
+        sep = allowance.run(self.store, self.a, conf, 2026, 9, set())[0]
         w = sep["weeks"][0]   # w/c 31 Aug: only Tue 1 – Sun 6 Sep are September's (4 weekdays)
         self.assertEqual((w["monday"], w["from"], w["working_days"], w["max_s"]), ("2026-08-31", "2026-09-01", 4, 45 * 60))
         self.assertEqual((w["worked_s"], w["over_s"], w["choice"]), (5 * 3600, 255 * 60, "roll"))
         # charge that week: its 4h 15m over the week's max is billed now; nothing carries
         conf["allowance_choices"] = {"Justin": {w["key"]: "charge"}}
-        sep = allowance.run(self.store, conf["allowances"][0], conf, 2026, 9, set())[0]
+        sep = allowance.run(self.store, self.a, conf, 2026, 9, set())[0]
         self.assertEqual((sep["charged_s"], sep["carried_s"], sep["billed_s"]), (255 * 60, 0, 5 * 3600))
         self.assertEqual(sep["days"]["2026-09-04"]["charged_s"], 2 * 3600)   # 3 Sept used the 45m max first
         self.assertEqual(sep["weeks"][0]["balance_s"], 0)
+
+    def test_allowance_is_a_ticked_task_limit(self):
+        from tftrack import allowance, config, web
+        self.assertEqual(allowance.configured(self.conf), [self.a])
+        # older configs kept allowances separately: they move onto the task's limit
+        old = {"limits": [{"task": "Justin", "daily_hours": 2, "weekly_hours": 8}, {"client": "HTB", "weekly_hours": 20}],
+               "allowances": [{"task": "justin", "hours_per_week": 6, "start": "2026-09", "opening_hours": 1.5}]}
+        new = config.migrate(old)
+        self.assertNotIn("allowances", new)
+        self.assertEqual(new["limits"][0], {"task": "Justin", "daily_hours": 2, "weekly_hours": 6.0, "allowance": True,
+                                            "allowance_start": "2026-09", "opening_hours": 1.5})
+        self.assertEqual(allowance.configured(old)[0]["hours_per_week"], 6.0)
+        with self.assertRaises(ValueError):   # a client limit can't be an allowance
+            web._clean_limit({"client": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-09"})
+        self.assertEqual(web._clean_limit({"task": "Justin", "weekly_hours": "6", "allowance": True,
+                                           "allowance_start": "2026-09", "opening_hours": ""}),
+                         {"task": "Justin", "weekly_hours": 6.0, "allowance": True, "allowance_start": "2026-09",
+                          "opening_hours": 0.0})
 
     def test_bank_holidays_download_and_copy(self):
         from unittest import mock

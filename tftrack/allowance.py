@@ -158,9 +158,17 @@ def run(store, allowance: dict, conf: dict, year: int, month: int, holidays: set
     return months
 
 
+def configured(conf: dict) -> list[dict]:
+    """Allowances are task limits with "Bill as a monthly allowance" ticked."""
+    return [{"task": l["task"], "hours_per_week": l["weekly_hours"], "start": l["allowance_start"],
+             "opening_hours": l.get("opening_hours") or 0}
+            for l in cfg.migrate(dict(conf)).get("limits") or []
+            if l.get("allowance") and l.get("task") and l.get("weekly_hours") and l.get("allowance_start")]
+
+
 def for_month(store, conf: dict, client: str, year: int, month: int, holidays: set[date]) -> dict | None:
     """The allowance month for a client's invoice, if one of its tasks has an allowance."""
-    for a in conf.get("allowances") or []:
+    for a in configured(conf):
         months = run(store, a, conf, year, month, holidays)
         if months and months[-1]["client"].lower() == client.lower():
             return months[-1]
@@ -184,7 +192,7 @@ def summary(store, conf: dict, today: date) -> dict:
     """This month's position for every allowance, for the dashboard and Settings."""
     holidays, updated = bank_holidays()
     out = []
-    for a in conf.get("allowances") or []:
+    for a in configured(conf):
         months = run(store, a, conf, today.year, today.month, holidays or set())
         if months:
             m = dict(months[-1])

@@ -1,5 +1,12 @@
 [
   {
+    "version": 20,
+    "changes": [
+      "Allowances are now part of Limits: tick 'Bill as allowance' on a task's weekly limit, then choose the month it starts from and any hours brought in. Your existing allowance has moved across.",
+      "Limits now have a full-width box in Settings."
+    ]
+  },
+  {
     "version": 19,
     "changes": [
       "The allowance box on the timesheet opens into a week-by-week table showing each week's maximum, Justin's hours, over or under, and the running balance.",

@@ -67,7 +67,6 @@ def state() -> dict:
         "targets": conf.get("targets", {}),
         "clients": sorted({t["tag"] for t in tasks if t["tag"]}),
         "client_billing": conf.get("clients", {}),
-        "allowances": conf.get("allowances", []),
         "status": status,
     }
 
@@ -622,16 +621,12 @@ class Handler(BaseHTTPRequestHandler):
                         "hours": hours,
                     }
                     cfg.save_config(conf)
-                elif self.path == "/api/allowances":
-                    conf = cfg.load_config()
-                    conf["allowances"] = [_clean_allowance(a) for a in body.get("allowances", []) if a.get("task")]
-                    cfg.save_config(conf)
                 elif self.path == "/api/allowance/choice":
                     key, choice = str(body.get("key") or ""), body.get("choice")
                     if choice not in ("roll", "charge") or "|" not in key:
                         raise ValueError("Choose Roll over or Charge.")
                     conf = cfg.load_config()
-                    tasks = [a["task"] for a in conf.get("allowances") or []]
+                    tasks = [a["task"] for a in allowance.configured(conf)]
                     task = body.get("task") or (tasks[0] if len(tasks) == 1 else None)
                     if task not in tasks:
                         raise ValueError("Unknown allowance.")
@@ -710,25 +705,6 @@ def _invoice(q: dict) -> dict:
     return inv
 
 
-def _clean_allowance(raw: dict) -> dict:
-    try:
-        hours = float(raw.get("hours_per_week"))
-    except (TypeError, ValueError):
-        raise ValueError("Enter the allowance's hours per week.")
-    if hours <= 0:
-        raise ValueError("Allowance hours must be more than zero.")
-    try:
-        y, m = (int(x) for x in str(raw.get("start") or "").split("-"))
-        date(y, m, 1)
-    except ValueError:
-        raise ValueError("Choose the month the allowance starts.")
-    opening = raw.get("opening_hours")
-    opening = 0.0 if opening in (None, "") else float(opening)
-    if opening < 0:
-        raise ValueError("Hours brought in can't be negative.")
-    return {"task": str(raw["task"]).strip(), "hours_per_week": hours, "start": f"{y}-{m:02d}", "opening_hours": opening}
-
-
 def _clean_limit(raw: dict) -> dict:
     out = {}
     for key in ("task", "client", "label"):
@@ -740,6 +716,19 @@ def _clean_limit(raw: dict) -> dict:
             if hours <= 0:
                 raise ValueError("Hours must be more than zero.")
             out[key] = hours
+    if raw.get("allowance"):
+        if not out.get("task") or not out.get("weekly_hours"):
+            raise ValueError("A monthly allowance needs a task (not a client) and hours per week.")
+        try:
+            y, m = (int(x) for x in str(raw.get("allowance_start") or "").split("-"))
+            date(y, m, 1)
+        except ValueError:
+            raise ValueError("Choose the month the allowance starts.")
+        opening = raw.get("opening_hours")
+        opening = 0.0 if opening in (None, "") else float(opening)
+        if opening < 0:
+            raise ValueError("Hours brought in can't be negative.")
+        out.update(allowance=True, allowance_start=f"{y}-{m:02d}", opening_hours=opening)
     return out
 
 

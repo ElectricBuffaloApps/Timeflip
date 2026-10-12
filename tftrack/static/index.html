@@ -253,6 +253,9 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .fields label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .fields input { width: 100%; }
+.allow-cell { display: grid; gap: 6px; min-width: 150px; }
+.allow-extra { display: grid; gap: 6px; }
+.allow-extra label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 .ignored-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 16px; }
 .ignored-grid label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
 .ignored-grid label .sub { font-size: 11px; }
@@ -323,7 +326,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
     <section class="tile c4 stretch">
       <div class="tile-head"><h2>Targets &amp; limits</h2><button class="link" data-goto="settings">Change</button></div>
-      <div id="allowWrap" class="hidden"><div class="lbl group-lbl">Monthly allowances</div><div class="mlist" id="allowances"></div></div>
+      <div id="allowWrap" class="hidden"><div class="lbl group-lbl">Allowances</div><div class="mlist" id="allowances"></div></div>
       <div id="timeTargetsWrap"><div class="lbl group-lbl">Time targets</div><div class="mlist" id="timeTargets"></div></div>
       <div class="lbl group-lbl">Limits <span style="text-transform:none;letter-spacing:0;font-weight:400">· alerts at <span id="levels">80% and 100%</span></span></div>
       <div class="mlist" id="meters"></div>
@@ -422,6 +425,24 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <p class="note"><b>Own business</b> (e.g. FYPTD): an imagined rate, shown as <b>value</b>, kept apart from money earned and never on timesheets. “By the week” covers every week whose Monday is in the month.</p>
     </section>
 
+    <section class="tile c12" id="editLimits">
+      <div class="tile-head"><h2>Limits</h2><span class="meta">Mac notification at each alert level</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Applies to</th><th>Name</th><th>Per day</th><th>Per week</th><th>Monthly allowance</th><th></th></tr></thead>
+          <tbody id="limitRows"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button id="addLimit">+ Add a limit</button>
+        <button class="primary" id="saveLimits">Save limits</button>
+        <span class="sub" id="saveMsg"></span>
+      </div>
+      <p class="note">Hours. Leave a box empty for no limit. Tick <b>Bill as allowance</b> on a task's weekly limit to cap what's invoiced: each month's allowance is the weekly hours shared across its working days, and hours over it carry into the next month (or you charge them, week by week, on the timesheet).</p>
+      <p class="note" id="holidayNote">Bank holidays (England and Wales) aren't counted.</p>
+    </section>
+
+
     <div class="c6 stack">
     <section class="tile">
       <div class="tile-head"><h2>Targets</h2></div>
@@ -445,6 +466,11 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
       <p class="note">Monthly-income clients count as an estimate from last month until you enter the month's actual income.</p>
     </section>
+
+    </div>
+
+
+    <div class="c6 stack">
     <section class="tile">
       <div class="tile-head"><h2>Tasks not counted</h2></div>
       <p class="sub" style="margin:0 0 12px">Breaks, timers or “off”: left out of every figure.</p>
@@ -453,43 +479,6 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <button class="primary" id="saveIgnored">Save</button>
         <span class="sub" id="ignoredMsg"></span>
       </div>
-    </section>
-
-    </div>
-
-
-    <div class="c6 stack">
-    <section class="tile" id="editLimits">
-      <div class="tile-head"><h2>Limits</h2><span class="meta">Mac notification at each alert level</span></div>
-      <div class="tablewrap">
-        <table class="edit">
-          <thead><tr><th>Applies to</th><th>Name</th><th>Per day</th><th>Per week</th><th></th></tr></thead>
-          <tbody id="limitRows"></tbody>
-        </table>
-      </div>
-      <div class="actions">
-        <button id="addLimit">+ Add a limit</button>
-        <button class="primary" id="saveLimits">Save limits</button>
-        <span class="sub" id="saveMsg"></span>
-      </div>
-      <p class="note">Hours. Leave a box empty for no limit.</p>
-    </section>
-
-    <section class="tile">
-      <div class="tile-head"><h2>Monthly allowances</h2></div>
-      <p class="sub" style="margin:0 0 12px">A task capped at so many hours a week. Each month's allowance is the weekly hours shared across its working days; hours over it are billed in the next month with room.</p>
-      <div class="tablewrap">
-        <table class="edit">
-          <thead><tr><th>Task</th><th>Hours a week</th><th>From</th><th>Brought in (h)</th><th></th></tr></thead>
-          <tbody id="allowRows"></tbody>
-        </table>
-      </div>
-      <div class="actions">
-        <button id="addAllow">+ Add an allowance</button>
-        <button class="primary" id="saveAllow">Save allowances</button>
-        <span class="sub" id="allowMsg"></span>
-      </div>
-      <p class="note" id="holidayNote">Bank holidays (England and Wales) aren't counted.</p>
     </section>
 
     <section class="tile">
@@ -601,7 +590,6 @@ function showState(s, redraw = false) {
   if (draw("clients")) renderClientRows(s);
   if (draw("ignored")) renderIgnored(s);
   if (draw("targets")) renderTargetSettings(s);
-  if (draw("allowances")) renderAllowRows(s.allowances || []);
   const cur = $("tsClient").value;
   $("tsClient").replaceChildren(el("option", { value: "" }, "All clients"),
     ...s.clients.map((c) => el("option", { value: c }, c)), el("option", { value: "No client" }, "No client"));
@@ -647,10 +635,34 @@ function limitRow(lim = {}) {
   daily.value = lim.daily_hours ?? "";
   const weekly = el("input", { type: "number", min: "0.25", step: "0.25", "aria-label": "Hours per week" });
   weekly.value = lim.weekly_hours ?? "";
+  // Bill as a monthly allowance: only for a task with hours per week.
+  const allow = el("input", { type: "checkbox", "aria-label": "Bill as a monthly allowance" });
+  allow.checked = !!lim.allowance;
+  const allowLabel = el("label", { class: "check sub" }); allowLabel.append(allow, document.createTextNode("Bill as allowance"));
+  const from = el("input", { type: "month", "aria-label": "Allowance starts" });
+  from.value = lim.allowance_start || iso(new Date()).slice(0, 7);
+  const opening = el("input", { type: "number", min: "0", step: "0.25", placeholder: "0", "aria-label": "Hours brought in" });
+  opening.value = lim.opening_hours || "";
+  opening.style.width = "64px";
+  const extra = el("div", { class: "allow-extra" });
+  const fromLabel = el("label", { class: "sub" }, "from "); fromLabel.append(from);
+  const openLabel = el("label", { class: "sub" }, "brought in "); openLabel.append(opening, document.createTextNode(" h"));
+  extra.append(fromLabel, openLabel);
+  const allowCell = el("div", { class: "allow-cell" }); allowCell.append(allowLabel, extra);
+  const sync = () => {
+    const ok = kind.value === "task";
+    allowLabel.classList.toggle("hidden", !ok);
+    if (!ok) allow.checked = false;
+    extra.classList.toggle("hidden", !allow.checked);
+  };
+  allow.onchange = sync;
+  kind.addEventListener("change", sync);
+  sync();
   const del = el("button", { class: "link", "aria-label": "Remove limit" }, "Remove");
   del.onclick = () => tr.remove();
-  for (const c of [kind, name, daily, weekly, del]) { const td = el("td"); td.append(c); tr.append(td); }
-  tr.read = () => ({ [kind.value]: name.value, daily_hours: daily.value, weekly_hours: weekly.value });
+  for (const c of [kind, name, daily, weekly, allowCell, del]) { const td = el("td"); td.append(c); tr.append(td); }
+  tr.read = () => ({ [kind.value]: name.value, daily_hours: daily.value, weekly_hours: weekly.value,
+                     allowance: allow.checked, allowance_start: from.value, opening_hours: opening.value });
   return tr;
 }
 function renderLimitRows(limits) {
@@ -662,7 +674,7 @@ $("saveLimits").onclick = async () => {
     .filter((l) => (l.task || l.client) && (l.daily_hours || l.weekly_hours));
   try {
     showState(await api("/api/limits", { limits }), "limits");
-    $("saveMsg").textContent = "Saved.";
+    $("saveMsg").textContent = "Saved."; loadAllowances();
   } catch (e) { $("saveMsg").textContent = e.message; }
   setTimeout(() => ($("saveMsg").textContent = ""), 4000);
 };
@@ -1164,34 +1176,6 @@ function fillWeekKpi() {
 }
 
 /* ---------- monthly allowances ---------- */
-function allowRow(a = {}) {
-  const tr = el("tr");
-  const task = el("select", { class: "name", "aria-label": "Task" });
-  const opts = (state.task_list || []).map((t) => el("option", { value: t.name }, t.client ? `${t.name} (${t.client})` : t.name));
-  if (a.task && !(state.task_list || []).some((t) => t.name === a.task)) opts.unshift(el("option", { value: a.task }, `${a.task} (not found in TimeFlip)`));
-  task.replaceChildren(...opts);
-  if (a.task) task.value = a.task;
-  const hours = el("input", { type: "number", min: "0.25", step: "0.25", "aria-label": "Hours a week" });
-  hours.value = a.hours_per_week ?? "";
-  const start = el("input", { type: "month", "aria-label": "First month" });
-  start.value = a.start || iso(new Date()).slice(0, 7);
-  const opening = el("input", { type: "number", min: "0", step: "0.25", placeholder: "0", "aria-label": "Hours brought in" });
-  opening.value = a.opening_hours || "";
-  const del = el("button", { class: "link", "aria-label": "Remove allowance" }, "Remove");
-  del.onclick = () => tr.remove();
-  for (const c of [task, hours, start, opening, del]) { const td = el("td"); td.append(c); tr.append(td); }
-  tr.read = () => ({ task: task.value, hours_per_week: hours.value, start: start.value, opening_hours: opening.value });
-  return tr;
-}
-function renderAllowRows(list) { $("allowRows").replaceChildren(...list.map(allowRow)); }
-$("addAllow").onclick = () => $("allowRows").append(allowRow());
-$("saveAllow").onclick = async () => {
-  try {
-    showState(await api("/api/allowances", { allowances: [...$("allowRows").children].map((tr) => tr.read()) }), "allowances");
-    $("allowMsg").textContent = "Saved."; loadAllowances();
-  } catch (e) { $("allowMsg").textContent = e.message; }
-  setTimeout(() => ($("allowMsg").textContent = ""), 4000);
-};
 async function loadAllowances() {
   let a;
   try { a = await api("/api/allowances"); } catch (_) { return; }
