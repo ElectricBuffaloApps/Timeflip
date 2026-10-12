@@ -1,5 +1,16 @@
 [
   {
+    "version": 18,
+    "changes": [
+      "Monthly allowances (Settings): cap a task, such as Justin, at so many hours a week. Each month's allowance is the weekly hours shared across its working days, so a week split across two months is shared by its weekdays.",
+      "England and Wales bank holidays (downloaded from gov.uk) don't count as working days.",
+      "Hours over a month's allowance carry into the next month with room. The timesheet notes them, and the invoice lines include a 'brought forward' line.",
+      "You can enter hours brought in from before the allowance starts.",
+      "HTB timesheets show a total for each week, with Justin's hours that week.",
+      "The dashboard shows this month's allowance: hours used, hours left, and anything carrying over."
+    ]
+  },
+  {
     "version": 17,
     "changes": [
       "New design: a dashboard of small tiles instead of full-width sections, with tabs for Dashboard, Reports, Timesheets and Settings.",

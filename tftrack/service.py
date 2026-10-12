@@ -53,6 +53,11 @@ def run_check(conf: dict, store: Store) -> list[str]:
                 store.mark_alert_sent(lim.key, st.period_start.isoformat(), lv)
         sent.append(title)
     try:
+        from . import allowance
+        allowance.bank_holidays()  # keep the local copy fresh so pages don't wait for gov.uk
+    except Exception as e:
+        print(f"{datetime.now():%Y-%m-%d %H:%M} bank holidays failed: {e}")
+    try:
         from . import updater
         version = updater.maybe_auto_update(conf, store)
         if version:

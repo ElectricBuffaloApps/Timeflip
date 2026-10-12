@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import threading
@@ -494,3 +495,76 @@ class TargetsTest(unittest.TestCase):
         self.assertEqual([(r["client"], r["period"], r["seconds"]) for r in t["time"]], [("FYPTD", "week", 3 * 3600)])
         # Saturday: no daily target unless weekends are on
         self.assertTrue({r["period"]: r for r in targets_summary(store, date(2026, 10, 10), conf)["income"]}["day"]["rest_day"])
+
+
+class AllowanceTest(unittest.TestCase):
+    def setUp(self):
+        at = lambda m, d, h: datetime(2026, m, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Build", "tag": "HTB"}]
+        self.store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 3, 9), "duration": 3 * 3600},
+            {"id": 2, "taskId": 1, "startedAt": at(9, 4, 9), "duration": 2 * 3600 - 300},  # rounds up to 2h
+            {"id": 3, "taskId": 2, "startedAt": at(9, 4, 13), "duration": 30 * 60},
+            {"id": 4, "taskId": 1, "startedAt": at(10, 5, 9), "duration": 3600},
+        ], tasks=tasks)
+        self.conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15}},
+                     "allowances": [{"task": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}]}
+
+    def test_pot_and_carry_over(self):
+        from datetime import date
+        from tftrack import allowance
+        sep, oct_ = allowance.run(self.store, self.conf["allowances"][0], self.conf, 2026, 10, set())
+        # 22 weekdays x 12 minutes = 4h 24m, rounded down to whole 15-minute blocks: 4h 15m
+        self.assertEqual((sep["working_days"], sep["pot_s"]), (22, 255 * 60))
+        self.assertEqual((sep["worked_s"], sep["billed_s"], sep["carried_s"]), (5 * 3600, 255 * 60, 45 * 60))
+        self.assertEqual(sep["days"]["2026-09-04"]["carried_s"], 45 * 60)   # later days carry first
+        self.assertEqual((oct_["brought_s"], oct_["billed_s"], oct_["carried_s"]), (45 * 60, 105 * 60, 0))
+        # a bank holiday shrinks the pot
+        sep_h = allowance.run(self.store, self.conf["allowances"][0], self.conf, 2026, 9, {date(2026, 9, 7)})[0]
+        self.assertEqual((sep_h["working_days"], sep_h["pot_s"]), (21, 240 * 60))
+        # hours brought in at the start are billed first
+        a = dict(self.conf["allowances"][0], opening_hours=1)
+        sep_o = allowance.run(self.store, a, self.conf, 2026, 9, set())[0]
+        self.assertEqual((sep_o["brought_used_s"], sep_o["carried_s"]), (3600, 105 * 60))
+
+    def test_invoice_takes_off_carried_hours_and_adds_brought_forward(self):
+        from tftrack import allowance, web
+        from tftrack.reports import invoice, invoice_lines
+        sep = allowance.for_month(self.store, self.conf, "HTB", 2026, 9, set())
+        inv = allowance.apply(invoice(self.store, "HTB", 2026, 9, "day", 15, "up"), sep)
+        days = {d["date"]: d["billed_s"] for d in inv["groups"][0]["days"]}
+        self.assertEqual(days, {"2026-09-03": 3 * 3600, "2026-09-04": (150 - 45) * 60})
+        self.assertEqual(inv["total_billed_s"], (180 + 105) * 60)
+        oct_ = allowance.apply(invoice(self.store, "HTB", 2026, 10, "day", 15, "up"),
+                               allowance.for_month(self.store, self.conf, "HTB", 2026, 10, set()))
+        self.assertEqual(oct_["total_billed_s"], 105 * 60)
+        lines = invoice_lines(oct_, 40)
+        self.assertEqual(lines[0]["description"], "HTB – Justin, brought forward from September 2026")
+        self.assertEqual(lines[0]["hours"], 0.75)
+        orig, web._task_options = web._task_options, lambda: ""
+        try:
+            page = web.invoice_page(inv)
+        finally:
+            web._task_options = orig
+        self.assertIn("Week of Mon 31 Aug total", page)          # 3 and 4 Sept fall in the week of 31 Aug
+        self.assertIn("carried to October 2026", page)
+        self.assertIn("Justin allowance, September 2026", page)
+
+    def test_bank_holidays_download_and_copy(self):
+        from unittest import mock
+        from tftrack import allowance, config
+        data = {"england-and-wales": {"division": "england-and-wales",
+                                      "events": [{"title": "Christmas Day", "date": "2026-12-25"}]}}
+
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(config, "APP_DIR", Path(tmp)), \
+                mock.patch.object(allowance, "_last_try", 0.0), \
+                mock.patch("urllib.request.urlopen", return_value=Resp(json.dumps(data).encode())):
+            days, updated = allowance.bank_holidays()
+            self.assertEqual({d.isoformat() for d in days}, {"2026-12-25"})
+            self.assertTrue((Path(tmp) / "bank-holidays.json").exists())
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(config, "APP_DIR", Path(tmp)):
+            self.assertEqual(allowance.bank_holidays(fetch=False), (None, None))

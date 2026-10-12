@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import config as cfg
-from . import service, updater
+from . import allowance, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -67,6 +67,7 @@ def state() -> dict:
         "targets": conf.get("targets", {}),
         "clients": sorted({t["tag"] for t in tasks if t["tag"]}),
         "client_billing": conf.get("clients", {}),
+        "allowances": conf.get("allowances", []),
         "status": status,
     }
 
@@ -80,6 +81,8 @@ h2{font-size:17px;margin:28px 0 6px} p{color:#6B7280;margin:0 0 20px}
 table{border-collapse:collapse;width:100%} th,td{padding:6px 8px;border-bottom:1px solid #E5E7EB;text-align:left}
 th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabular-nums}
 tr.sub td{font-weight:600;background:#FFF7ED}
+tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;border-bottom:2px solid #D1D5DB}
+.allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
 .grand td{font-family:Sora,Inter,sans-serif;font-weight:700;border-top:2px solid #1E2530;border-bottom:none;font-size:15px}
@@ -264,22 +267,41 @@ def invoice_page(inv: dict) -> str:
     rounding = ("" if inv["rounding"] == "none" else
                 f" · day totals rounded {'to the nearest' if inv['rounding'] == 'nearest' else inv['rounding'] + ' to'}"
                 f" {inv['block_minutes']} minutes")
+    al = inv.get("allowance")
     parts = []
     for g in inv["groups"]:
         rows = []
+        week_rows = inv["style"] == "day"
+        week_s = week_task_s = 0
         if g["label"]:
             rows.append(f'<tr><th colspan=4 style="padding-top:22px;color:#0b0b0b;font-size:15px">{esc(g["label"])}</th></tr>')
         if not g["days"]:
             rows.append('<tr><td colspan=4>No time recorded.</td></tr>')
-        for d in g["days"]:
+        for i, d in enumerate(g["days"]):
             day = date.fromisoformat(d["date"])
             for r in d["entries"]:
                 rows.append(f'<tr class="{"x" if r["excluded"] else ""}"><td>{day:%a %d %b}</td>'
                             f'<td>{esc(r["start"])}–{esc(r["end"])}</td>{_task_cell(r)}'
                             f'<td class=n>{_hm(r["seconds"])}</td>{_exclude_cell(r)}</tr>')
-            actual = "" if d["actual_s"] == d["billed_s"] else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
+            carried = d.get("carried_s", 0)
+            rounded = d["billed_s"] + carried
+            actual = "" if d["actual_s"] == rounded else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
+            if carried:
+                actual += (f' <span class="tag adj">{esc(al["task"])} {_hm(carried)} over the allowance,'
+                           f' carried to {allowance.next_month_name(inv["month"])}</span>')
             rows.append(f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
                         f'<td class=n>{_hm(d["billed_s"])}</td><td class=n>{d["billed_s"] / 3600:.2f} h</td></tr>')
+            if week_rows:
+                week_s += d["billed_s"]
+                week_task_s += al["days"].get(d["date"], {}).get("worked_s", 0) if al else 0
+                monday = day - timedelta(days=day.weekday())
+                nxt = date.fromisoformat(g["days"][i + 1]["date"]) if i + 1 < len(g["days"]) else None
+                if nxt is None or nxt - timedelta(days=nxt.weekday()) != monday:
+                    task_note = (f' <span class="tag">({esc(al["task"])} {_hm(week_task_s)})</span>'
+                                 if al and week_task_s else "")
+                    rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total{task_note}</td>'
+                                f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
+                    week_s = week_task_s = 0
         if g["label"]:
             rows.append(f'<tr class="sub"><td colspan=3>Week total</td><td class=n>{_hm(g["billed_s"])}</td>'
                         f'<td class=n>{g["billed_s"] / 3600:.2f} h</td></tr>')
@@ -287,8 +309,20 @@ def invoice_page(inv: dict) -> str:
     month = date.fromisoformat(inv["month"] + "-01")
     days_line = (f'<tr class="grand"><td colspan=3>Days worked</td><td class=n>{inv["days_worked"]}</td><td></td></tr>'
                  if inv["style"] == "day" else "")
-    table = f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
-<tbody>{"".join(parts)}</tbody><tfoot>{days_line}
+    brought_line = ""
+    summary = ""
+    if al:
+        if al["brought_used_s"]:
+            brought_line = (f'<tr class="grand"><td colspan=3>{esc(al["task"])}: brought forward from '
+                            f'{allowance.previous_month_name(inv["month"])}</td><td class=n>{_hm(al["brought_used_s"])}</td>'
+                            f'<td class=n>{al["brought_used_s"] / 3600:.2f} h</td></tr>')
+        summary = (f'<div class="allow"><b>{esc(al["task"])} allowance, {month:%B %Y}:</b> '
+                   f'{_hm(al["pot_s"])} ({al["working_days"]} working days) · '
+                   f'brought forward {_hm(al["brought_s"])} · worked {_hm(al["worked_s"])} · '
+                   f'billed {_hm(al["billed_s"])} · carried to {allowance.next_month_name(inv["month"])} '
+                   f'{_hm(al["carried_s"])}</div>')
+    table = summary + f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
+<tbody>{"".join(parts)}</tbody><tfoot>{days_line}{brought_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
 <td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
     table = _lines_panel(inv) + table
@@ -389,6 +423,8 @@ class Handler(BaseHTTPRequestHandler):
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
                                 for r in rows],
                 })
+            if url.path == "/api/allowances":
+                return self._send(200, allowance.summary(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/targets":
                 return self._send(200, targets_summary(service.open_store(), date.today(), cfg.load_config()))
             if url.path == "/api/month":
@@ -542,6 +578,10 @@ class Handler(BaseHTTPRequestHandler):
                         "hours": hours,
                     }
                     cfg.save_config(conf)
+                elif self.path == "/api/allowances":
+                    conf = cfg.load_config()
+                    conf["allowances"] = [_clean_allowance(a) for a in body.get("allowances", []) if a.get("task")]
+                    cfg.save_config(conf)
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())
                 else:
@@ -602,8 +642,31 @@ def _invoice(q: dict) -> dict:
     style = c["billing"] if c["billing"] in ("day", "week") else "day"
     inv = invoice(service.open_store(), client, year, month, style,
                   c.get("block_minutes", 15), c.get("rounding", "none"))
+    holidays, _ = allowance.bank_holidays()
+    al = allowance.for_month(service.open_store(), cfg.load_config(), client, year, month, holidays or set())
+    if al:
+        allowance.apply(inv, al)
     inv["rate"] = c.get("rate")
     return inv
+
+
+def _clean_allowance(raw: dict) -> dict:
+    try:
+        hours = float(raw.get("hours_per_week"))
+    except (TypeError, ValueError):
+        raise ValueError("Enter the allowance's hours per week.")
+    if hours <= 0:
+        raise ValueError("Allowance hours must be more than zero.")
+    try:
+        y, m = (int(x) for x in str(raw.get("start") or "").split("-"))
+        date(y, m, 1)
+    except ValueError:
+        raise ValueError("Choose the month the allowance starts.")
+    opening = raw.get("opening_hours")
+    opening = 0.0 if opening in (None, "") else float(opening)
+    if opening < 0:
+        raise ValueError("Hours brought in can't be negative.")
+    return {"task": str(raw["task"]).strip(), "hours_per_week": hours, "start": f"{y}-{m:02d}", "opening_hours": opening}
 
 
 def _clean_limit(raw: dict) -> dict:
