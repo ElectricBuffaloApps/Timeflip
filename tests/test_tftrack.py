@@ -511,59 +511,56 @@ class AllowanceTest(unittest.TestCase):
                      "limits": [{"task": "Justin", "weekly_hours": 1, "allowance": True, "allowance_start": "2026-09"}]}
         self.a = {"task": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}
 
-    def test_pot_and_carry_over(self):
-        from datetime import date
+    def _inv(self, month):
         from tftrack import allowance
-        sep, oct_ = allowance.run(self.store, self.a, self.conf, 2026, 10, set())
-        # 22 weekdays x 12 minutes = 4h 24m, rounded down to whole 15-minute blocks: 4h 15m
-        self.assertEqual((sep["working_days"], sep["pot_s"]), (22, 255 * 60))
-        self.assertEqual((sep["worked_s"], sep["billed_s"], sep["carried_s"]), (5 * 3600, 255 * 60, 45 * 60))
-        self.assertEqual(sep["days"]["2026-09-04"]["carried_s"], 45 * 60)   # later days carry first
-        self.assertEqual((oct_["brought_s"], oct_["billed_s"], oct_["carried_s"]), (45 * 60, 105 * 60, 0))
-        # a bank holiday shrinks the pot
-        sep_h = allowance.run(self.store, self.a, self.conf, 2026, 9, {date(2026, 9, 7)})[0]
-        self.assertEqual((sep_h["working_days"], sep_h["pot_s"]), (21, 240 * 60))
-        # hours brought in at the start are billed first
-        a = dict(self.a, opening_hours=1)
-        sep_o = allowance.run(self.store, a, self.conf, 2026, 9, set())[0]
-        self.assertEqual((sep_o["brought_used_s"], sep_o["carried_s"]), (3600, 105 * 60))
+        from tftrack.reports import invoice
+        inv = invoice(self.store, "HTB", 2026, month, "day", 15, "up")
+        info = allowance.for_invoice(self.store, self.conf, inv, set())
+        return allowance.apply(inv, info) if info else inv
 
-    def test_invoice_takes_off_carried_hours_and_adds_brought_forward(self):
-        from tftrack import allowance, web
-        from tftrack.reports import invoice, invoice_lines
-        sep = allowance.for_month(self.store, self.conf, "HTB", 2026, 9, set())
-        inv = allowance.apply(invoice(self.store, "HTB", 2026, 9, "day", 15, "up"), sep)
-        days = {d["date"]: d["billed_s"] for d in inv["groups"][0]["days"]}
-        self.assertEqual(days, {"2026-09-03": 3 * 3600, "2026-09-04": (150 - 45) * 60})
-        self.assertEqual(inv["total_billed_s"], (180 + 105) * 60)
-        oct_ = allowance.apply(invoice(self.store, "HTB", 2026, 10, "day", 15, "up"),
-                               allowance.for_month(self.store, self.conf, "HTB", 2026, 10, set()))
-        self.assertEqual(oct_["total_billed_s"], 105 * 60)
-        lines = invoice_lines(oct_, 40)
-        self.assertEqual(lines[0]["description"], "HTB – Justin, brought forward from September 2026")
-        self.assertEqual(lines[0]["hours"], 0.75)
+    def test_monthly_max_and_week_maxes(self):
+        sep = self._inv(9)["allowance"]
+        # 22 weekdays x 12 minutes = 4h 24m, rounded down to whole 15-minute blocks
+        self.assertEqual((sep["working_days"], sep["max_s"]), (22, 255 * 60))
+        self.assertEqual((sep["worked_s"], sep["charging_s"], sep["rolling_s"]), (5 * 3600, 5 * 3600, 0))
+        w = sep["weeks"][0]   # w/c 31 Aug: only Tue 1 – Sun 6 Sep are September's (4 weekdays)
+        self.assertEqual((w["monday"], w["from"], w["working_days"], w["max_s"], w["worked_s"]),
+                         ("2026-08-31", "2026-09-01", 4, 45 * 60, 5 * 3600))
+
+    def test_roll_over_ticks_move_entries_to_next_month(self):
+        from tftrack import web
+        self.store.set_rolled(2, "2026-10", "2026-09-04")    # Justin's 4 Sept entry
+        sep = self._inv(9)
+        rolled = [r for d in sep["groups"][0]["days"] for r in d["entries"] if r["id"] == 2][0]
+        self.assertEqual(rolled["rolled_to"], "2026-10")
+        days = {d["date"]: d["billed_s"] for d in sep["groups"][0]["days"]}
+        self.assertEqual(days, {"2026-09-03": 3 * 3600, "2026-09-04": 30 * 60})   # only the other HTB work is left
+        self.assertEqual((sep["allowance"]["charging_s"], sep["allowance"]["rolling_s"]), (3 * 3600, 2 * 3600))
+        oct_ = self._inv(10)
+        self.assertEqual([d["date"] for d in oct_["brought"]], ["2026-09-04"])
+        self.assertEqual(oct_["brought"][0]["billed_s"], 2 * 3600)
+        self.assertEqual(oct_["total_billed_s"], 3 * 3600)                  # 2h brought + October's 1h
+        self.assertEqual(oct_["allowance"]["charging_s"], 3 * 3600)
+        from tftrack.reports import invoice_lines
+        self.assertEqual(invoice_lines(oct_, 40)[0]["description"], "HTB – brought forward: Fri 04 Sep 2026")
         orig, web._task_options = web._task_options, lambda: ""
         try:
-            page = web.invoice_page(inv)
+            page = web.invoice_page(sep)
+            self.assertIn("rolled over to October 2026", page)
+            self.assertIn("Week of Mon 31 Aug total", page)
+            self.assertIn("Justin 3h 00m of 0h 45m max", page)
+            page = web.invoice_page(oct_)
+            self.assertIn("Brought forward from earlier months", page)
+            self.assertIn('data-month="2026-11"', page)                    # rolling it on again goes to November
         finally:
             web._task_options = orig
-        self.assertIn("Week of Mon 31 Aug total", page)          # 3 and 4 Sept fall in the week of 31 Aug
-        self.assertIn("carried to October 2026", page)
-        self.assertIn("Justin allowance, September 2026", page)
-
-    def test_weeks_and_charging_a_week(self):
-        from tftrack import allowance
-        conf = dict(self.conf)
-        sep = allowance.run(self.store, self.a, conf, 2026, 9, set())[0]
-        w = sep["weeks"][0]   # w/c 31 Aug: only Tue 1 – Sun 6 Sep are September's (4 weekdays)
-        self.assertEqual((w["monday"], w["from"], w["working_days"], w["max_s"]), ("2026-08-31", "2026-09-01", 4, 45 * 60))
-        self.assertEqual((w["worked_s"], w["over_s"], w["choice"]), (5 * 3600, 255 * 60, "roll"))
-        # charge that week: its 4h 15m over the week's max is billed now; nothing carries
-        conf["allowance_choices"] = {"Justin": {w["key"]: "charge"}}
-        sep = allowance.run(self.store, self.a, conf, 2026, 9, set())[0]
-        self.assertEqual((sep["charged_s"], sep["carried_s"], sep["billed_s"]), (255 * 60, 0, 5 * 3600))
-        self.assertEqual(sep["days"]["2026-09-04"]["charged_s"], 2 * 3600)   # 3 Sept used the 45m max first
-        self.assertEqual(sep["weeks"][0]["balance_s"], 0)
+        # rolled on again: gone from October, into November
+        self.store.set_rolled(2, "2026-11", "2026-09-04")
+        self.assertEqual(self._inv(10)["brought"], [])
+        self.assertEqual(self._inv(11)["brought"][0]["billed_s"], 2 * 3600)
+        # unticked in September: back to normal
+        self.store.set_rolled(2, None)
+        self.assertEqual(self._inv(9)["allowance"]["rolling_s"], 0)
 
     def test_allowance_is_a_ticked_task_limit(self):
         from tftrack import allowance, config, web
@@ -582,37 +579,6 @@ class AllowanceTest(unittest.TestCase):
                                            "allowance_start": "2026-09", "opening_hours": ""}),
                          {"task": "Justin", "weekly_hours": 6.0, "allowance": True, "allowance_start": "2026-09",
                           "opening_hours": 0.0})
-
-    def test_entering_what_was_actually_charged(self):
-        from tftrack import allowance
-        from tftrack.reports import invoice
-        week1 = "2026-09|2026-08-31"
-        # charged 3h instead of the suggested 4h 15m: 2h carries (taken off the latest day)
-        conf = dict(self.conf, allowance_charged={"Justin": {week1: 3}})
-        sep, oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())
-        w = sep["weeks"][0]
-        self.assertEqual((w["suggested_s"], w["billed_s"], w["entered"]), (255 * 60, 3 * 3600, True))
-        self.assertEqual((sep["carried_s"], sep["days"]["2026-09-04"]["billed_s"]), (2 * 3600, 0))
-        self.assertEqual((oct_["brought_used_s"], oct_["billed_s"], oct_["carried_s"]), (2 * 3600, 3 * 3600, 0))
-        # charged 6h for 5h worked: a 1h credit, used up by October's 1h, so October charges nothing more
-        conf = dict(self.conf, allowance_charged={"Justin": {week1: 6}})
-        sep, oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())
-        self.assertEqual(sep["carried_s"], -3600)
-        self.assertEqual((oct_["brought_used_s"], oct_["billed_s"], oct_["carried_s"]), (0, 0, 0))
-        inv = allowance.apply(invoice(self.store, "HTB", 2026, 9, "day", 15, "up"), sep)
-        self.assertEqual(inv["total_billed_s"], 6 * 3600 + 30 * 60)   # 6h Justin + 30m other HTB work
-        inv_oct = allowance.apply(invoice(self.store, "HTB", 2026, 10, "day", 15, "up"), oct_)
-        self.assertEqual(inv_oct["total_billed_s"], 0)
-        # the brought-forward row can be overridden too
-        conf = dict(self.conf, allowance_charged={"Justin": {"2026-10|brought": 0.5}})
-        oct_ = allowance.run(self.store, self.a, conf, 2026, 10, set())[1]
-        self.assertEqual((oct_["brought_s"], oct_["brought_used_s"], oct_["carried_s"]), (45 * 60, 30 * 60, 15 * 60))
-        # charging less than suggested leaves room in the allowance for later weeks
-        late = dict(self.conf, allowance_charged={"Justin": {week1: 4}})
-        self.store.add_manual(datetime(2026, 9, 7, 9).astimezone(), 3600, 1)   # 1h on Mon 7 Sep
-        sep = allowance.run(self.store, self.a, late, 2026, 9, set())[0]
-        self.assertEqual(sep["weeks"][1]["suggested_s"], 15 * 60)   # 4h 15m pot - 4h charged
-        self.assertEqual(sep["carried_s"], 5 * 3600 + 3600 - 4 * 3600 - 15 * 60)
 
     def test_bank_holidays_download_and_copy(self):
         from unittest import mock

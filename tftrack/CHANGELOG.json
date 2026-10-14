@@ -1,5 +1,15 @@
 [
   {
+    "version": 22,
+    "changes": [
+      "Simpler allowances: tick Roll over beside any Justin entry on the timesheet to charge it next month instead.",
+      "Rolled entries appear under 'Brought forward' at the top of next month's timesheet and in its invoice lines, where you can roll them on again.",
+      "The line at the top of the timesheet shows Justin's maximum for the month, what you're charging, what's rolling over, and whether you're over.",
+      "Week totals show Justin's hours against that week's maximum.",
+      "The week-by-week table, the Charged boxes and the Charge / Roll over buttons have been removed."
+    ]
+  },
+  {
     "version": 21,
     "changes": [
       "Allowance table: a 'Charged (h)' box on each week and on the brought-forward row. It shows a suggestion; type what you actually charged to replace it, or clear it to go back.",

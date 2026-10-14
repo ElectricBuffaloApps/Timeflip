@@ -167,16 +167,34 @@ def invoice(store, client: str, year: int, month: int, style: str,
             block_minutes: int = 15, rounding: str = "none") -> dict:
     """Entries grouped by day (and by week for weekly clients), with day totals rounded to the block."""
     start, end = month_range(year, month, style)
+    key = f"{year}-{month:02d}"
     rows = timesheet_rows(store, start, end, client)
+    rolled = store.rolled()
+    for r in rows:   # rolled over to a later month: listed here, charged there
+        ro = rolled.get(r["id"])
+        r["rolled_to"] = ro["month"] if ro and ro["month"] != key else None
     by_day: dict[str, list[dict]] = {}
     for r in rows:
         by_day.setdefault(r["date"], []).append(r)
 
-    def day_entry(d: date) -> dict:
-        entries = by_day.get(d.isoformat(), [])
-        actual = sum(r["seconds"] for r in entries if not r["excluded"])
+    def day_entry(d: date, entries: list[dict] | None = None) -> dict:
+        entries = by_day.get(d.isoformat(), []) if entries is None else entries
+        actual = sum(r["seconds"] for r in entries if not r["excluded"] and not r.get("rolled_to"))
         return {"date": d.isoformat(), "entries": entries, "actual_s": actual,
                 "billed_s": round_seconds(actual, block_minutes, rounding)}
+
+    # Entries rolled over into this month from earlier ones, by their own day.
+    own = {r["id"] for r in rows}
+    wanted = {i for i, ro in rolled.items() if ro["month"] == key and i not in own}
+    brought_rows: dict[str, list[dict]] = {}
+    for d in sorted({rolled[i]["entry_date"] for i in wanted}):
+        day = date.fromisoformat(d)
+        for r in timesheet_rows(store, day, day, client):
+            if r["id"] in wanted:
+                r["rolled_to"] = None
+                r["brought"] = True
+                brought_rows.setdefault(r["date"], []).append(r)
+    brought = [day_entry(date.fromisoformat(d), brought_rows[d]) for d in sorted(brought_rows)]
 
     groups = []
     if style == "week":
@@ -195,9 +213,9 @@ def invoice(store, client: str, year: int, month: int, style: str,
     return {
         "client": client, "style": style, "start": start.isoformat(), "end": end.isoformat(),
         "month": f"{year}-{month:02d}", "block_minutes": block_minutes, "rounding": rounding,
-        "groups": groups,
+        "groups": groups, "brought": brought,
         "days_worked": sum(1 for d in all_days if d["billed_s"] > 0),
-        "total_billed_s": sum(g["billed_s"] for g in groups),
+        "total_billed_s": sum(g["billed_s"] for g in groups) + sum(d["billed_s"] for d in brought),
         "total_actual_s": sum(d["actual_s"] for d in all_days),
     }
 
@@ -214,13 +232,11 @@ def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
                       "amount": round(hours * rate, 2) if rate else None})
 
     al = inv.get("allowance")
-    if al and al["brought_used_s"]:
+    if al and al["opening_s"]:
         y, m = (int(x) for x in inv["month"].split("-"))
-        before = date(y, m, 1) - timedelta(days=1)
-        add(f"{inv['client']} – {al['task']}, brought forward from {before:%B %Y}", al["brought_used_s"])
-    for e in (al or {}).get("extras", []):
-        add(f"{inv['client']} – {al['task']}, extra hours charged, week commencing "
-            f"{date.fromisoformat(e['monday']):%a %d %b %Y}", e["seconds"])
+        add(f"{inv['client']} – {al['task']}, brought in from before {date(y, m, 1):%B %Y}", al["opening_s"])
+    for d in inv.get("brought", []):
+        add(f"{inv['client']} – brought forward: {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])
     for g in inv["groups"]:
         if inv["style"] == "week":
             add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}", g["billed_s"])

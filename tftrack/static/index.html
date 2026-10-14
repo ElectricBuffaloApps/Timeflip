@@ -438,7 +438,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <button class="primary" id="saveLimits">Save limits</button>
         <span class="sub" id="saveMsg"></span>
       </div>
-      <p class="note">Hours. Leave a box empty for no limit. Tick <b>Bill as allowance</b> on a task's weekly limit to cap what's invoiced: each month's allowance is the weekly hours shared across its working days, and hours over it carry into the next month (or you charge them, week by week, on the timesheet).</p>
+      <p class="note">Hours. Leave a box empty for no limit. Tick <b>Bill as allowance</b> on a task's weekly limit to get a monthly maximum (the weekly hours shared across the month's working days). On the timesheet, tick <b>Roll over</b> on that task's entries to charge them the next month instead.</p>
       <p class="note" id="holidayNote">Bank holidays (England and Wales) aren't counted.</p>
     </section>
 
@@ -1185,15 +1185,15 @@ async function loadAllowances() {
   $("allowWrap").classList.toggle("hidden", !a.allowances.length);
   const monthName = (m, add) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1 + add, 1).toLocaleDateString("en-GB", { month: "long" }); };
   $("allowances").replaceChildren(...a.allowances.map((m) => {
-    const used = m.brought_used_s + m.worked_s;
-    const pct = m.pot_s ? (100 * used) / m.pot_s : 0;
-    const over = m.carried_s > 0;
-    const left = Math.max(0, m.pot_s - used);
-    const brought = m.brought_s ? ` · incl. ${hm(m.brought_s)} from ${monthName(m.month, -1)}` : "";
-    return meterRow(`${m.task} · ${monthName(m.month, 0)}`, `${hm(used)} / ${hm(m.pot_s)}`, pct,
-                    over || pct >= 80 ? "warning" : "plain",
-                    over ? `${hm(m.carried_s)} carries to ${monthName(m.month, 1)}` : `${hm(left)} left`,
-                    `${m.working_days} working days${brought}`);
+    const used = m.charging_s;
+    const pct = m.max_s ? (100 * used) / m.max_s : 0;
+    const over = used > m.max_s;
+    const brought = m.brought_s + m.opening_s ? ` · incl. ${hm(m.brought_s + m.opening_s)} brought forward` : "";
+    const rolling = m.rolling_s ? ` · ${hm(m.rolling_s)} rolling to ${monthName(m.month, 1)}` : "";
+    return meterRow(`${m.task} · ${monthName(m.month, 0)}`, `${hm(used)} / ${hm(m.max_s)}`, pct,
+                    over ? "critical" : pct >= 80 ? "warning" : "plain",
+                    over ? `${hm(used - m.max_s)} over: roll some over on the timesheet` : `${hm(m.max_s - used)} left`,
+                    `${m.working_days} working days${brought}${rolling}`);
   }));
 }
 

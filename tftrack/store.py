@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS adjustment (
     task_id INTEGER NOT NULL,
     adjusted_at TEXT NOT NULL
 );
+-- Entries the user has rolled over: charged in a later month (YYYY-MM) instead of their own. Kept across syncs.
+CREATE TABLE IF NOT EXISTS rollover (
+    interval_id INTEGER PRIMARY KEY,
+    month TEXT NOT NULL,        -- the month it's now charged in
+    entry_date TEXT NOT NULL    -- the entry's own (local) date, to find it again
+);
 -- Time the user added by hand (not tracked on the cube).
 CREATE TABLE IF NOT EXISTS manual_entry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,6 +231,7 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM manual_entry WHERE id=?", (-entry_id - MANUAL_ID_OFFSET,))
             self.db.execute("DELETE FROM excluded WHERE interval_id=?", (entry_id,))
+            self.db.execute("DELETE FROM rollover WHERE interval_id=?", (entry_id,))
 
     def seconds_by_task(self, start: datetime, end: datetime) -> dict[int, int]:
         """Seconds tracked per task id within [start, end), clipping intervals at the edges."""
@@ -256,6 +263,18 @@ class Store:
                                 (interval_id, datetime.now(timezone.utc).isoformat()))
             else:
                 self.db.execute("DELETE FROM excluded WHERE interval_id = ?", (interval_id,))
+
+    def rolled(self) -> dict[int, dict]:
+        """Rolled-over entries: id -> {"month": month now charged in, "entry_date": the entry's own date}."""
+        return {r["interval_id"]: {"month": r["month"], "entry_date": r["entry_date"]}
+                for r in self.db.execute("SELECT * FROM rollover")}
+
+    def set_rolled(self, interval_id: int, month: str | None, entry_date: str | None = None) -> None:
+        with self.db:
+            if month:
+                self.db.execute("INSERT OR REPLACE INTO rollover VALUES (?, ?, ?)", (interval_id, month, entry_date))
+            else:
+                self.db.execute("DELETE FROM rollover WHERE interval_id = ?", (interval_id,))
 
     def get_meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

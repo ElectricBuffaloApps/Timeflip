@@ -40,6 +40,8 @@ def load_config() -> dict:
 
 def migrate(conf: dict) -> dict:
     """Older versions kept monthly allowances apart from limits; they're now a tick box on a task's limit."""
+    for old in ("allowance_choices", "allowance_charged"):   # settings from the old allowance table
+        conf.pop(old, None)
     legacy = conf.pop("allowances", None)
     if not legacy:
         return conf

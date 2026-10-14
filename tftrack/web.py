@@ -82,10 +82,9 @@ th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabul
 tr.sub td{font-weight:600;background:#FFF7ED}
 tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;border-bottom:2px solid #D1D5DB}
 .allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
-.allow summary{cursor:pointer} .allow summary::marker{color:#F97316}
-.allow table{margin-top:10px;background:#fff;border-radius:8px} .allow td,.allow th{border-bottom-color:#FED7AA}
-.allow td.over{color:#c2410c;font-weight:600} .allow .hint{margin:10px 0 0;font-size:12px}
-.allow .printed{display:none} input.charged{width:70px;font:inherit;padding:3px 6px;border:1px solid #D1D5DB;border-radius:6px;text-align:right} .choice{display:inline-flex;gap:12px} input[type=radio]{accent-color:#F97316}
+.allow .warn{color:#c2410c}
+tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:normal}
+label.roll{margin-left:8px} th.section{padding-top:18px;color:#0b0b0b;font-size:15px}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
 .grand td{font-family:Sora,Inter,sans-serif;font-weight:700;border-top:2px solid #1E2530;border-bottom:none;font-size:15px}
@@ -109,7 +108,7 @@ dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5D
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
 dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
-@media print{.bar,label.ex,.lines,button.edit,.allow .hint,input.charged,input.charged+.tag{display:none} body{margin:0} .allow .printed{display:inline}}
+@media print{.bar,label.ex,.lines,button.edit{display:none} body{margin:0}}
 """
 
 PAGE_SCRIPT = """<script>
@@ -164,21 +163,13 @@ $f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", 
 $f("fDelete").addEventListener("click", () => {
   if (confirm("Delete this added entry?")) act(() => post("/api/entry/delete", {id: editing.id}));
 });
-const allowBox = document.querySelector("details.allow");
-if (allowBox) {   // keep the allowance table open across the reload after each change
-  try { if (sessionStorage.getItem("allowOpen") === "1") allowBox.open = true; } catch (_) {}
-  allowBox.addEventListener("toggle", () => { try { sessionStorage.setItem("allowOpen", allowBox.open ? "1" : "0"); } catch (_) {} });
-}
-for (const box of document.querySelectorAll("input.charged")) {
+for (const box of document.querySelectorAll("input[data-roll]")) {
   box.addEventListener("change", async () => {
-    try { await post("/api/allowance/charged", {task: box.dataset.task, key: box.dataset.key, hours: box.value}); location.reload(); }
-    catch (e) { alert(e.message); }
-  });
-}
-for (const radio of document.querySelectorAll("input[data-week]")) {
-  radio.addEventListener("change", async () => {
-    try { await post("/api/allowance/choice", {task: radio.dataset.task, key: radio.dataset.week, choice: radio.value}); location.reload(); }
-    catch (e) { alert(e.message); }
+    box.disabled = true;
+    try {
+      await post("/api/rollover", {id: Number(box.dataset.roll), date: box.dataset.date, month: box.checked ? box.dataset.month : null});
+      location.reload();
+    } catch (e) { alert(e.message); box.disabled = false; }
   });
 }
 for (const box of document.querySelectorAll("input[data-id]")) {
@@ -281,6 +272,36 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
                  start, client)
 
 
+def _roll_cell(r: dict, inv: dict, task: str | None) -> str:
+    """Roll over tick for an allowance task's entry: charged next month instead of this one."""
+    if not task or r["task"].lower() != task.lower() or r["excluded"]:
+        return ""
+    nxt = allowance.next_month(inv["month"])
+    checked = " checked" if r.get("rolled_to") else ""
+    return (f'<label class="ex roll"><input type="checkbox" data-roll="{int(r["id"])}" data-date="{esc_attr(r["entry_date"])}"'
+            f' data-month="{nxt}"{checked}> Roll over</label>')
+
+
+def esc_attr(v: str) -> str:
+    return html.escape(str(v), quote=True)
+
+
+def _entry_row(r: dict, day: date, inv: dict, task: str | None) -> str:
+    esc = html.escape
+    cls = "x" if r["excluded"] else "rolled" if r.get("rolled_to") else ""
+    task_cell = _task_cell(r)
+    if r.get("rolled_to"):
+        task_cell = task_cell[:-5] + f' <span class="tag adj">rolled over to {allowance.month_name(r["rolled_to"])}</span></td>'
+    return (f'<tr class="{cls}"><td>{day:%a %d %b}</td><td>{esc(r["start"])}–{esc(r["end"])}</td>{task_cell}'
+            f'<td class=n>{_hm(r["seconds"])}</td>{_exclude_cell(r).replace("</td>", _roll_cell(r, inv, task) + "</td>", 1)}</tr>')
+
+
+def _day_total(d: dict, day: date) -> str:
+    actual = "" if d["actual_s"] == d["billed_s"] else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
+    return (f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
+            f'<td class=n>{_hm(d["billed_s"])}</td><td class=n>{d["billed_s"] / 3600:.2f} h</td></tr>')
+
+
 def invoice_page(inv: dict) -> str:
     """Monthly sheet for a client billed by the day or by the week."""
     esc = html.escape
@@ -288,47 +309,43 @@ def invoice_page(inv: dict) -> str:
                 f" · day totals rounded {'to the nearest' if inv['rounding'] == 'nearest' else inv['rounding'] + ' to'}"
                 f" {inv['block_minutes']} minutes")
     al = inv.get("allowance")
+    task = al["task"] if al else None
+    weeks = {w["monday"]: w for w in al["weeks"]} if al else {}
     parts = []
+    if inv.get("brought"):
+        rows = [f'<tr><th colspan=5 class="section">Brought forward from earlier months</th></tr>']
+        for d in inv["brought"]:
+            day = date.fromisoformat(d["date"])
+            rows += [_entry_row(r, day, inv, task) for r in d["entries"]]
+            rows.append(_day_total(d, day))
+        rows.append(f'<tr><th colspan=5 class="section">{date.fromisoformat(inv["month"] + "-01"):%B %Y}</th></tr>')
+        parts.append("".join(rows))
     for g in inv["groups"]:
         rows = []
         week_rows = inv["style"] == "day"
-        week_s = week_task_s = 0
+        week_s = 0
         if g["label"]:
             rows.append(f'<tr><th colspan=4 style="padding-top:22px;color:#0b0b0b;font-size:15px">{esc(g["label"])}</th></tr>')
         if not g["days"]:
             rows.append('<tr><td colspan=4>No time recorded.</td></tr>')
         for i, d in enumerate(g["days"]):
             day = date.fromisoformat(d["date"])
-            for r in d["entries"]:
-                rows.append(f'<tr class="{"x" if r["excluded"] else ""}"><td>{day:%a %d %b}</td>'
-                            f'<td>{esc(r["start"])}–{esc(r["end"])}</td>{_task_cell(r)}'
-                            f'<td class=n>{_hm(r["seconds"])}</td>{_exclude_cell(r)}</tr>')
-            carried = d.get("carried_s", 0)
-            rounded = d["billed_s"] + carried + d.get("credited_s", 0)
-            actual = "" if d["actual_s"] == rounded else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
-            if carried > 0:
-                actual += (f' <span class="tag adj">{esc(al["task"])} {_hm(carried)} not charged,'
-                           f' carried to {allowance.next_month_name(inv["month"])}</span>')
-            elif carried < 0:
-                actual += f' <span class="tag adj">{esc(al["task"])} +{_hm(-carried)} extra charged</span>'
-            if d.get("credited_s"):
-                actual += f' <span class="tag adj">{esc(al["task"])} {_hm(d["credited_s"])} already charged in advance</span>'
-            charged = al["days"].get(d["date"], {}).get("charged_s", 0) if al else 0
-            if charged:
-                actual += f' <span class="tag adj">{esc(al["task"])} {_hm(charged)} over the week\'s max, charged</span>'
-            rows.append(f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
-                        f'<td class=n>{_hm(d["billed_s"])}</td><td class=n>{d["billed_s"] / 3600:.2f} h</td></tr>')
+            rows += [_entry_row(r, day, inv, task) for r in d["entries"]]
+            rows.append(_day_total(d, day))
             if week_rows:
                 week_s += d["billed_s"]
-                week_task_s += al["days"].get(d["date"], {}).get("worked_s", 0) if al else 0
                 monday = day - timedelta(days=day.weekday())
                 nxt = date.fromisoformat(g["days"][i + 1]["date"]) if i + 1 < len(g["days"]) else None
                 if nxt is None or nxt - timedelta(days=nxt.weekday()) != monday:
-                    task_note = (f' <span class="tag">({esc(al["task"])} {_hm(week_task_s)})</span>'
-                                 if al and week_task_s else "")
-                    rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total{task_note}</td>'
+                    w = weeks.get(monday.isoformat())
+                    note = ""
+                    if w:
+                        over = w["worked_s"] - w["max_s"]
+                        note = (f' <span class="tag{" adj" if over > 0 else ""}">({esc(task)} {_hm(w["worked_s"])} of '
+                                f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""})</span>')
+                    rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total{note}</td>'
                                 f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
-                    week_s = week_task_s = 0
+                    week_s = 0
         if g["label"]:
             rows.append(f'<tr class="sub"><td colspan=3>Week total</td><td class=n>{_hm(g["billed_s"])}</td>'
                         f'<td class=n>{g["billed_s"] / 3600:.2f} h</td></tr>')
@@ -336,20 +353,21 @@ def invoice_page(inv: dict) -> str:
     month = date.fromisoformat(inv["month"] + "-01")
     days_line = (f'<tr class="grand"><td colspan=3>Days worked</td><td class=n>{inv["days_worked"]}</td><td></td></tr>'
                  if inv["style"] == "day" else "")
-    brought_line = ""
+    extra_line = ""
     summary = ""
     if al:
-        if al["brought_used_s"]:
-            brought_line = (f'<tr class="grand"><td colspan=3>{esc(al["task"])}: brought forward from '
-                            f'{allowance.previous_month_name(inv["month"])}</td><td class=n>{_hm(al["brought_used_s"])}</td>'
-                            f'<td class=n>{al["brought_used_s"] / 3600:.2f} h</td></tr>')
-        for e in al.get("extras", []):
-            brought_line += (f'<tr class="grand"><td colspan=3>{esc(al["task"])}: extra hours charged, w/c '
-                             f'{date.fromisoformat(e["monday"]):%a %d %b}</td><td class=n>{_hm(e["seconds"])}</td>'
-                             f'<td class=n>{e["seconds"] / 3600:.2f} h</td></tr>')
-        summary = _allowance_table(al, month)
+        if al["opening_s"]:
+            extra_line = (f'<tr class="grand"><td colspan=3>{esc(task)}: brought in from before {month:%B %Y}</td>'
+                          f'<td class=n>{_hm(al["opening_s"])}</td><td class=n>{al["opening_s"] / 3600:.2f} h</td></tr>')
+        over = al["charging_s"] - al["max_s"]
+        state = (f'<b class="warn">{_hm(over)} over the max</b> · tick <b>Roll over</b> on entries to charge them next month'
+                 if over > 0 else f'{_hm(-over)} under the max')
+        brought = f' (incl. {_hm(al["brought_s"] + al["opening_s"])} brought forward)' if al["brought_s"] + al["opening_s"] else ""
+        rolling = f' · rolling over {_hm(al["rolling_s"])} to {allowance.next_month_name(inv["month"])}' if al["rolling_s"] else ""
+        summary = (f'<div class="allow"><b>{esc(task)}, {month:%B %Y}:</b> max {_hm(al["max_s"])} '
+                   f'({al["working_days"]} working days) · charging {_hm(al["charging_s"])}{brought}{rolling} · {state}</div>')
     table = summary + f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
-<tbody>{"".join(parts)}</tbody><tfoot>{days_line}{brought_line}
+<tbody>{"".join(parts)}</tbody><tfoot>{days_line}{extra_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
 <td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
     table = _lines_panel(inv) + table
@@ -357,61 +375,6 @@ def invoice_page(inv: dict) -> str:
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"])
-
-
-def _signed(seconds: int) -> str:
-    return ("+" if seconds > 0 else "−" if seconds < 0 else "") + _hm(abs(seconds))
-
-
-def _allowance_table(al: dict, month: date) -> str:
-    """The month's allowance week by week: what you can charge, what you did charge, and what carries over."""
-    esc = html.escape
-    task = esc(al["task"])
-
-    def charged_cell(key: str, billed: int, suggested: int, entered: bool) -> str:
-        value = f"{billed / 3600:g}" if entered else ""
-        hint = "your figure" if entered else "suggested"
-        return (f'<td class=n><input class="charged" type="number" min="0" step="0.25" value="{value}" '
-                f'placeholder="{suggested / 3600:.2f}" data-key="{esc(key)}" data-task="{task}" '
-                f'aria-label="Hours charged"> <span class="tag">{hint}</span>'
-                f'<span class="printed">{_hm(billed)}</span></td>')
-
-    rows = []
-    if al["brought_s"] or al["brought_entered"]:
-        label = "Credit from" if al["brought_s"] < 0 else "Brought forward from"
-        rows.append(f'<tr><td>{label} {allowance.previous_month_name(al["month"])}</td><td></td>'
-                    f'<td class=n>{_signed(al["brought_s"])}</td><td></td>'
-                    + charged_cell(al["brought_key"], al["brought_used_s"], al["brought_suggested_s"], al["brought_entered"])
-                    + f'<td class=n>{_signed(al["brought_s"] - al["brought_used_s"])}</td><td></td></tr>')
-    for w in al["weeks"]:
-        start, end = date.fromisoformat(w["from"]), date.fromisoformat(w["to"])
-        span = "" if (end - start).days == 6 else f' <span class="tag">({start:%a %d}–{end:%a %d %b} only)</span>'
-        if w["over_s"] > 0 and not w["entered"]:
-            key = esc(w["key"])
-            pick = lambda v, label: (f'<label class="ex"><input type="radio" name="{key}" value="{v}" data-week="{key}" '
-                                     f'data-task="{task}"{" checked" if w["choice"] == v else ""}> {label}</label>')
-            choice = (f'<span class="choice">{pick("roll", "Roll over")} {pick("charge", "Charge")}</span>'
-                      f'<span class="printed">{"Charged" if w["choice"] == "charge" else "Rolled over"}</span>')
-        else:
-            choice = ""
-        rows.append(f'<tr><td>w/c {date.fromisoformat(w["monday"]):%a %d %b}{span}</td><td class=n>{_hm(w["max_s"])}</td>'
-                    f'<td class=n>{_hm(w["worked_s"])}</td><td class="n{" over" if w["over_s"] > 0 else ""}">'
-                    f'{_signed(w["over_s"])}</td>' + charged_cell(w["key"], w["billed_s"], w["suggested_s"], w["entered"])
-                    + f'<td class=n>{_signed(w["balance_s"])}</td><td>{choice}</td></tr>')
-    nxt = allowance.next_month_name(al["month"])
-    carried = (f'credit into {nxt} {_hm(-al["carried_s"])}' if al["carried_s"] < 0
-               else f'carried to {nxt} {_hm(al["carried_s"])}')
-    return f"""<details class="allow"><summary><b>{task} allowance, {month:%B %Y}:</b>
-max {_hm(al["pot_s"])} ({al["working_days"]} working days) · brought forward {_signed(al["brought_s"]) or "0h 00m"} ·
-worked {_hm(al["worked_s"])} · charged {_hm(al["billed_s"])} · <b>{carried}</b></summary>
-<table><thead><tr><th>Week</th><th class=n>Max</th><th class=n>{task}</th><th class=n>Over / under</th>
-<th class=n>Charged (h)</th><th class=n>Not yet charged</th><th>Hours over</th></tr></thead>
-<tbody>{"".join(rows)}</tbody></table>
-<p class="hint"><b>Charged</b> starts as a suggestion: spare hours in a quiet week take up a busy week's extra hours, and
-whatever's still over at the end of the month carries into {nxt}. Type what you actually charged for a week to replace it
-(clear the box to go back). Charging more than was worked leaves a credit, used up by {nxt}'s hours before anything more is charged.
-For a week that's over, <b>Charge</b> bills its extra hours this month instead of rolling them over.</p>
-</details>"""
 
 
 def _lines_panel(inv: dict) -> str:
@@ -660,37 +623,13 @@ class Handler(BaseHTTPRequestHandler):
                         "hours": hours,
                     }
                     cfg.save_config(conf)
-                elif self.path == "/api/allowance/charged":
-                    key = str(body.get("key") or "")
-                    conf = cfg.load_config()
-                    task = body.get("task")
-                    if task not in [a["task"] for a in allowance.configured(conf)] or key.count("|") != 1:
-                        raise ValueError("Unknown allowance.")
-                    entered = conf.setdefault("allowance_charged", {}).setdefault(task, {})
-                    if body.get("hours") in (None, ""):
-                        entered.pop(key, None)   # back to the suggestion
-                    else:
-                        hours = float(body["hours"])
-                        if hours < 0:
-                            raise ValueError("Hours charged can't be negative.")
-                        entered[key] = hours
-                    cfg.save_config(conf)
-                    return self._send(200, {"ok": True})
-                elif self.path == "/api/allowance/choice":
-                    key, choice = str(body.get("key") or ""), body.get("choice")
-                    if choice not in ("roll", "charge") or "|" not in key:
-                        raise ValueError("Choose Roll over or Charge.")
-                    conf = cfg.load_config()
-                    tasks = [a["task"] for a in allowance.configured(conf)]
-                    task = body.get("task") or (tasks[0] if len(tasks) == 1 else None)
-                    if task not in tasks:
-                        raise ValueError("Unknown allowance.")
-                    picks = conf.setdefault("allowance_choices", {}).setdefault(task, {})
-                    if choice == "charge":
-                        picks[key] = "charge"
-                    else:
-                        picks.pop(key, None)
-                    cfg.save_config(conf)
+                elif self.path == "/api/rollover":
+                    month = body.get("month")
+                    if month is not None:
+                        y, m = (int(x) for x in str(month).split("-"))
+                        date(y, m, 1)
+                        month = f"{y}-{m:02d}"
+                    service.open_store().set_rolled(int(body["id"]), month, str(date.fromisoformat(body["date"])))
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())
@@ -753,7 +692,7 @@ def _invoice(q: dict) -> dict:
     inv = invoice(service.open_store(), client, year, month, style,
                   c.get("block_minutes", 15), c.get("rounding", "none"))
     holidays, _ = allowance.bank_holidays()
-    al = allowance.for_month(service.open_store(), cfg.load_config(), client, year, month, holidays or set())
+    al = allowance.for_invoice(service.open_store(), cfg.load_config(), inv, holidays or set())
     if al:
         allowance.apply(inv, al)
     inv["rate"] = c.get("rate")
