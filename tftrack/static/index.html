@@ -393,6 +393,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <label class="field">Month<input type="month" id="tsMonth"></label>
         <div class="callout" id="tsHint">Pick a client and a month.</div>
         <button class="primary" id="tsPdf">Open timesheet</button>
+        <button id="tsSavePdf">Save PDF</button>
         <button id="tsCsv">Download spreadsheet (CSV)</button>
       </div>
     </section>
@@ -403,7 +404,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <li><span><b>Edit</b> an entry to change its date, times or task. It's marked “adjusted” with the original time, also on the printed sheet.</span></li>
         <li><span><b>Exclude</b> anything you won't charge for. It stays on the sheet, crossed out, and isn't counted.</span></li>
         <li><span><b>+ Add entry</b> for time you didn't track. Added entries are marked “added”.</span></li>
-        <li><span>Press <b>Print</b>, then <b>Save as PDF</b>, for a PDF to send.</span></li>
+        <li><span><b>Save PDF</b> downloads the timesheet as a PDF to send (it lands in your Downloads folder).</span></li>
       </ol>
     </section>
   </div>
@@ -916,6 +917,7 @@ function tsUrl(csv) {
 $("tsMonth").value = iso(new Date()).slice(0, 7);
 $("tsPdf").onclick = () => window.open(tsUrl(false), "_blank");
 $("tsCsv").onclick = () => { window.location.href = tsUrl(true); };
+$("tsSavePdf").onclick = () => { window.location.href = tsUrl(false).replace(/^\/(invoice|timesheet)\?/, "/$1.pdf?"); };
 
 /* ---------- invoicing settings ---------- */
 function renderClientRows(s) {

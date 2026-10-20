@@ -1,5 +1,13 @@
 [
   {
+    "version": 23,
+    "changes": [
+      "New Save PDF button on every timesheet (and on the Timesheets tab). The tracker writes the PDF itself and it goes straight to your Downloads folder, with no print box, so Safari can't save a blank page.",
+      "The PDF has A4 pages with the same entries, day and week totals, crossed-out excluded entries, adjusted, added and rolled-over notes, the allowance line, and page numbers.",
+      "The old print button is now just 'Print'."
+    ]
+  },
+  {
     "version": 22,
     "changes": [
       "Simpler allowances: tick Roll over beside any Justin entry on the timesheet to charge it next month instead.",

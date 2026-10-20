@@ -26,7 +26,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Limits:** in **Settings → Limits**, pick a task or a client, and enter the hours per day and/or per week.
 - **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
 - **Charts:** pick a date range and choose **By task** or **By client**.
-- **Timesheets:** pick a client and a month, then click **Open timesheet** (press **Print**, then **Save as PDF** for a PDF) or **Download spreadsheet**.
+- **Timesheets:** pick a client and a month, then click **Open timesheet**, **Save PDF** (an A4 PDF straight to your Downloads folder, no print box) or **Download spreadsheet**. Timesheet pages have the same **Save PDF** button.
 - **How each client is invoiced** (Settings):
   - **By the day:** each day's entries, with a total under each day.
   - **By the week:** every week whose Monday is in the month, with day and week totals. September's last week can run into October.

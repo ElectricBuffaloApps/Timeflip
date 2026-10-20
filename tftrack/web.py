@@ -8,10 +8,10 @@ import threading
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, service, updater
+from . import allowance, pdf, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -100,6 +100,8 @@ button.copy{font-size:12px;padding:3px 10px;margin-left:6px;border-radius:6px}
 .copied{color:#00c853;font-size:13px}
 button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
 .bar button.secondary{background:#fff;color:#111827;border-color:#D1D5DB}
+.bar a.btn{font:600 14px Sora,Inter,sans-serif;padding:8px 16px;border-radius:8px;background:#F97316;color:#fff;text-decoration:none}
+.bar a.btn:hover{background:#c2410c}
 .bar button.secondary:hover{background:#fff;border-color:#F97316}
 .tag.adj{color:#c2410c;font-style:italic}
 dialog{border:none;border-radius:12px;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);min-width:340px}
@@ -219,7 +221,7 @@ def _task_options() -> str:
 
 
 def _page(title: str, heading: str, subtitle: str, table: str, default_date: date | None = None,
-          client: str | None = None) -> str:
+          client: str | None = None, pdf_url: str = "") -> str:
     esc = html.escape
     dialog = f"""<dialog id="entryDialog"><form method="dialog" id="entryForm">
 <h2 id="dlgTitle" style="margin-top:0">Edit entry</h2>
@@ -241,7 +243,8 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 <title>{esc(title)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>{PAGE_STYLE}</style></head><body data-defaults="{defaults}">
-<div class="bar"><button onclick="window.print()">Print or save as PDF</button>
+<div class="bar"><a class="btn" href="{esc(pdf_url)}">Save PDF</a>
+<button class="secondary" onclick="window.print()">Print</button>
 <button id="addEntry" class="secondary">+ Add entry</button>
 <span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
 <h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}</body></html>"""
@@ -268,8 +271,9 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
 <tbody>{body or '<tr><td colspan=7>No time recorded in this period.</td></tr>'}</tbody>
 <tfoot><tr class="grand"><td colspan=4>Total</td><td class=n>{hours:.2f}</td><td class=n>{esc(total)}</td><td></td></tr>
 </tfoot></table>"""
+    q = f"start={start}&end={end}" + (f"&client={quote(client)}" if client else "")
     return _page(f"Timesheet – {who}", f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", table,
-                 start, client)
+                 start, client, pdf_url=f"/timesheet.pdf?{q}")
 
 
 def _roll_cell(r: dict, inv: dict, task: str | None) -> str:
@@ -374,7 +378,8 @@ def invoice_page(inv: dict) -> str:
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
-                 f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"])
+                 f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"],
+                 pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}")
 
 
 def _lines_panel(inv: dict) -> str:
@@ -495,7 +500,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, report)
             if url.path == "/invoice":
                 return self._send(200, invoice_page(_invoice(q)), "text/html; charset=utf-8")
-            if url.path in ("/timesheet", "/timesheet.csv"):
+            if url.path == "/invoice.pdf":
+                inv = _invoice(q)
+                month = date.fromisoformat(inv["month"] + "-01")
+                return self._send(200, pdf.invoice_pdf(inv), "application/pdf",
+                                  {"Content-Disposition": f'attachment; filename="{_file_name(inv["client"])}'
+                                                          f'-{month:%B-%Y}.pdf"'})
+            if url.path in ("/timesheet", "/timesheet.csv", "/timesheet.pdf"):
                 client = q.get("client") or None
                 if q.get("month") and client:  # use the client's month range
                     inv = _invoice(q)
@@ -503,6 +514,10 @@ class Handler(BaseHTTPRequestHandler):
                 rows = timesheet_rows(service.open_store(), start, end, client)
                 if url.path == "/timesheet":
                     return self._send(200, timesheet_page(rows, start, end, client), "text/html; charset=utf-8")
+                if url.path == "/timesheet.pdf":
+                    return self._send(200, pdf.timesheet_pdf(rows, start, end, client), "application/pdf",
+                                      {"Content-Disposition": f'attachment; filename="Timesheet-'
+                                                              f'{_file_name(client or "all")}-{start}-to-{end}.pdf"'})
                 name = f"timesheet-{(client or 'all').replace(' ', '-')}-{start}-to-{end}.csv"
                 return self._send(200, timesheet_csv(rows), "text/csv; charset=utf-8",
                                   {"Content-Disposition": f'attachment; filename="{name}"'})
@@ -640,6 +655,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": str(e)})
         except Exception as e:
             return self._send(500, {"error": str(e)})
+
+
+def _file_name(s: str) -> str:
+    """Safe ASCII for a download's file name."""
+    return "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "-" for c in s).strip("-") or "timesheet"
 
 
 def _entry_times(body: dict) -> tuple[datetime, int]:

@@ -599,3 +599,39 @@ class AllowanceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(config, "APP_DIR", Path(tmp)):
             self.assertEqual(allowance.bank_holidays(fetch=False), (None, None))
 
+
+
+class PdfTest(unittest.TestCase):
+    def _check(self, raw: bytes) -> str:
+        """A well-formed PDF: every xref offset points at its object. Returns the pages' text operators."""
+        import re
+        import zlib
+        self.assertTrue(raw.startswith(b"%PDF-1.4"))
+        xref = int(raw.rsplit(b"startxref\n", 1)[1].split(b"\n")[0])
+        self.assertTrue(raw[xref:].startswith(b"xref"))
+        offsets = [int(l[:10]) for l in raw[xref:].split(b"\n")[3:] if re.match(rb"^\d{10} 00000 n", l)]
+        for n, off in enumerate(offsets, 1):
+            self.assertTrue(raw[off:].startswith(f"{n} 0 obj".encode()), n)
+        streams = re.findall(rb"stream\n(.*?)\nendstream", raw, re.S)
+        return "\n".join(zlib.decompress(s).decode("latin-1") for s in streams)
+
+    def test_invoice_and_timesheet_pdfs(self):
+        from tftrack import pdf
+        from tftrack.reports import invoice, timesheet_rows
+        from datetime import date
+        at = lambda d, h: datetime(2026, 9, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Build (phase 2)", "tag": "HTB"}]
+        store = make_store([{"id": n, "taskId": 1, "startedAt": at(1 + n % 28, 8 + n % 9), "duration": 1500}
+                            for n in range(1, 90)], tasks=tasks)
+        store.set_excluded(5, True)
+        inv = invoice(store, "HTB", 2026, 9, "day", 15, "up")
+        text = self._check(pdf.invoice_pdf(inv))
+        self.assertIn("Page 2 of", text)                        # long months flow over pages
+        self.assertIn("(Total for September 2026)", text)
+        self.assertIn("(Build \\(phase 2\\))", text)            # brackets escaped
+        self.assertIn("(not charged)", text)
+        rows = timesheet_rows(store, date(2026, 9, 1), date(2026, 9, 30), "HTB")
+        text = self._check(pdf.timesheet_pdf(rows, date(2026, 9, 1), date(2026, 9, 30), "HTB"))
+        self.assertIn("(Timesheet: HTB)", text)
+        self.assertEqual(pdf.text_width("Hello", 10), 22.78)   # Adobe Helvetica metrics
+        self.assertEqual(pdf.fit("A very long task name", 50, 9)[-1], "…")
