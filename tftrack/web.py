@@ -95,7 +95,7 @@ button:hover{border-color:#F97316}
 label.ex{cursor:pointer;font-size:12px;color:#6B7280;white-space:nowrap} input[type=checkbox]{accent-color:#F97316}
 .lines{border-radius:12px;padding:18px 22px;margin:0 0 28px;background:#FFF7ED;border-left:3px solid #F97316;
   box-shadow:0 2px 12px rgba(0,0,0,0.08)}
-.lines td,.lines th{border-bottom-color:#FED7AA}
+.lines td,.lines th{border-bottom-color:#FED7AA} label.smooth{font-size:14px;color:#111827}
 button.copy{font-size:12px;padding:3px 10px;margin-left:6px;border-radius:6px}
 .copied{color:#00c853;font-size:13px}
 button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
@@ -165,6 +165,12 @@ $f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", 
 $f("fDelete").addEventListener("click", () => {
   if (confirm("Delete this added entry?")) act(() => post("/api/entry/delete", {id: editing.id}));
 });
+for (const box of document.querySelectorAll("input[data-smooth]")) {
+  box.addEventListener("change", async () => {
+    try { await post("/api/smooth", {client: box.dataset.smooth, on: box.checked}); location.reload(); }
+    catch (e) { alert(e.message); }
+  });
+}
 for (const box of document.querySelectorAll("input[data-roll]")) {
   box.addEventListener("change", async () => {
     box.disabled = true;
@@ -386,7 +392,9 @@ def _lines_panel(inv: dict) -> str:
     """Copy-ready invoice lines for pasting into Revolut Business (or any invoicing app). Not printed."""
     esc = html.escape
     rate = inv.get("rate")
-    lines = invoice_lines(inv, rate)
+    smooth = bool(inv.get("smooth")) and inv["style"] == "week"
+    lines = invoice_lines(inv, rate, smooth)
+    real = {l["description"]: l["hours"] for l in invoice_lines(inv, rate)} if smooth else {}
     if not lines:
         return ""
 
@@ -395,7 +403,8 @@ def _lines_panel(inv: dict) -> str:
 
     rows = "".join(
         f"<tr><td>{esc(l['description'])} {btn('Copy', l['description'])}</td>"
-        f"<td class=n>{l['hours']:.2f} {btn('Copy', format(l['hours'], '.2f'))}</td>"
+        f"<td class=n>{l['hours']:.2f} {btn('Copy', format(l['hours'], '.2f'))}"
+        + (f'<br><span class="tag">real {real.get(l["description"], 0):.2f}</span>' if smooth else "") + "</td>"
         f"<td class=n>{'£' + format(rate, '.2f') if rate else '–'}</td>"
         f"<td class=n>{'£' + format(l['amount'], '.2f') if l['amount'] is not None else '–'}</td></tr>"
         for l in lines
@@ -405,10 +414,17 @@ def _lines_panel(inv: dict) -> str:
     all_text = "\n".join(f"{l['description']}\t{l['hours']:.2f}" + (f"\t{rate:.2f}" if rate else "") for l in lines)
     rate_note = ("" if rate else
                  ' Add an hourly rate for this client in <b>Settings → How each client is invoiced</b> to see amounts.')
+    smooth_box = ""
+    if inv["style"] == "week":
+        smooth_box = (f'<p><label class="ex smooth"><input type="checkbox" data-smooth="{esc(inv["client"])}"'
+                      f'{" checked" if smooth else ""}> Even out the weeks</label> <span class="tag">'
+                      + ("the month's total spread evenly over its weeks, in whole blocks; same total, but the lines "
+                         "won't match the week totals on the timesheet" if smooth else
+                         "spread the month's total evenly over its weeks (same total)") + '</span></p>')
     return f"""<div class="lines bar-block">
 <h2 style="margin-top:0">Invoice lines</h2>
 <p>One line per {"day" if inv["style"] == "day" else "week"}, ready to copy into your invoice: description, then quantity
-(hours), then rate.{rate_note}</p>
+(hours), then rate.{rate_note}</p>{smooth_box}
 <table><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
 <tbody>{rows}</tbody>
 <tfoot><tr class="grand"><td>Total</td><td class=n>{total_hours:.2f}</td><td></td>
@@ -638,6 +654,15 @@ class Handler(BaseHTTPRequestHandler):
                         "hours": hours,
                     }
                     cfg.save_config(conf)
+                elif self.path == "/api/smooth":
+                    client = str(body.get("client") or "").strip()
+                    if not client:
+                        raise ValueError("Choose a client.")
+                    conf = cfg.load_config()
+                    smooth = [c for c in conf.get("smooth_weeks", []) if c.lower() != client.lower()]
+                    conf["smooth_weeks"] = smooth + ([client] if body.get("on") else [])
+                    cfg.save_config(conf)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/rollover":
                     month = body.get("month")
                     if month is not None:
@@ -716,6 +741,7 @@ def _invoice(q: dict) -> dict:
     if al:
         allowance.apply(inv, al)
     inv["rate"] = c.get("rate")
+    inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     return inv
 
 

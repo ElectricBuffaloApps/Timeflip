@@ -220,9 +220,31 @@ def invoice(store, client: str, year: int, month: int, style: str,
     }
 
 
-def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
-    """One invoice line per billed day (by-the-day clients) or per week (by-the-week clients)."""
+def smooth_weeks(inv: dict) -> list[int]:
+    """The month's charged time spread evenly over its weeks, in whole blocks, adding up to exactly the same total.
+
+    Blocks that don't divide evenly go to the weeks with the most real time (earlier weeks on a tie).
+    """
+    weeks = [g["billed_s"] for g in inv["groups"]]
+    if not weeks:
+        return []
+    total = sum(weeks)
+    block = (inv.get("block_minutes") or 15) * 60
+    units, rest = divmod(total, block)
+    base, extra = divmod(units, len(weeks))
+    order = sorted(range(len(weeks)), key=lambda i: (-weeks[i], i))
+    out = [(base + (1 if i in order[:extra] else 0)) * block for i in range(len(weeks))]
+    out[order[0]] += rest   # anything short of a whole block (only without rounding) stays on the busiest week
+    return out
+
+
+def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) -> list[dict]:
+    """One invoice line per billed day (by-the-day clients) or per week (by-the-week clients).
+
+    smooth: by-the-week clients only, the weeks evened out (see smooth_weeks).
+    """
     lines = []
+    smoothed = smooth_weeks(inv) if smooth and inv["style"] == "week" else None
 
     def add(description: str, seconds: int) -> None:
         if seconds <= 0:
@@ -237,9 +259,10 @@ def invoice_lines(inv: dict, rate: float | None = None) -> list[dict]:
         add(f"{inv['client']} – {al['task']}, brought in from before {date(y, m, 1):%B %Y}", al["opening_s"])
     for d in inv.get("brought", []):
         add(f"{inv['client']} – brought forward: {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])
-    for g in inv["groups"]:
+    for i, g in enumerate(inv["groups"]):
         if inv["style"] == "week":
-            add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}", g["billed_s"])
+            add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}",
+                smoothed[i] if smoothed else g["billed_s"])
         else:
             for d in g["days"]:
                 add(f"{inv['client']} – {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])

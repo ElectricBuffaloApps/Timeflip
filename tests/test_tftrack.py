@@ -635,3 +635,20 @@ class PdfTest(unittest.TestCase):
         self.assertIn("(Timesheet: HTB)", text)
         self.assertEqual(pdf.text_width("Hello", 10), 22.78)   # Adobe Helvetica metrics
         self.assertEqual(pdf.fit("A very long task name", 50, 9)[-1], "…")
+
+
+class SmoothWeeksTest(unittest.TestCase):
+    def test_spreads_the_total_evenly_in_blocks(self):
+        from tftrack.reports import invoice_lines, smooth_weeks
+        h = 3600
+        # FCY September 2026's real weeks: 4.00, 2.75, 3.50, 13.00 = 23.25 h
+        inv = {"client": "FCY", "style": "week", "month": "2026-09", "block_minutes": 15,
+               "groups": [{"label": f"Week commencing Mon {d} Sep 2026", "billed_s": int(x * h), "days": []}
+                          for d, x in (("07", 4), ("14", 2.75), ("21", 3.5), ("28", 13))]}
+        self.assertEqual([s / h for s in smooth_weeks(inv)], [5.75, 5.75, 5.75, 6.0])   # extra block on the busiest
+        lines = invoice_lines(inv, 26.5, smooth=True)
+        self.assertEqual(sum(l["hours"] for l in lines), 23.25)                          # same total as the timesheet
+        self.assertEqual([l["hours"] for l in invoice_lines(inv, 26.5)], [4.0, 2.75, 3.5, 13.0])
+        # no rounding: whatever isn't a whole block stays on the busiest week, so the total still matches
+        inv["groups"][3]["billed_s"] += 7 * 60
+        self.assertEqual(sum(smooth_weeks(inv)), int(23.25 * h) + 7 * 60)

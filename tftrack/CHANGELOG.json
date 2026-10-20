@@ -1,5 +1,12 @@
 [
   {
+    "version": 24,
+    "changes": [
+      "By-the-week timesheets (e.g. FCY) have an 'Even out the weeks' tick box in Invoice lines. It spreads the month's total evenly over its weeks in whole blocks, with the same total; any spare block goes to the busiest week.",
+      "Each smoothed line shows the real hours underneath. The timesheet itself still shows the real week totals. Your choice is remembered for each client."
+    ]
+  },
+  {
     "version": 23,
     "changes": [
       "New Save PDF button on every timesheet (and on the Timesheets tab). The tracker writes the PDF itself and it goes straight to your Downloads folder, with no print box, so Safari can't save a blank page.",
