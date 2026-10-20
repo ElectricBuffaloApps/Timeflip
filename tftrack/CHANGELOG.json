@@ -1,5 +1,14 @@
 [
   {
+    "version": 25,
+    "changes": [
+      "Carried-over hours: Justin entries ticked Roll over now go into a carried-over balance instead of being charged automatically the next month. Hours brought in from Settings join the same balance.",
+      "On any later HTB timesheet, the carried-over box shows the balance with buttons: Fill spare weeks, +15m, +30m, +1h, Add all, −15m and Clear. Whatever you don't add stays for later.",
+      "Fill spare weeks adds as much as fits in the weeks where Justin was under that week's max. Added hours appear as one invoice line per week, and week totals show '+ carried over'.",
+      "Anything you rolled over before this update is now in the balance, ready to add with the buttons."
+    ]
+  },
+  {
     "version": 24,
     "changes": [
       "By-the-week timesheets (e.g. FCY) have an 'Even out the weeks' tick box in Invoice lines. It spreads the month's total evenly over its weeks in whole blocks, with the same total; any spare block goes to the busiest week.",

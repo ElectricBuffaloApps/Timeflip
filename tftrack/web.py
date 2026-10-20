@@ -84,6 +84,10 @@ tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;
 .allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
 .allow .warn{color:#c2410c}
 tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:normal}
+.carrybox{border:1px solid #FED7AA;border-radius:10px;padding:12px 14px;margin:-8px 0 20px;font-size:13px}
+.carrybtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px} .carrybtns button{font-size:13px;padding:5px 12px}
+.carrybtns button.primary{background:#F97316;border-color:#F97316;color:#fff} .carrybtns button:disabled{opacity:.4;cursor:default}
+.carrybox .hint{margin:8px 0 0;font-size:12px}
 label.roll{margin-left:8px} th.section{padding-top:18px;color:#0b0b0b;font-size:15px}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
@@ -110,7 +114,7 @@ dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5D
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
 dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
-@media print{.bar,label.ex,.lines,button.edit{display:none} body{margin:0}}
+@media print{.bar,label.ex,.lines,button.edit,.carrybox{display:none} body{margin:0}}
 """
 
 PAGE_SCRIPT = """<script>
@@ -171,11 +175,18 @@ for (const box of document.querySelectorAll("input[data-smooth]")) {
     catch (e) { alert(e.message); }
   });
 }
+for (const b of document.querySelectorAll("button.carry")) {
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await post("/api/carry", {client: b.dataset.client, month: b.dataset.month, seconds: Number(b.dataset.seconds)}); location.reload(); }
+    catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
 for (const box of document.querySelectorAll("input[data-roll]")) {
   box.addEventListener("change", async () => {
     box.disabled = true;
     try {
-      await post("/api/rollover", {id: Number(box.dataset.roll), date: box.dataset.date, month: box.checked ? box.dataset.month : null});
+      await post("/api/rollover", {id: Number(box.dataset.roll), date: box.dataset.date, rolled: box.checked});
       location.reload();
     } catch (e) { alert(e.message); box.disabled = false; }
   });
@@ -283,13 +294,12 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
 
 
 def _roll_cell(r: dict, inv: dict, task: str | None) -> str:
-    """Roll over tick for an allowance task's entry: charged next month instead of this one."""
+    """Roll over tick for an allowance task's entry: not charged now; its time joins the carried-over balance."""
     if not task or r["task"].lower() != task.lower() or r["excluded"]:
         return ""
-    nxt = allowance.next_month(inv["month"])
-    checked = " checked" if r.get("rolled_to") else ""
-    return (f'<label class="ex roll"><input type="checkbox" data-roll="{int(r["id"])}" data-date="{esc_attr(r["entry_date"])}"'
-            f' data-month="{nxt}"{checked}> Roll over</label>')
+    checked = " checked" if r["rolled"] else ""
+    return (f'<label class="ex roll"><input type="checkbox" data-roll="{int(r["id"])}" '
+            f'data-date="{esc_attr(r["entry_date"])}"{checked}> Roll over</label>')
 
 
 def esc_attr(v: str) -> str:
@@ -298,10 +308,10 @@ def esc_attr(v: str) -> str:
 
 def _entry_row(r: dict, day: date, inv: dict, task: str | None) -> str:
     esc = html.escape
-    cls = "x" if r["excluded"] else "rolled" if r.get("rolled_to") else ""
+    cls = "x" if r["excluded"] else "rolled" if r["rolled"] else ""
     task_cell = _task_cell(r)
-    if r.get("rolled_to"):
-        task_cell = task_cell[:-5] + f' <span class="tag adj">rolled over to {allowance.month_name(r["rolled_to"])}</span></td>'
+    if r["rolled"] and not r["excluded"]:
+        task_cell = task_cell[:-5] + ' <span class="tag adj">rolled over: carried to a later invoice</span></td>'
     return (f'<tr class="{cls}"><td>{day:%a %d %b}</td><td>{esc(r["start"])}–{esc(r["end"])}</td>{task_cell}'
             f'<td class=n>{_hm(r["seconds"])}</td>{_exclude_cell(r).replace("</td>", _roll_cell(r, inv, task) + "</td>", 1)}</tr>')
 
@@ -321,15 +331,8 @@ def invoice_page(inv: dict) -> str:
     al = inv.get("allowance")
     task = al["task"] if al else None
     weeks = {w["monday"]: w for w in al["weeks"]} if al else {}
+    cw = {w["monday"]: w["seconds"] for w in inv["carry"]["by_week"]} if al else {}
     parts = []
-    if inv.get("brought"):
-        rows = [f'<tr><th colspan=5 class="section">Brought forward from earlier months</th></tr>']
-        for d in inv["brought"]:
-            day = date.fromisoformat(d["date"])
-            rows += [_entry_row(r, day, inv, task) for r in d["entries"]]
-            rows.append(_day_total(d, day))
-        rows.append(f'<tr><th colspan=5 class="section">{date.fromisoformat(inv["month"] + "-01"):%B %Y}</th></tr>')
-        parts.append("".join(rows))
     for g in inv["groups"]:
         rows = []
         week_rows = inv["style"] == "day"
@@ -351,8 +354,10 @@ def invoice_page(inv: dict) -> str:
                     note = ""
                     if w:
                         over = w["worked_s"] - w["max_s"]
+                        extra = cw.get(monday.isoformat())
                         note = (f' <span class="tag{" adj" if over > 0 else ""}">({esc(task)} {_hm(w["worked_s"])} of '
-                                f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""})</span>')
+                                f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""}'
+                                f'{f" · +{_hm(extra)} carried over" if extra else ""})</span>')
                     rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total{note}</td>'
                                 f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
                     week_s = 0
@@ -366,16 +371,22 @@ def invoice_page(inv: dict) -> str:
     extra_line = ""
     summary = ""
     if al:
-        if al["opening_s"]:
-            extra_line = (f'<tr class="grand"><td colspan=3>{esc(task)}: brought in from before {month:%B %Y}</td>'
-                          f'<td class=n>{_hm(al["opening_s"])}</td><td class=n>{al["opening_s"] / 3600:.2f} h</td></tr>')
+        c = inv["carry"]
+        for w in c["by_week"]:
+            extra_line += (f'<tr class="grand"><td colspan=3>{esc(task)}: carried over, week of '
+                           f'{date.fromisoformat(w["monday"]):%a %d %b}</td><td class=n>{_hm(w["seconds"])}</td>'
+                           f'<td class=n>{w["seconds"] / 3600:.2f} h</td></tr>')
+        if c["unplaced_s"]:
+            extra_line += (f'<tr class="grand"><td colspan=3>{esc(task)}: carried over from earlier months</td>'
+                           f'<td class=n>{_hm(c["unplaced_s"])}</td><td class=n>{c["unplaced_s"] / 3600:.2f} h</td></tr>')
         over = al["charging_s"] - al["max_s"]
-        state = (f'<b class="warn">{_hm(over)} over the max</b> · tick <b>Roll over</b> on entries to charge them next month'
+        state = (f'<b class="warn">{_hm(over)} over the max</b> · tick <b>Roll over</b> on entries to carry them'
                  if over > 0 else f'{_hm(-over)} under the max')
-        brought = f' (incl. {_hm(al["brought_s"] + al["opening_s"])} brought forward)' if al["brought_s"] + al["opening_s"] else ""
-        rolling = f' · rolling over {_hm(al["rolling_s"])} to {allowance.next_month_name(inv["month"])}' if al["rolling_s"] else ""
+        added = f' (incl. {_hm(c["added_s"])} carried over)' if c["added_s"] else ""
+        rolling = f' · rolling over {_hm(al["rolling_s"])}' if al["rolling_s"] else ""
         summary = (f'<div class="allow"><b>{esc(task)}, {month:%B %Y}:</b> max {_hm(al["max_s"])} '
-                   f'({al["working_days"]} working days) · charging {_hm(al["charging_s"])}{brought}{rolling} · {state}</div>')
+                   f'({al["working_days"]} working days) · charging {_hm(al["charging_s"])}{added}{rolling} · {state}</div>'
+                   + _carry_box(inv, c))
     table = summary + f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}{extra_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
@@ -386,6 +397,28 @@ def invoice_page(inv: dict) -> str:
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"],
                  pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}")
+
+
+def _carry_box(inv: dict, c: dict) -> str:
+    """Buttons to add carried-over hours to this month's invoice. Not printed."""
+    if not (c["available_s"] or c["added_s"]):
+        return ""
+    esc = html.escape
+    q, have, avail = 15 * 60, c["added_s"], c["available_s"]
+    fill = min(avail, c["spare_s"])
+
+    def btn(label: str, target: int, primary: bool = False) -> str:
+        target = max(0, min(avail, target))
+        off = " disabled" if target == have else ""
+        return (f'<button class="carry{" primary" if primary else ""}" data-client="{esc(inv["client"])}" '
+                f'data-month="{inv["month"]}" data-seconds="{target}"{off}>{label}</button>')
+
+    return f"""<div class="carrybox"><div><b>Carried over to charge: {_hm(avail)}</b> · adding to this invoice:
+<b>{_hm(have)}</b> · left for later: {_hm(avail - have)}</div>
+<div class="carrybtns">{btn(f"Fill spare weeks ({_hm(fill)})", fill, True)} {btn("+15m", have + q)} {btn("+30m", have + 2 * q)}
+{btn("+1h", have + 4 * q)} {btn("Add all", avail)} {btn("−15m", have - q)} {btn("Clear", 0)}</div>
+<p class="hint">Weeks under {esc(inv["allowance"]["task"])}'s max have {_hm(c["spare_s"])} spare this month; added hours go into
+those weeks first, one invoice line per week.</p></div>"""
 
 
 def _lines_panel(inv: dict) -> str:
@@ -664,12 +697,17 @@ class Handler(BaseHTTPRequestHandler):
                     cfg.save_config(conf)
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/rollover":
-                    month = body.get("month")
-                    if month is not None:
-                        y, m = (int(x) for x in str(month).split("-"))
-                        date(y, m, 1)
-                        month = f"{y}-{m:02d}"
-                    service.open_store().set_rolled(int(body["id"]), month, str(date.fromisoformat(body["date"])))
+                    service.open_store().set_rolled(int(body["id"]), "carried" if body.get("rolled") else None,
+                                                    str(date.fromisoformat(body["date"])))
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/carry":
+                    client = str(body.get("client") or "").strip()
+                    y, m = (int(x) for x in str(body.get("month") or "").split("-"))
+                    date(y, m, 1)
+                    seconds = int(body.get("seconds") or 0)
+                    if not client or seconds < 0:
+                        raise ValueError("Choose a client and an amount.")
+                    service.open_store().set_carry_added(client, f"{y}-{m:02d}", seconds)
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/sync":
                     service.sync(cfg.load_config(), service.open_store())

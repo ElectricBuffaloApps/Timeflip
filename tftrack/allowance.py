@@ -98,45 +98,88 @@ def _rounded_by_day(rows: list[dict], task: str, c: dict) -> dict[str, int]:
     return {d: round_seconds(v, c.get("block_minutes", 15), c.get("rounding", "none")) for d, v in by_day.items()}
 
 
-def for_invoice(store, conf: dict, inv: dict, holidays: set[date]) -> dict | None:
-    """The allowance figures for a client's monthly timesheet, if one of its tasks has an allowance."""
+def _allowance_for(store, conf: dict, client: str) -> dict | None:
     for a in configured(conf):
-        if (_task_client(store, a["task"]) or "").lower() != inv["client"].lower():
-            continue
-        c = _client_conf(conf, inv["client"])
-        block = int(c.get("block_minutes") or 0) * 60 if c.get("rounding", "none") != "none" else 0
-        whole = (lambda v: v - v % block) if block else (lambda v: v)   # keep charged days in whole blocks
-        per_day = float(a["hours_per_week"]) * 3600 / 5
-        start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
-        rows = [r for g in inv["groups"] for d in g["days"] for r in d["entries"]]
-        worked = _rounded_by_day([r for r in rows if not r.get("rolled_to")], a["task"], c)
-        rolling = _rounded_by_day([r for r in rows if r.get("rolled_to")], a["task"], c)
-        brought = _rounded_by_day([r for d in inv.get("brought", []) for r in d["entries"]], a["task"], c)
-        opening = round(float(a.get("opening_hours") or 0) * 3600) if inv["month"] == a["start"] else 0
-        weeks: dict[date, dict] = {}
-        for d in days_between(start, end):
-            monday = d - timedelta(days=d.weekday())
-            w = weeks.setdefault(monday, {"monday": monday.isoformat(), "from": d.isoformat(), "working_days": 0,
-                                          "worked_s": 0})
-            w["to"] = d.isoformat()
-            w["working_days"] += d.weekday() < 5 and d not in holidays
-            w["worked_s"] += worked.get(d.isoformat(), 0)
-        for w in weeks.values():
-            w["max_s"] = whole(round(per_day * w["working_days"]))
-        days_n = working_days(start, end, holidays)
-        info = {"task": a["task"], "month": inv["month"], "working_days": days_n,
-                "max_s": whole(round(per_day * days_n)), "worked_s": sum(worked.values()),
-                "brought_s": sum(brought.values()), "opening_s": opening, "rolling_s": sum(rolling.values()),
-                "weeks": [weeks[k] for k in sorted(weeks)]}
-        info["charging_s"] = info["worked_s"] + info["brought_s"] + opening
-        return info
+        if (_task_client(store, a["task"]) or "").lower() == client.lower():
+            return a
     return None
 
 
+def for_invoice(store, conf: dict, inv: dict, holidays: set[date]) -> dict | None:
+    """The allowance figures for a client's monthly timesheet, if one of its tasks has an allowance."""
+    a = _allowance_for(store, conf, inv["client"])
+    if not a:
+        return None
+    c = _client_conf(conf, inv["client"])
+    block = int(c.get("block_minutes") or 0) * 60 if c.get("rounding", "none") != "none" else 0
+    whole = (lambda v: v - v % block) if block else (lambda v: v)   # keep charged days in whole blocks
+    per_day = float(a["hours_per_week"]) * 3600 / 5
+    start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
+    rows = [r for g in inv["groups"] for d in g["days"] for r in d["entries"]]
+    worked = _rounded_by_day([r for r in rows if not r["rolled"]], a["task"], c)
+    weeks: dict[date, dict] = {}
+    for d in days_between(start, end):
+        monday = d - timedelta(days=d.weekday())
+        w = weeks.setdefault(monday, {"monday": monday.isoformat(), "from": d.isoformat(), "working_days": 0,
+                                      "worked_s": 0})
+        w["to"] = d.isoformat()
+        w["working_days"] += d.weekday() < 5 and d not in holidays
+        w["worked_s"] += worked.get(d.isoformat(), 0)
+    for w in weeks.values():
+        w["max_s"] = whole(round(per_day * w["working_days"]))
+        w["spare_s"] = max(0, w["max_s"] - w["worked_s"])
+    days_n = working_days(start, end, holidays)
+    info = {"task": a["task"], "month": inv["month"], "working_days": days_n,
+            "max_s": whole(round(per_day * days_n)), "worked_s": sum(worked.values()),
+            "rolling_s": inv.get("rolled_s", 0), "weeks": [weeks[k] for k in sorted(weeks)]}
+    info["carry"] = carry(store, conf, inv, a, c, info)
+    info["charging_s"] = info["worked_s"] + info["carry"]["added_s"]
+    return info
+
+
+def _month_before(month: str) -> str:
+    y, m = (int(x) for x in month.split("-"))
+    return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+
+
+def carry(store, conf: dict, inv: dict, a: dict, c: dict, info: dict) -> dict:
+    """The carried-over balance going into this month, and what's been added to this month's invoice.
+
+    Rolled-over entries and the hours brought in at the start build the balance; the buttons on each timesheet
+    add some of it to that month's invoice. Added hours fill the weeks with spare room under their max first.
+    """
+    from .reports import invoice
+    style = c.get("billing") if c.get("billing") in ("day", "week") else "day"
+    rolled = store.rolled()
+    earliest = min([a["start"]] + [_month_before(r["entry_date"][:7]) for r in rolled.values()])
+    added = store.carry_added(inv["client"])
+    opening = round(float(a.get("opening_hours") or 0) * 3600)
+    balance, m = 0, earliest
+    while m < inv["month"]:
+        balance += opening if m == a["start"] else 0
+        balance -= min(added.get(m, 0), balance)
+        y, mo = (int(x) for x in m.split("-"))
+        balance += invoice(store, inv["client"], y, mo, style, c.get("block_minutes", 15),
+                           c.get("rounding", "none"))["rolled_s"]
+        m = next_month(m)
+    available = balance + (opening if inv["month"] == a["start"] else 0)
+    added_now = min(added.get(inv["month"], 0), available)
+    by_week, left = [], added_now
+    for w in info["weeks"]:   # spread what's added over the weeks with spare room, earliest first
+        take = min(left, w["spare_s"])
+        if take:
+            by_week.append({"monday": w["monday"], "seconds": take})
+            left -= take
+    return {"available_s": available, "added_s": added_now, "remaining_s": available - added_now,
+            "by_week": by_week, "unplaced_s": left, "spare_s": sum(w["spare_s"] for w in info["weeks"]),
+            "rolling_s": info["rolling_s"]}
+
+
 def apply(inv: dict, info: dict) -> dict:
-    """Attach the allowance to the invoice; hours brought in before the allowance started are charged in its first month."""
+    """Attach the allowance and add the carried-over hours chosen for this month to the invoice."""
     inv["allowance"] = info
-    inv["total_billed_s"] += info["opening_s"]
+    inv["carry"] = info["carry"]
+    inv["total_billed_s"] += info["carry"]["added_s"]
     return inv
 
 

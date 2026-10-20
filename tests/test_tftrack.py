@@ -523,44 +523,54 @@ class AllowanceTest(unittest.TestCase):
         # 22 weekdays x 12 minutes = 4h 24m, rounded down to whole 15-minute blocks
         self.assertEqual((sep["working_days"], sep["max_s"]), (22, 255 * 60))
         self.assertEqual((sep["worked_s"], sep["charging_s"], sep["rolling_s"]), (5 * 3600, 5 * 3600, 0))
+        self.assertEqual(sep["carry"]["available_s"], 0)
         w = sep["weeks"][0]   # w/c 31 Aug: only Tue 1 – Sun 6 Sep are September's (4 weekdays)
         self.assertEqual((w["monday"], w["from"], w["working_days"], w["max_s"], w["worked_s"]),
                          ("2026-08-31", "2026-09-01", 4, 45 * 60, 5 * 3600))
 
-    def test_roll_over_ticks_move_entries_to_next_month(self):
+    def test_roll_over_ticks_build_a_balance_added_with_buttons(self):
         from tftrack import web
-        self.store.set_rolled(2, "2026-10", "2026-09-04")    # Justin's 4 Sept entry
+        from tftrack.reports import invoice_lines
+        self.store.set_rolled(2, "carried", "2026-09-04")    # Justin's 4 Sept entry (rounds to 2h)
         sep = self._inv(9)
-        rolled = [r for d in sep["groups"][0]["days"] for r in d["entries"] if r["id"] == 2][0]
-        self.assertEqual(rolled["rolled_to"], "2026-10")
         days = {d["date"]: d["billed_s"] for d in sep["groups"][0]["days"]}
         self.assertEqual(days, {"2026-09-03": 3 * 3600, "2026-09-04": 30 * 60})   # only the other HTB work is left
-        self.assertEqual((sep["allowance"]["charging_s"], sep["allowance"]["rolling_s"]), (3 * 3600, 2 * 3600))
+        self.assertEqual((sep["rolled_s"], sep["allowance"]["charging_s"]), (2 * 3600, 3 * 3600))
+        # October: 2h carried, nothing added until you press a button
         oct_ = self._inv(10)
-        self.assertEqual([d["date"] for d in oct_["brought"]], ["2026-09-04"])
-        self.assertEqual(oct_["brought"][0]["billed_s"], 2 * 3600)
-        self.assertEqual(oct_["total_billed_s"], 3 * 3600)                  # 2h brought + October's 1h
-        self.assertEqual(oct_["allowance"]["charging_s"], 3 * 3600)
-        from tftrack.reports import invoice_lines
-        self.assertEqual(invoice_lines(oct_, 40)[0]["description"], "HTB – brought forward: Fri 04 Sep 2026")
+        c = oct_["carry"]
+        self.assertEqual((c["available_s"], c["added_s"], oct_["total_billed_s"]), (2 * 3600, 0, 3600))
+        # October's weeks have spare room under the 1h-a-week max: 5 Oct week has 1h worked of its 1h max,
+        # so added hours go to the other weeks first
+        self.store.set_carry_added("HTB", "2026-10", 30 * 60)
+        oct_ = self._inv(10)
+        c = oct_["carry"]
+        self.assertEqual((c["added_s"], c["remaining_s"], oct_["total_billed_s"]), (30 * 60, 90 * 60, 90 * 60))
+        self.assertEqual(sum(w["seconds"] for w in c["by_week"]) + c["unplaced_s"], 30 * 60)
+        lines = invoice_lines(oct_, 40)
+        self.assertTrue(lines[0]["description"].startswith("HTB – Justin, carried over (week of "))
+        self.assertEqual(sum(l["hours"] for l in lines), 1.5)
+        # November: what's left (1h 30m) is still available
+        self.assertEqual(self._inv(11)["carry"]["available_s"], 90 * 60)
+        # asking for more than is available is capped
+        self.store.set_carry_added("HTB", "2026-11", 10 * 3600)
+        self.assertEqual(self._inv(11)["carry"]["added_s"], 90 * 60)
         orig, web._task_options = web._task_options, lambda: ""
         try:
             page = web.invoice_page(sep)
-            self.assertIn("rolled over to October 2026", page)
+            self.assertIn("rolled over: carried to a later invoice", page)
             self.assertIn("Week of Mon 31 Aug total", page)
-            self.assertIn("Justin 3h 00m of 0h 45m max", page)
-            page = web.invoice_page(oct_)
-            self.assertIn("Brought forward from earlier months", page)
-            self.assertIn('data-month="2026-11"', page)                    # rolling it on again goes to November
+            page = web.invoice_page(self._inv(10))
+            self.assertIn("Carried over to charge: 2h 00m", page)
+            self.assertIn('data-seconds="2700"', page)   # +15m from the 30m already added
         finally:
             web._task_options = orig
-        # rolled on again: gone from October, into November
-        self.store.set_rolled(2, "2026-11", "2026-09-04")
-        self.assertEqual(self._inv(10)["brought"], [])
-        self.assertEqual(self._inv(11)["brought"][0]["billed_s"], 2 * 3600)
-        # unticked in September: back to normal
-        self.store.set_rolled(2, None)
-        self.assertEqual(self._inv(9)["allowance"]["rolling_s"], 0)
+        # hours brought in at the start join the balance from the first month
+        conf = dict(self.conf, limits=[dict(self.conf["limits"][0], opening_hours=1)])
+        from tftrack import allowance
+        from tftrack.reports import invoice
+        inv = invoice(self.store, "HTB", 2026, 9, "day", 15, "up")
+        self.assertEqual(allowance.for_invoice(self.store, conf, inv, set())["carry"]["available_s"], 3600)
 
     def test_allowance_is_a_ticked_task_limit(self):
         from tftrack import allowance, config, web

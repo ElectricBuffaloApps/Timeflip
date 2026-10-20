@@ -222,9 +222,8 @@ class _Sheet:
 def _entry_notes(r: dict) -> tuple[str, tuple] | None:
     if r["excluded"]:
         return "not charged", MUTED
-    if r.get("rolled_to"):
-        y, m = (int(x) for x in r["rolled_to"].split("-"))
-        return f"rolled over to {date(y, m, 1):%B %Y}", ORANGE_TEXT
+    if r.get("rolled"):
+        return "rolled over: carried to a later invoice", ORANGE_TEXT
     if r["manual"]:
         return "added", ORANGE_TEXT
     if r["adjusted"]:
@@ -249,17 +248,18 @@ def invoice_pdf(inv: dict) -> bytes:
     if al:
         over = al["charging_s"] - al["max_s"]
         state = f"{_hm(over)} over the max" if over > 0 else f"{_hm(-over)} under the max"
-        brought = al["brought_s"] + al["opening_s"]
-        extra = (f" (incl. {_hm(brought)} brought forward)" if brought else "")
+        added = al["carry"]["added_s"]
+        extra = (f" (incl. {_hm(added)} carried over)" if added else "")
         t.note(f"max {_hm(al['max_s'])} ({al['working_days']} working days) · charging {_hm(al['charging_s'])}"
                f"{extra} · {state}", f"{al['task']}, {month:%B %Y}:")
     t.head()
     weeks = {w["monday"]: w for w in al["weeks"]} if al else {}
+    carried = {w["monday"]: w["seconds"] for w in al["carry"]["by_week"]} if al else {}
 
     def day_rows(d: dict) -> None:
         day = date.fromisoformat(d["date"])
         for r in d["entries"]:
-            faded = r["excluded"] or bool(r.get("rolled_to"))
+            faded = r["excluded"] or bool(r.get("rolled"))
             note = _entry_notes(r)
             t.row([f"{day:%a %d %b}", f"{r['start']}–{r['end']}", r["task"], _hm(r["seconds"]), ""],
                   color=FAINT if faded else INK, strike=r["excluded"], notes={2: note} if note else None)
@@ -268,13 +268,6 @@ def invoice_pdf(inv: dict) -> bytes:
         t.row([f"{day:%A %d %B} total", "", "", _hm(d["billed_s"]), f"{d['billed_s'] / 3600:.2f} h"],
               bold=True, fill=TINT, notes={0: (actual, MUTED)} if actual else None)
 
-    if inv.get("brought"):
-        t.room(3)
-        t.row(["Brought forward from earlier months"], bold=True, size=10, rule=False)
-        for d in inv["brought"]:
-            day_rows(d)
-        t.gap()
-        t.row([f"{month:%B %Y}"], bold=True, size=10, rule=False)
     for g in inv["groups"]:
         if g["label"]:
             t.room(3)
@@ -295,8 +288,10 @@ def invoice_pdf(inv: dict) -> bytes:
                     note = None
                     if w:
                         over = w["worked_s"] - w["max_s"]
+                        extra = carried.get(monday.isoformat())
                         note = (f"{al['task']} {_hm(w['worked_s'])} of {_hm(w['max_s'])} max"
-                                + (f" · {_hm(over)} over" if over > 0 else ""), ORANGE_TEXT if over > 0 else MUTED)
+                                + (f" · {_hm(over)} over" if over > 0 else "")
+                                + (f" · +{_hm(extra)} carried over" if extra else ""), ORANGE_TEXT if over > 0 else MUTED)
                     t.row([f"Week of {monday:%a %d %b} total", "", "", _hm(week_s), f"{week_s / 3600:.2f} h"],
                           bold=True, fill=GREY_BG, notes={0: note} if note else None)
                     week_s = 0
@@ -306,9 +301,14 @@ def invoice_pdf(inv: dict) -> bytes:
     t.room(4)
     if inv["style"] == "day":
         t.row(["Days worked", "", "", str(inv["days_worked"]), ""], bold=True, size=10)
-    if al and al["opening_s"]:
-        t.row([f"{al['task']}: brought in from before {month:%B %Y}", "", "", _hm(al["opening_s"]),
-               f"{al['opening_s'] / 3600:.2f} h"], bold=True, size=10)
+    if al:
+        for w in al["carry"]["by_week"]:
+            t.row([f"{al['task']}: carried over, week of {date.fromisoformat(w['monday']):%a %d %b}", "", "",
+                   _hm(w["seconds"]), f"{w['seconds'] / 3600:.2f} h"], bold=True, size=10)
+        left = al["carry"]["unplaced_s"]
+        if left:
+            t.row([f"{al['task']}: carried over from earlier months", "", "", _hm(left), f"{left / 3600:.2f} h"],
+                  bold=True, size=10)
     t.doc.line(MARGIN, t.y, PAGE_W - MARGIN, t.y, 1.2, INK)
     t.row([f"Total for {month:%B %Y}", "", "", _hm(inv["total_billed_s"]), f"{inv['total_billed_s'] / 3600:.2f} h"],
           bold=True, size=10.5, rule=False)

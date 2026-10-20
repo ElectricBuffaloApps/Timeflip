@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS rollover (
     month TEXT NOT NULL,        -- the month it's now charged in
     entry_date TEXT NOT NULL    -- the entry's own (local) date, to find it again
 );
+-- Carried-over hours added to a month's invoice (by the user, with the buttons on its timesheet).
+CREATE TABLE IF NOT EXISTS carry_added (
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- YYYY-MM
+    seconds INTEGER NOT NULL,
+    PRIMARY KEY (client, month)
+);
 -- Time the user added by hand (not tracked on the cube).
 CREATE TABLE IF NOT EXISTS manual_entry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +282,17 @@ class Store:
                 self.db.execute("INSERT OR REPLACE INTO rollover VALUES (?, ?, ?)", (interval_id, month, entry_date))
             else:
                 self.db.execute("DELETE FROM rollover WHERE interval_id = ?", (interval_id,))
+
+    def carry_added(self, client: str) -> dict[str, int]:
+        """Carried-over hours added to each month's invoice for a client: month -> seconds."""
+        return {r["month"]: r["seconds"] for r in
+                self.db.execute("SELECT month, seconds FROM carry_added WHERE lower(client) = lower(?)", (client,))}
+
+    def set_carry_added(self, client: str, month: str, seconds: int) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM carry_added WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            if seconds > 0:
+                self.db.execute("INSERT INTO carry_added VALUES (?, ?, ?)", (client, month, seconds))
 
     def get_meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
