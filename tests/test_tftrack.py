@@ -662,3 +662,34 @@ class SmoothWeeksTest(unittest.TestCase):
         # no rounding: whatever isn't a whole block stays on the busiest week, so the total still matches
         inv["groups"][3]["billed_s"] += 7 * 60
         self.assertEqual(sum(smooth_weeks(inv)), int(23.25 * h) + 7 * 60)
+
+
+class OutstandingTest(unittest.TestCase):
+    def test_to_invoice_and_carried_per_client(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"},
+                 {"id": 3, "name": "Dev", "tag": "FYPTD"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(5, 9), "duration": 2 * 3600},
+            {"id": 2, "taskId": 1, "startedAt": at(6, 9), "duration": 3600},
+            {"id": 3, "taskId": 2, "startedAt": at(7, 9), "duration": 50 * 60},
+            {"id": 4, "taskId": 3, "startedAt": at(7, 12), "duration": 3600},   # own business: not invoiced
+        ], tasks=tasks)
+        store.set_rolled(2, "carried", "2026-10-06")
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40},
+                            "FCY": {"billing": "week", "rounding": "up", "block_minutes": 15, "rate": 26.5},
+                            "FYPTD": {"billing": "hourly", "rate": 50, "notional": True}},
+                "limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}]}
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", return_value=conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            o = web.outstanding(date(2026, 10, 23))
+        by = {c["client"]: c for c in o["clients"]}
+        self.assertEqual(sorted(by), ["FCY", "HTB"])
+        self.assertEqual((by["HTB"]["due_s"], by["HTB"]["due_value"]), (2 * 3600, 80.0))
+        self.assertEqual((by["HTB"]["carried_s"], by["HTB"]["carried_value"]), (3600, 40.0))
+        self.assertEqual((by["FCY"]["due_s"], by["FCY"]["due_value"]), (3600, 26.5))   # 50m rounds up to 1h
+        self.assertEqual((o["due_value"], o["carried_value"]), (106.5, 40.0))

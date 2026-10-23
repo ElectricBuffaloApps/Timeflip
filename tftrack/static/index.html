@@ -139,6 +139,26 @@ label.check { display: inline-flex; gap: 8px; align-items: center; }
 .strip-ticks span { position: absolute; transform: translateX(-50%); }
 .strip .now { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--zing); border-radius: 1px; }
 
+/* ---------- outstanding ---------- */
+.owed { display: grid; gap: 14px; }
+.owed-head { display: flex; flex-wrap: wrap; gap: 10px 32px; align-items: flex-end; }
+.owed-head > div:first-child { margin-right: auto; }
+.owed-sub { font-size: 12px; color: var(--ink-2); }
+.owed-total { display: flex; flex-direction: column; text-align: right; }
+.owed-total b { font-family: Sora, Inter, sans-serif; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.owed-total span { font-size: 11px; color: var(--ink-2); }
+.owed-total.carried b { color: var(--accent-deep); }
+.owed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.owed-card { background: var(--sunk); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.owed-card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.owed-card .top b { font-family: Sora, Inter, sans-serif; font-size: 15px; }
+.owed-card .top a { font-size: 12px; color: var(--accent-deep); text-decoration: none; font-weight: 600; }
+.owed-line { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.owed-line span:first-child { color: var(--ink-2); }
+.owed-line b { font-weight: 600; }
+.owed-line.carried b { color: var(--accent-deep); }
+@media (max-width: 560px) { .owed-total { text-align: left; } .owed-total b { font-size: 22px; } }
+
 /* ---------- KPI tiles ---------- */
 .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 1020px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -172,7 +192,8 @@ label.check { display: inline-flex; gap: 8px; align-items: center; }
 
 /* ---------- week chart ---------- */
 .week-tile { display: flex; flex-direction: column; }
-.week { flex: 1; min-height: 190px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.week { flex: 1; min-height: 190px; display: grid; grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr)); gap: 10px; align-items: end; }
+@media (max-width: 560px) { .week { gap: 4px; } .week .val { font-size: 10px; } }
 .week .col { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; min-width: 0; }
 .week .val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .week .bar { width: min(44px, 100%); border-radius: 6px 6px 2px 2px; background: var(--bar-soft); min-height: 3px; display: flex; flex-direction: column-reverse; overflow: hidden; }
@@ -300,6 +321,14 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= DASHBOARD ================= -->
   <div class="board" data-panel="dashboard" role="tabpanel">
+    <section class="tile c12 owed hidden" id="owedTile" aria-label="Outstanding">
+      <div class="owed-head">
+        <div><div class="lbl">Outstanding</div><div class="owed-sub" id="owedSub"></div></div>
+        <div class="owed-total"><b id="owedTotal">–</b><span>to invoice</span></div>
+        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged</span></div>
+      </div>
+      <div class="owed-grid" id="owedGrid"></div>
+    </section>
     <section class="tile hero c4 stretch" id="today" aria-label="Today">
       <div>
         <div class="lbl">Today</div>
@@ -319,7 +348,13 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <div class="kpis c8" id="incomeTargets" aria-label="Money and targets"></div>
 
     <section class="tile c8 stretch week-tile">
-      <div class="tile-head"><h2>This week</h2><span class="meta" id="weekMeta"></span></div>
+      <div class="tile-head"><h2 id="weekTitle">This week</h2>
+        <div class="row"><span class="meta" id="weekMeta"></span>
+          <select id="weekRange" aria-label="Chart period">
+            <option value="thisWeek">This week</option><option value="lastWeek">Last week</option>
+            <option value="thisMonth">This month</option><option value="lastMonth">Last month</option>
+            <option value="taxYear">Tax year to date</option>
+          </select></div></div>
       <div class="week" id="weekChart"></div>
       <div class="legend" id="weekLegend"></div>
     </section>
@@ -848,39 +883,132 @@ function renderTotals(r) {
 }
 
 /* ---------- this week (dashboard) ---------- */
-async function loadWeek() {
+function chartRange(kind) {
+  // [start, end, bucket]: days for a week, weeks for a month, months for the tax year (from 6 April).
+  const t = new Date(); t.setHours(0, 0, 0, 0);
   const ws = weekStartDate();
-  const we = new Date(ws); we.setDate(ws.getDate() + 6);
+  const add = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  switch (kind) {
+    case "lastWeek": return [add(ws, -7), add(ws, -1), "day"];
+    case "thisMonth": return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0), "week"];
+    case "lastMonth": return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0), "week"];
+    case "taxYear": {
+      const y = t >= new Date(t.getFullYear(), 3, 6) ? t.getFullYear() : t.getFullYear() - 1;
+      return [new Date(y, 3, 6), t, "month"];
+    }
+    default: return [ws, add(ws, 6), "day"];
+  }
+}
+function bucketKey(d, bucket) {
+  if (bucket === "day") return iso(d);
+  if (bucket === "month") return iso(d).slice(0, 7);
+  const m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // Monday of its week
+  return iso(m);
+}
+async function loadWeek() {
+  let kind = "thisWeek";
+  try { kind = localStorage.getItem("chartRange") || "thisWeek"; } catch (_) {}
+  $("weekRange").value = kind;
+  const [start, end, bucket] = chartRange(kind);
+  $("weekTitle").textContent = $("weekRange").selectedOptions[0].textContent;
   let r;
-  try { r = await api(`/api/report?start=${iso(ws)}&end=${iso(we)}&group=client`); } catch (_) { return; }
+  try { r = await api(`/api/report?start=${iso(start)}&end=${iso(end)}&group=client`); } catch (_) { return; }
   const series = foldSeries(r.series);
-  const totals = r.days.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  // Group the days into buckets (days, weeks or months), keeping each client's share.
+  const buckets = [];
+  const index = {};
+  r.days.forEach((d, i) => {
+    const key = bucketKey(new Date(`${d}T12:00:00`), bucket);
+    if (!(key in index)) { index[key] = buckets.length; buckets.push({ key, first: d, last: d, values: series.map(() => 0) }); }
+    const b = buckets[index[key]];
+    b.last = d;
+    series.forEach((s, k) => (b.values[k] += s.values[i]));
+  });
+  const totals = buckets.map((b) => b.values.reduce((a, v) => a + v, 0));
   const max = Math.max(3600, ...totals);
   const today = iso(new Date());
-  const worked = totals.filter((t) => t > 0).length;
-  weekKpi = { seconds: r.total_seconds, days: worked };
-  fillWeekKpi();
+  const worked = r.days.filter((_, i) => series.some((s) => s.values[i] > 0)).length;
+  if (kind === "thisWeek") { weekKpi = { seconds: r.total_seconds, days: worked }; fillWeekKpi(); } else loadWeekKpi();
   $("weekMeta").textContent = r.total_seconds
     ? `${hm(r.total_seconds)} · ${worked} day${worked === 1 ? "" : "s"} worked · ${gbp(r.money.earned)} earned` : "Nothing tracked yet";
-  $("weekChart").replaceChildren(...r.days.map((d, i) => {
-    const date = new Date(`${d}T12:00:00`);
-    const col = el("div", { class: `col${d === today ? " today" : ""}${d > today ? " future" : ""}` });
-    col.title = `${date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}: ${hm(totals[i])}`;
+  const label = (b) => {
+    const d = new Date(`${b.first}T12:00:00`);
+    if (bucket === "day") return d.toLocaleDateString("en-GB", { weekday: "short" });
+    if (bucket === "month") return d.toLocaleDateString("en-GB", { month: "short" });
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  };
+  const longName = (b) => {
+    const a = new Date(`${b.first}T12:00:00`), z = new Date(`${b.last}T12:00:00`);
+    if (bucket === "day") return a.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    if (bucket === "month") return a.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    return `${a.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${z.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+  };
+  $("weekChart").style.setProperty("--cols", buckets.length);
+  $("weekChart").replaceChildren(...buckets.map((b, i) => {
+    const current = b.first <= today && today <= b.last, future = b.first > today;
+    const col = el("div", { class: `col${current ? " today" : ""}${future ? " future" : ""}` });
+    col.title = `${longName(b)}: ${hm(totals[i])}`;
     const bar = el("div", { class: "bar" });
     bar.style.height = `${Math.max(2, (100 * totals[i]) / max) * 0.72}%`;
-    for (const s of series) {
-      if (!s.values[i]) continue;
-      const seg = el("i"); seg.style.background = s.color; seg.style.height = `${(100 * s.values[i]) / totals[i]}%`;
+    series.forEach((s, k) => {
+      if (!b.values[k]) return;
+      const seg = el("i"); seg.style.background = s.color; seg.style.height = `${(100 * b.values[k]) / totals[i]}%`;
       bar.append(seg);
-    }
-    col.append(el("div", { class: "val" }, totals[i] ? hShort(totals[i]) : d > today ? "" : "–"),
-               bar, el("div", { class: "day" }, date.toLocaleDateString("en-GB", { weekday: "short" })));
+    });
+    const v = totals[i] >= 100 * 3600 ? `${Math.round(totals[i] / 3600)}h` : hShort(totals[i]);
+    col.append(el("div", { class: "val" }, totals[i] ? v : future ? "" : "–"), bar, el("div", { class: "day" }, label(b)));
     return col;
   }));
   $("weekLegend").replaceChildren(...series.map((s) => {
     const item = el("span"); const sw = el("i"); sw.style.background = s.color;
     item.append(sw, document.createTextNode(`${s.name} ${hm(s.total)}`));
     return item;
+  }));
+}
+async function loadWeekKpi() {
+  const [start, end] = chartRange("thisWeek");
+  try {
+    const r = await api(`/api/report?start=${iso(start)}&end=${iso(end)}&group=client`);
+    weekKpi = { seconds: r.total_seconds, days: r.days.filter((_, i) => r.series.some((s) => s.values[i] > 0)).length };
+    fillWeekKpi();
+  } catch (_) {}
+}
+$("weekRange").onchange = () => {
+  try { localStorage.setItem("chartRange", $("weekRange").value); } catch (_) {}
+  loadWeek();
+};
+
+/* ---------- outstanding ---------- */
+async function loadOutstanding() {
+  let o;
+  try { o = await api("/api/outstanding"); } catch (_) { return; }
+  $("owedTile").classList.toggle("hidden", !o.clients.length);
+  const [y, m] = o.month.split("-").map(Number);
+  const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long" });
+  $("owedSub").textContent = `${monthName} so far, and hours carried over` +
+    (o.missing_rate.length ? ` · add an hourly rate for ${o.missing_rate.join(", ")} in Settings to see amounts` : "");
+  $("owedTotal").textContent = gbp(o.due_value);
+  $("owedCarried").textContent = gbp(o.carried_value);
+  const amount = (v) => (v == null ? "no rate" : gbp(v));
+  $("owedGrid").replaceChildren(...o.clients.map((c) => {
+    const card = el("div", { class: "owed-card" });
+    const top = el("div", { class: "top" });
+    top.append(el("b", {}, c.client));
+    const link = el("a", { href: "#timesheets" }, "Timesheet →");
+    link.onclick = (e) => {
+      e.preventDefault();
+      $("tsClient").value = c.client; $("tsMonth").value = o.month; updateTsHint();
+      window.open(tsUrl(false), "_blank");
+    };
+    top.append(link);
+    const line = (cls, label, secs, value) => {
+      const l = el("div", { class: `owed-line ${cls}` });
+      l.append(el("span", {}, label), el("b", {}, `${hm(secs)} · ${amount(value)}`));
+      return l;
+    };
+    card.append(top, line("", `To invoice (${monthName})`, c.due_s, c.due_value));
+    if (c.carried_s) card.append(line("carried", "Carried, not charged", c.carried_s, c.carried_value));
+    return card;
   }));
 }
 
@@ -1240,7 +1368,7 @@ $("mMonth").onchange = () => loadMonth();
 
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
-  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances();
+  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding();
 }
 (async () => {
   try { showState(await api("/api/state"), true); }
@@ -1248,7 +1376,7 @@ function refreshAll(auto = false) {
   showTab(location.hash.slice(1));
   checkForUpdate(false);
   refreshAll();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); } catch (_) {} }, 60000);
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

@@ -522,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
                     "entries": [{k: r[k] for k in ("start", "end", "task", "client", "seconds", "adjusted", "manual")}
                                 for r in rows],
                 })
+            if url.path == "/api/outstanding":
+                return self._send(200, outstanding(date.today()))
             if url.path == "/api/allowances":
                 return self._send(200, allowance.summary(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/targets":
@@ -781,6 +783,36 @@ def _invoice(q: dict) -> dict:
     inv["rate"] = c.get("rate")
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     return inv
+
+
+def outstanding(today: date) -> dict:
+    """Per paying client: this month's time still to invoice, and carried-over time not yet charged, with values."""
+    conf = cfg.load_config()
+    store = service.open_store()
+    month = f"{today:%Y-%m}"
+    first = today.replace(day=1)
+    out = []
+    for client in sorted({t["tag"] for t in store.tasks() if t["tag"]}, key=str.lower):
+        c = _client_settings(conf, client)
+        if c.get("notional") or c.get("billing") == "monthly":
+            continue   # own-business and monthly-income clients aren't invoiced by the hour
+        rate = c.get("rate")
+        carried = 0
+        if c.get("billing") in ("day", "week"):
+            inv = _invoice({"client": client, "month": month})
+            due = inv["total_billed_s"]
+            carried = inv["rolled_s"] + (inv["carry"]["remaining_s"] if inv.get("carry") else 0)
+        else:
+            rows = [r for r in timesheet_rows(store, first, today, client) if not r["excluded"]]
+            due = sum(r["seconds"] for r in rows)
+        if not due and not carried:
+            continue
+        value = lambda secs: round(secs / 3600 * rate, 2) if rate else None
+        out.append({"client": client, "rate": rate, "due_s": due, "due_value": value(due),
+                    "carried_s": carried, "carried_value": value(carried)})
+    total = lambda key: round(sum(c[key] or 0 for c in out), 2)
+    return {"month": month, "clients": out, "due_value": total("due_value"), "carried_value": total("carried_value"),
+            "missing_rate": [c["client"] for c in out if not c["rate"]]}
 
 
 def _clean_limit(raw: dict) -> dict:

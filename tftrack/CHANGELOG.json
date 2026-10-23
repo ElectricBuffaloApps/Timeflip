@@ -1,5 +1,13 @@
 [
   {
+    "version": 26,
+    "changes": [
+      "New Outstanding strip at the top of the Dashboard. For each client it shows this month's hours still to invoice and their value, plus hours carried over but not yet charged (e.g. Justin's) and their value, with totals.",
+      "Each client card has a link straight to that client's timesheet for the month.",
+      "The hours chart has a period menu: this week, last week, this month, last month, or tax year to date (from 6 April). Weeks show days, months show weeks, and the tax year shows months. Your choice is remembered."
+    ]
+  },
+  {
     "version": 25,
     "changes": [
       "Carried-over hours: Justin entries ticked Roll over now go into a carried-over balance instead of being charged automatically the next month. Hours brought in from Settings join the same balance.",
