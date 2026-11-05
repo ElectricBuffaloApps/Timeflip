@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS carry_added (
     seconds INTEGER NOT NULL,
     PRIMARY KEY (client, month)
 );
+-- Months the user has marked as invoiced, with what the invoice came to at the time.
+CREATE TABLE IF NOT EXISTS invoiced (
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- YYYY-MM
+    marked_at TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    amount REAL,
+    PRIMARY KEY (client, month)
+);
 -- Time the user added by hand (not tracked on the cube).
 CREATE TABLE IF NOT EXISTS manual_entry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -293,6 +302,19 @@ class Store:
             self.db.execute("DELETE FROM carry_added WHERE lower(client) = lower(?) AND month = ?", (client, month))
             if seconds > 0:
                 self.db.execute("INSERT INTO carry_added VALUES (?, ?, ?)", (client, month, seconds))
+
+    def invoiced(self, client: str) -> dict[str, dict]:
+        """Months marked as invoiced for a client: month -> {marked_at, seconds, amount}."""
+        return {r["month"]: {"marked_at": r["marked_at"], "seconds": r["seconds"], "amount": r["amount"]}
+                for r in self.db.execute("SELECT * FROM invoiced WHERE lower(client) = lower(?)", (client,))}
+
+    def set_invoiced(self, client: str, month: str, seconds: int | None = None, amount: float | None = None) -> None:
+        """Mark a month as invoiced (with its total then), or pass seconds=None to unmark it."""
+        with self.db:
+            self.db.execute("DELETE FROM invoiced WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            if seconds is not None:
+                self.db.execute("INSERT INTO invoiced VALUES (?, ?, ?, ?, ?)",
+                                (client, month, datetime.now(timezone.utc).isoformat(), seconds, amount))
 
     def get_meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

@@ -693,3 +693,19 @@ class OutstandingTest(unittest.TestCase):
         self.assertEqual((by["HTB"]["carried_s"], by["HTB"]["carried_value"]), (3600, 40.0))
         self.assertEqual((by["FCY"]["due_s"], by["FCY"]["due_value"]), (3600, 26.5))   # 50m rounds up to 1h
         self.assertEqual((o["due_value"], o["carried_value"]), (106.5, 40.0))
+        self.assertEqual([m["month"] for m in by["HTB"]["months"]], ["2026-10"])
+        # in November, October shows as not invoiced until it's marked
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", return_value=conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            nov = {c["client"]: c for c in web.outstanding(date(2026, 11, 5))["clients"]}
+            self.assertEqual([(m["month"], m["current"]) for m in nov["HTB"]["months"]], [("2026-10", False)])
+            secs, amount, _ = web._month_due(store, conf, "HTB", "2026-10")
+            self.assertEqual((secs, amount), (2 * 3600, 80.0))
+            store.set_invoiced("HTB", "2026-10", secs, amount)
+            nov = {c["client"]: c for c in web.outstanding(date(2026, 11, 5))["clients"]}
+            self.assertEqual(nov["HTB"]["months"], [])          # invoiced: gone, but carried hours still show
+            self.assertEqual(nov["HTB"]["carried_s"], 3600)
+            self.assertEqual(store.invoiced("htb")["2026-10"]["amount"], 80.0)
+            store.set_invoiced("HTB", "2026-10", None)
+            self.assertEqual(store.invoiced("HTB"), {})

@@ -22,6 +22,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 
 - **Tabs:** **Dashboard** (today, money and targets, this week, limits, this month), **Reports** (charts), **Timesheets** and **Settings**.
 - **Outstanding:** the top of the Dashboard shows, per client, this month's hours still to invoice (with the client's rounding, allowance and any carried hours you've added) and carried-over hours not yet charged, each with its value at the client's hourly rate. Own-business and monthly-income clients aren't included.
+- **Mark as invoiced:** press it at the top of a monthly timesheet once you've sent the invoice (or press **Mark invoiced** on the Dashboard). It records the date, hours and amount; **Undo** reverses it, and the sheet warns you if it changes afterwards. Outstanding lists every month not yet marked, counting from the first month you ever marked for that client (until then, just last month).
 - **Hours chart:** pick this week, last week, this month, last month or tax year to date (from 6 April).
 - **Today:** the Dashboard opens with your total for today, a strip showing when you worked, time per task and today's entries.
 - **Tasks not counted:** in Settings, tick sides like breaks, timers or "off" to leave them out of every figure. Today still shows how much time wasn't counted.

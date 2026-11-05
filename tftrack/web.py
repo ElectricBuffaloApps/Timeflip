@@ -106,6 +106,8 @@ button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
 .bar button.secondary{background:#fff;color:#111827;border-color:#D1D5DB}
 .bar a.btn{font:600 14px Sora,Inter,sans-serif;padding:8px 16px;border-radius:8px;background:#F97316;color:#fff;text-decoration:none}
 .bar a.btn:hover{background:#c2410c}
+.bar .done{color:#00a344;font-weight:600} .bar .warn{color:#c2410c}
+.bar{flex-wrap:wrap} .bar button,.bar a.btn,.bar .done{white-space:nowrap} .bar>span:last-child{flex-basis:100%}
 .bar button.secondary:hover{background:#fff;border-color:#F97316}
 .tag.adj{color:#c2410c;font-style:italic}
 dialog{border:none;border-radius:12px;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);min-width:340px}
@@ -175,6 +177,13 @@ for (const box of document.querySelectorAll("input[data-smooth]")) {
     catch (e) { alert(e.message); }
   });
 }
+for (const b of document.querySelectorAll("button.invoiced")) {
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await post("/api/invoiced", {client: b.dataset.client, month: b.dataset.month, invoiced: !!b.dataset.invoiced}); location.reload(); }
+    catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
 for (const b of document.querySelectorAll("button.carry")) {
   b.addEventListener("click", async () => {
     b.disabled = true;
@@ -238,7 +247,7 @@ def _task_options() -> str:
 
 
 def _page(title: str, heading: str, subtitle: str, table: str, default_date: date | None = None,
-          client: str | None = None, pdf_url: str = "") -> str:
+          client: str | None = None, pdf_url: str = "", status: str = "") -> str:
     esc = html.escape
     dialog = f"""<dialog id="entryDialog"><form method="dialog" id="entryForm">
 <h2 id="dlgTitle" style="margin-top:0">Edit entry</h2>
@@ -263,7 +272,7 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 <div class="bar"><a class="btn" href="{esc(pdf_url)}">Save PDF</a>
 <button class="secondary" onclick="window.print()">Print</button>
 <button id="addEntry" class="secondary">+ Add entry</button>
-<span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
+{status}<span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
 <h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}</body></html>"""
 
 
@@ -396,7 +405,23 @@ def invoice_page(inv: dict) -> str:
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"],
-                 pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}")
+                 pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}", status=_invoiced_status(inv))
+
+
+def _invoiced_status(inv: dict) -> str:
+    """Mark as invoiced button, or when it was marked (and a warning if the timesheet has changed since)."""
+    esc = html.escape
+    data = f'data-client="{esc(inv["client"])}" data-month="{inv["month"]}"'
+    done = inv.get("invoiced")
+    if not done:
+        return f'<button class="secondary invoiced" {data} data-invoiced="1">Mark as invoiced</button>'
+    when = datetime.fromisoformat(done["marked_at"]).astimezone()
+    amount = f", £{done['amount']:,.2f}" if done["amount"] is not None else ""
+    changed = ""
+    if done["seconds"] != inv["total_billed_s"]:
+        changed = (f' <b class="warn">Changed since: now {inv["total_billed_s"] / 3600:.2f} h</b>')
+    return (f'<span class="done">✓ Invoiced {when:%-d %b %Y} ({done["seconds"] / 3600:.2f} h{amount}){changed}</span>'
+            f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>')
 
 
 def _carry_box(inv: dict, c: dict) -> str:
@@ -698,6 +723,20 @@ class Handler(BaseHTTPRequestHandler):
                     conf["smooth_weeks"] = smooth + ([client] if body.get("on") else [])
                     cfg.save_config(conf)
                     return self._send(200, {"ok": True})
+                elif self.path == "/api/invoiced":
+                    client = str(body.get("client") or "").strip()
+                    y, m = (int(x) for x in str(body.get("month") or "").split("-"))
+                    date(y, m, 1)
+                    month = f"{y}-{m:02d}"
+                    if not client:
+                        raise ValueError("Choose a client.")
+                    store = service.open_store()
+                    if body.get("invoiced"):
+                        secs, amount, _ = _month_due(store, cfg.load_config(), client, month)
+                        store.set_invoiced(client, month, secs, amount)
+                    else:
+                        store.set_invoiced(client, month, None)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/rollover":
                     service.open_store().set_rolled(int(body["id"]), "carried" if body.get("rolled") else None,
                                                     str(date.fromisoformat(body["date"])))
@@ -782,37 +821,72 @@ def _invoice(q: dict) -> dict:
         allowance.apply(inv, al)
     inv["rate"] = c.get("rate")
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
+    inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
     return inv
 
 
+def _month_due(store, conf: dict, client: str, month: str) -> tuple[int, float | None, dict | None]:
+    """What a client's invoice for a month comes to: (seconds, amount, invoice data for by-day/by-week clients)."""
+    c = _client_settings(conf, client)
+    rate = c.get("rate")
+    if c.get("billing") in ("day", "week"):
+        inv = _invoice({"client": client, "month": month})
+        lines = invoice_lines(inv, rate, bool(inv.get("smooth")))   # what you'd actually copy into the invoice
+        return inv["total_billed_s"], (round(sum(l["amount"] or 0 for l in lines), 2) if rate else None), inv
+    y, m = (int(x) for x in month.split("-"))
+    first = date(y, m, 1)
+    last = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+    secs = sum(r["seconds"] for r in timesheet_rows(store, first, last, client) if not r["excluded"])
+    return secs, (round(secs / 3600 * rate, 2) if rate else None), None
+
+
+def _months(start: str, end: str) -> list[str]:
+    out, m = [], start
+    while m <= end:
+        out.append(m)
+        m = allowance.next_month(m)
+    return out
+
+
 def outstanding(today: date) -> dict:
-    """Per paying client: this month's time still to invoice, and carried-over time not yet charged, with values."""
+    """Per paying client: months not yet marked as invoiced (this one so far, and any earlier ones), and
+    carried-over time not yet charged, with values.
+
+    Earlier months count from the first month you ever marked as invoiced for that client; before you've marked
+    any, just last month and this one.
+    """
     conf = cfg.load_config()
     store = service.open_store()
     month = f"{today:%Y-%m}"
-    first = today.replace(day=1)
     out = []
     for client in sorted({t["tag"] for t in store.tasks() if t["tag"]}, key=str.lower):
         c = _client_settings(conf, client)
         if c.get("notional") or c.get("billing") == "monthly":
             continue   # own-business and monthly-income clients aren't invoiced by the hour
         rate = c.get("rate")
-        carried = 0
-        if c.get("billing") in ("day", "week"):
-            inv = _invoice({"client": client, "month": month})
-            due = inv["total_billed_s"]
-            carried = inv["rolled_s"] + (inv["carry"]["remaining_s"] if inv.get("carry") else 0)
-        else:
-            rows = [r for r in timesheet_rows(store, first, today, client) if not r["excluded"]]
-            due = sum(r["seconds"] for r in rows)
-        if not due and not carried:
+        marked = store.invoiced(client)
+        start = min(marked) if marked else _month_before(month)
+        months, carried = [], 0
+        for m in _months(start, month):
+            secs, amount, inv = _month_due(store, conf, client, m)
+            if m == month and inv:
+                carried = inv["rolled_s"] + (inv["carry"]["remaining_s"] if inv.get("carry") else 0)
+            if m not in marked and secs:
+                months.append({"month": m, "seconds": secs, "value": amount, "current": m == month})
+        if not months and not carried:
             continue
-        value = lambda secs: round(secs / 3600 * rate, 2) if rate else None
-        out.append({"client": client, "rate": rate, "due_s": due, "due_value": value(due),
-                    "carried_s": carried, "carried_value": value(carried)})
+        due = sum(x["seconds"] for x in months)
+        out.append({"client": client, "rate": rate, "months": months, "due_s": due,
+                    "due_value": round(sum(x["value"] or 0 for x in months), 2) if rate else None,
+                    "carried_s": carried, "carried_value": round(carried / 3600 * rate, 2) if rate else None})
     total = lambda key: round(sum(c[key] or 0 for c in out), 2)
     return {"month": month, "clients": out, "due_value": total("due_value"), "carried_value": total("carried_value"),
             "missing_rate": [c["client"] for c in out if not c["rate"]]}
+
+
+def _month_before(month: str) -> str:
+    y, m = (int(x) for x in month.split("-"))
+    return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
 
 
 def _clean_limit(raw: dict) -> dict:

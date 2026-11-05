@@ -157,6 +157,8 @@ label.check { display: inline-flex; gap: 8px; align-items: center; }
 .owed-line span:first-child { color: var(--ink-2); }
 .owed-line b { font-weight: 600; }
 .owed-line.carried b { color: var(--accent-deep); }
+.owed-line.late span:first-child { color: var(--critical); font-weight: 600; }
+.owed-line .mark { font-size: 12px; padding: 0 4px; }
 @media (max-width: 560px) { .owed-total { text-align: left; } .owed-total b { font-size: 22px; } }
 
 /* ---------- KPI tiles ---------- */
@@ -985,7 +987,7 @@ async function loadOutstanding() {
   $("owedTile").classList.toggle("hidden", !o.clients.length);
   const [y, m] = o.month.split("-").map(Number);
   const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long" });
-  $("owedSub").textContent = `${monthName} so far, and hours carried over` +
+  $("owedSub").textContent = `Months not yet marked as invoiced, and hours carried over` +
     (o.missing_rate.length ? ` · add an hourly rate for ${o.missing_rate.join(", ")} in Settings to see amounts` : "");
   $("owedTotal").textContent = gbp(o.due_value);
   $("owedCarried").textContent = gbp(o.carried_value);
@@ -1006,7 +1008,22 @@ async function loadOutstanding() {
       l.append(el("span", {}, label), el("b", {}, `${hm(secs)} · ${amount(value)}`));
       return l;
     };
-    card.append(top, line("", `To invoice (${monthName})`, c.due_s, c.due_value));
+    card.append(top);
+    for (const mo of c.months) {
+      const [yy, mm] = mo.month.split("-").map(Number);
+      const name = new Date(yy, mm - 1, 1).toLocaleDateString("en-GB", { month: "long" });
+      const l = line(mo.current ? "" : "late", mo.current ? `${name} so far` : `${name}: not invoiced`, mo.seconds, mo.value);
+      if (!mo.current) {
+        const mark = el("button", { class: "link mark" }, "Mark invoiced");
+        mark.onclick = async () => {
+          mark.disabled = true;
+          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); }
+          catch (_) { mark.disabled = false; }
+        };
+        l.firstChild.append(" ", mark);
+      }
+      card.append(l);
+    }
     if (c.carried_s) card.append(line("carried", "Carried, not charged", c.carried_s, c.carried_value));
     return card;
   }));

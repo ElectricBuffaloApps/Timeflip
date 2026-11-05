@@ -1,5 +1,13 @@
 [
   {
+    "version": 27,
+    "changes": [
+      "Mark as invoiced: a button at the top of each monthly timesheet. It records the date with the hours and amount at the time, and Undo reverses it. If the timesheet changes afterwards, it warns 'Changed since'.",
+      "Outstanding on the Dashboard now lists every month not yet marked as invoiced (in red, with a 'Mark invoiced' button), as well as this month so far and carried hours.",
+      "Earlier months are counted from the first month you mark as invoiced for each client. Until then, last month is shown."
+    ]
+  },
+  {
     "version": 26,
     "changes": [
       "New Outstanding strip at the top of the Dashboard. For each client it shows this month's hours still to invoice and their value, plus hours carried over but not yet charged (e.g. Justin's) and their value, with totals.",
