@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+from bisect import bisect_right
 from datetime import date, datetime, timedelta
 
 CURRENCY_SYMBOLS = {"POUND": "£", "EURO": "€", "DOLLAR": "$", "YEN": "¥", "YUAN": "¥"}
@@ -25,12 +26,22 @@ def days_between(start: date, end: date) -> list[date]:
 
 
 def segments_by_day(store, start: date, end: date) -> list[tuple[date, dict]]:
-    """Every tracked segment in the range, split at local midnight."""
-    out = []
-    for d in days_between(start, end):
-        for seg in store.segments(local_midnight(d), local_midnight(d + timedelta(days=1))):
-            out.append((d, seg))
-    return out
+    """Every tracked segment in the range, split at local midnight.
+
+    Reads the whole range in one go, then cuts each entry at the midnights it crosses.
+    """
+    days = days_between(start, end)
+    bounds = [local_midnight(d) for d in days] + [local_midnight(end + timedelta(days=1))]
+    per_day: list[list[dict]] = [[] for _ in days]
+    for seg in store.segments(bounds[0], bounds[-1]):
+        i = max(0, bisect_right(bounds, seg["start"]) - 1)
+        while i < len(days) and bounds[i] < seg["end"]:
+            s, e = max(seg["start"], bounds[i]), min(seg["end"], bounds[i + 1])
+            seconds = int((e - s).total_seconds())
+            if seconds > 0:
+                per_day[i].append({**seg, "start": s, "end": e, "seconds": seconds})
+            i += 1
+    return [(d, seg) for d, segs in zip(days, per_day) for seg in segs]
 
 
 def amount(seg: dict) -> float:
@@ -45,7 +56,10 @@ def build_report(store, start: date, end: date, group: str = "task") -> dict:
     index = {d: n for n, d in enumerate(days)}
     series: dict[str, dict] = {}
     totals_by_currency: dict[str, float] = {}
+    excluded = store.excluded_ids()
     for d, seg in segments_by_day(store, start, end):
+        if seg["id"] in excluded:   # not charged, so not charted either (same as Today and the timesheets)
+            continue
         name = seg["task"] if group == "task" else (seg["client"] or NO_CLIENT)
         s = series.setdefault(name, {"name": name, "values": [0] * len(days), "total": 0, "amounts": {}})
         s["values"][index[d]] += seg["seconds"]
@@ -109,6 +123,11 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
     return rows
 
 
+def total_hours_of(rows: list[dict]) -> float:
+    """Total hours from the exact seconds, so rounding each row to 2 places can't add up to the wrong total."""
+    return round(sum(r["seconds"] for r in rows) / 3600, 2)
+
+
 def timesheet_csv(rows: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -119,7 +138,7 @@ def timesheet_csv(rows: list[dict]) -> str:
                     "Yes" if r["billable"] else "No", "" if r["rate"] is None else r["rate"],
                     r["currency"], f"{r['amount']:.2f}", "Yes" if r["excluded"] else "", r["note"]])
     rows = [r for r in rows if not r["excluded"]]
-    total_hours = sum(r["hours"] for r in rows)
+    total_hours = total_hours_of(rows)
     currencies = {r["currency"] for r in rows if r["amount"]}
     if len(currencies) <= 1:
         total_amount = f"{sum(r['amount'] for r in rows):.2f}"
@@ -277,12 +296,14 @@ def money_summary(store, start: date, end: date, clients_conf: dict) -> dict:
 
     Per client, each day's charged time is rounded the same way as its invoices, then priced at its rate.
     Per task the figures are before rounding, so they can differ from the client totals by a few pence.
+    Rolled-over entries are left out: they aren't charged until their hours are added to a later invoice.
     """
     per_client_day: dict[str, dict[str, int]] = {}
     by_task: dict[str, dict] = {}
+    rolled = store.rolled()
     for r in timesheet_rows(store, start, end):
         conf = _client_conf(clients_conf, r["client"] if r["client"] != NO_CLIENT else None)
-        if r["excluded"] or not conf:
+        if r["excluded"] or r["id"] in rolled or not conf:
             continue
         days = per_client_day.setdefault(r["client"], {})
         days[r["date"]] = days.get(r["date"], 0) + r["seconds"]
@@ -321,8 +342,13 @@ def income_for_month(incomes: dict, client: str, month: str) -> tuple[float | No
     return (float(entries[earlier[-1]]), True) if earlier else (None, False)
 
 
-def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dict) -> dict:
-    """Per client for one calendar month: hours, and earned money / effective rate / imagined value."""
+def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dict,
+                  carried: dict[str, int] | None = None) -> dict:
+    """Per client for one calendar month: hours, and earned money / effective rate / imagined value.
+
+    carried: carried-over seconds added to this month's invoice, by client name in lower case.
+    """
+    carry_s = carried or {}
     start, end = month_range(year, month, "day")
     key = f"{year}-{month:02d}"
     hours: dict[str, int] = {}
@@ -332,6 +358,8 @@ def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dic
     money = money_summary(store, start, end, clients_conf)
     priced = {c["client"].lower(): c for c in money["by_client"]}
     names = set(hours) | {n for n, c in (clients_conf or {}).items() if c.get("billing") == "monthly"}
+    have = {n.lower() for n in names}
+    names |= {n for n in (clients_conf or {}) if carry_s.get(n.lower()) and n.lower() not in have}
     rows, earned, value = [], 0.0, 0.0
     for name in sorted(names, key=str.lower):
         conf = next((c for n, c in (clients_conf or {}).items() if n.lower() == name.lower()), {})
@@ -342,14 +370,16 @@ def month_summary(store, year: int, month: int, clients_conf: dict, incomes: dic
             row.update(kind="monthly", amount=income, carried=carried,
                        rate=round(income / (secs / 3600), 2) if income and secs else None)
             earned += income or 0
-        elif name.lower() in priced:
-            p = priced[name.lower()]
-            row.update(kind="imagined" if p["notional"] else "hourly", amount=p["amount"],
-                       rate=float(conf.get("rate")))
+        elif name.lower() in priced or (carry_s.get(name.lower()) and conf.get("rate")):
+            p = priced.get(name.lower()) or {"amount": 0.0, "notional": bool(conf.get("notional"))}
+            extra = carry_s.get(name.lower(), 0)   # carried-over hours being charged this month
+            total = round(p["amount"] + extra / 3600 * float(conf.get("rate")), 2)
+            row.update(kind="imagined" if p["notional"] else "hourly", amount=total,
+                       rate=float(conf.get("rate")), carried_seconds=extra)
             if p["notional"]:
-                value += p["amount"]
+                value += total
             else:
-                earned += p["amount"]
+                earned += total
         rows.append(row)
     total_secs = sum(hours.values())
     return {"month": key, "clients": rows, "earned": round(earned, 2), "value": round(value, 2),
@@ -378,8 +408,11 @@ def estimate_rate(store, client: str, year: int, month: int, incomes: dict) -> f
     return round(income / (secs / 3600), 2) if income and secs else None
 
 
-def targets_summary(store, today: date, conf: dict) -> dict:
-    """Progress against the income targets (real money only) and per-client time targets."""
+def targets_summary(store, today: date, conf: dict, carried: dict[str, int] | None = None) -> dict:
+    """Progress against the income targets (real money only) and per-client time targets.
+
+    carried: carried-over seconds added to this month's invoice, by client name in lower case.
+    """
     clients_conf = conf.get("clients", {}) or {}
     incomes = conf.get("monthly_income", {}) or {}
     targets = conf.get("targets", {}) or {}
@@ -398,6 +431,11 @@ def targets_summary(store, today: date, conf: dict) -> dict:
         money = money_summary(store, start, end, clients_conf)
         earned, estimated, notes = money["earned"], 0.0, []
         secs = _client_seconds(store, start, end)
+        if period == "month":
+            for name, c in clients_conf.items():
+                extra = (carried or {}).get(name.lower())
+                if extra and c.get("rate") and not c.get("notional") and c.get("billing") != "monthly":
+                    earned += extra / 3600 * float(c["rate"])
         for name in monthly:
             if period == "month":
                 income, carried = income_for_month(incomes, name, f"{today.year}-{today.month:02d}")

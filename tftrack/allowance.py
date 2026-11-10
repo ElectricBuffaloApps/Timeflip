@@ -105,8 +105,11 @@ def _allowance_for(store, conf: dict, client: str) -> dict | None:
     return None
 
 
-def for_invoice(store, conf: dict, inv: dict, holidays: set[date]) -> dict | None:
-    """The allowance figures for a client's monthly timesheet, if one of its tasks has an allowance."""
+def for_invoice(store, conf: dict, inv: dict, holidays: set[date], cache: dict | None = None) -> dict | None:
+    """The allowance figures for a client's monthly timesheet, if one of its tasks has an allowance.
+
+    cache: pass the same dict when working out several months, so each earlier month is only added up once.
+    """
     a = _allowance_for(store, conf, inv["client"])
     if not a:
         return None
@@ -132,7 +135,7 @@ def for_invoice(store, conf: dict, inv: dict, holidays: set[date]) -> dict | Non
     info = {"task": a["task"], "month": inv["month"], "working_days": days_n,
             "max_s": whole(round(per_day * days_n)), "worked_s": sum(worked.values()),
             "rolling_s": inv.get("rolled_s", 0), "weeks": [weeks[k] for k in sorted(weeks)]}
-    info["carry"] = carry(store, conf, inv, a, c, info)
+    info["carry"] = carry(store, conf, inv, a, c, info, cache)
     info["charging_s"] = info["worked_s"] + info["carry"]["added_s"]
     return info
 
@@ -142,7 +145,7 @@ def _month_before(month: str) -> str:
     return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
 
 
-def carry(store, conf: dict, inv: dict, a: dict, c: dict, info: dict) -> dict:
+def carry(store, conf: dict, inv: dict, a: dict, c: dict, info: dict, cache: dict | None = None) -> dict:
     """The carried-over balance going into this month, and what's been added to this month's invoice.
 
     Rolled-over entries and the hours brought in at the start build the balance; the buttons on each timesheet
@@ -154,13 +157,17 @@ def carry(store, conf: dict, inv: dict, a: dict, c: dict, info: dict) -> dict:
     earliest = min([a["start"]] + [_month_before(r["entry_date"][:7]) for r in rolled.values()])
     added = store.carry_added(inv["client"])
     opening = round(float(a.get("opening_hours") or 0) * 3600)
+    cache = {} if cache is None else cache
     balance, m = 0, earliest
     while m < inv["month"]:
         balance += opening if m == a["start"] else 0
         balance -= min(added.get(m, 0), balance)
-        y, mo = (int(x) for x in m.split("-"))
-        balance += invoice(store, inv["client"], y, mo, style, c.get("block_minutes", 15),
-                           c.get("rounding", "none"))["rolled_s"]
+        key = ("rolled", inv["client"].lower(), m, style, c.get("block_minutes", 15), c.get("rounding", "none"))
+        if key not in cache:
+            y, mo = (int(x) for x in m.split("-"))
+            cache[key] = invoice(store, inv["client"], y, mo, style, c.get("block_minutes", 15),
+                                 c.get("rounding", "none"))["rolled_s"]
+        balance += cache[key]
         m = next_month(m)
     available = balance + (opening if inv["month"] == a["start"] else 0)
     added_now = min(added.get(inv["month"], 0), available)

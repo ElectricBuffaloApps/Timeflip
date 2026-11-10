@@ -14,8 +14,8 @@ from . import config as cfg
 from . import allowance, pdf, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
-                      timesheet_csv, timesheet_rows)
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary,
+                      round_seconds, targets_summary, timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
 # One writer at a time: syncs and config saves must not interleave.
@@ -165,6 +165,9 @@ async function act(fn) {
 $f("entryForm").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const body = {date: $f("fDate").value, start: $f("fStart").value, end: $f("fEnd").value, task_id: Number($f("fTask").value)};
+  const wasOvernight = editing && editing.end < editing.start;
+  if (body.end < body.start && !wasOvernight &&
+      !confirm("The end time is before the start time, so this entry will run past midnight into the next day. Is that right?")) return;
   act(() => editing ? post("/api/entry/adjust", {...body, id: editing.id}) : post("/api/entry/add", body));
 });
 $f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", {id: editing.id})));
@@ -287,7 +290,7 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
         for r in rows
     )
     charged = [r for r in rows if not r["excluded"]]
-    hours = sum(r["hours"] for r in charged)
+    hours = sum(r["seconds"] for r in charged) / 3600   # from exact seconds, not the rounded rows
     currencies = {r["currency"] for r in charged if r["amount"]}
     total = (f"{next(iter(currencies), '')}{sum(r['amount'] for r in charged):.2f}"
              if len(currencies) <= 1 else "mixed currencies")
@@ -552,16 +555,17 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/allowances":
                 return self._send(200, allowance.summary(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/targets":
-                return self._send(200, targets_summary(service.open_store(), date.today(), cfg.load_config()))
+                conf, store, now = cfg.load_config(), service.open_store(), date.today()
+                return self._send(200, targets_summary(store, now, conf, _carried_added(store, conf, f"{now:%Y-%m}")))
             if url.path == "/api/month":
                 try:
                     y, mo = (int(x) for x in (q.get("month") or "").split("-"))
                     date(y, mo, 1)
                 except ValueError:
                     y, mo = date.today().year, date.today().month
-                conf = cfg.load_config()
-                return self._send(200, month_summary(service.open_store(), y, mo, conf.get("clients", {}),
-                                                     conf.get("monthly_income", {})))
+                conf, store = cfg.load_config(), service.open_store()
+                return self._send(200, month_summary(store, y, mo, conf.get("clients", {}), conf.get("monthly_income", {}),
+                                                     _carried_added(store, conf, f"{y}-{mo:02d}")))
             if url.path == "/api/report":
                 group = "client" if q.get("group") == "client" else "task"
                 store = service.open_store()
@@ -776,8 +780,11 @@ def _entry_times(body: dict) -> tuple[datetime, int]:
         raise ValueError("Enter a date, a start time and an end time.")
     start = datetime(day.year, day.month, day.day, sh, sm).astimezone()
     end = datetime(day.year, day.month, day.day, eh, em).astimezone()
-    if end <= start:
-        raise ValueError("The end time must be after the start time.")
+    if end == start:
+        raise ValueError("The end time must be different from the start time.")
+    if end < start:   # an end before the start means it ran past midnight, into the next day
+        nxt = day + timedelta(days=1)
+        end = datetime(nxt.year, nxt.month, nxt.day, eh, em).astimezone()
     return start, int((end - start).total_seconds())
 
 
@@ -802,7 +809,8 @@ def _client_settings(conf: dict, client: str) -> dict:
     return {"billing": "hourly", "rounding": "none", "block_minutes": 15}
 
 
-def _invoice(q: dict) -> dict:
+def _invoice(q: dict, store=None, conf: dict | None = None, cache: dict | None = None) -> dict:
+    """A client's monthly timesheet. Pass the same cache when working out several, to save repeating earlier months."""
     client = q.get("client") or ""
     if not client:
         raise ValueError("Choose a client.")
@@ -811,32 +819,51 @@ def _invoice(q: dict) -> dict:
         date(year, month, 1)
     except ValueError:
         raise ValueError("Choose a month.")
-    c = _client_settings(cfg.load_config(), client)
+    conf = conf or cfg.load_config()
+    store = store or service.open_store()
+    c = _client_settings(conf, client)
     style = c["billing"] if c["billing"] in ("day", "week") else "day"
-    inv = invoice(service.open_store(), client, year, month, style,
-                  c.get("block_minutes", 15), c.get("rounding", "none"))
+    inv = invoice(store, client, year, month, style, c.get("block_minutes", 15), c.get("rounding", "none"))
     holidays, _ = allowance.bank_holidays()
-    al = allowance.for_invoice(service.open_store(), cfg.load_config(), inv, holidays or set())
+    al = allowance.for_invoice(store, conf, inv, holidays or set(), cache)
     if al:
         allowance.apply(inv, al)
     inv["rate"] = c.get("rate")
-    inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
-    inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
+    inv["smooth"] = client.lower() in [s.lower() for s in conf.get("smooth_weeks", [])]
+    inv["invoiced"] = store.invoiced(client).get(inv["month"])
     return inv
 
 
-def _month_due(store, conf: dict, client: str, month: str) -> tuple[int, float | None, dict | None]:
+def _carried_added(store, conf: dict, month: str) -> dict[str, int]:
+    """Carried-over seconds being charged on a month's invoice, by client (lower case), for the money figures."""
+    out: dict[str, int] = {}
+    for a in allowance.configured(conf):
+        client = allowance._task_client(store, a["task"])
+        if client and client.lower() not in out:
+            inv = _invoice({"client": client, "month": month}, store, conf)
+            if inv.get("carry"):
+                out[client.lower()] = inv["carry"]["added_s"]
+    return out
+
+
+def _month_due(store, conf: dict, client: str, month: str,
+               cache: dict | None = None) -> tuple[int, float | None, dict | None]:
     """What a client's invoice for a month comes to: (seconds, amount, invoice data for by-day/by-week clients)."""
     c = _client_settings(conf, client)
     rate = c.get("rate")
     if c.get("billing") in ("day", "week"):
-        inv = _invoice({"client": client, "month": month})
+        inv = _invoice({"client": client, "month": month}, store, conf, cache)
         lines = invoice_lines(inv, rate, bool(inv.get("smooth")))   # what you'd actually copy into the invoice
         return inv["total_billed_s"], (round(sum(l["amount"] or 0 for l in lines), 2) if rate else None), inv
     y, m = (int(x) for x in month.split("-"))
     first = date(y, m, 1)
     last = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
-    secs = sum(r["seconds"] for r in timesheet_rows(store, first, last, client) if not r["excluded"])
+    # Each day rounded the client's way, so this matches the money on the Dashboard.
+    rolled, by_day = store.rolled(), {}
+    for r in timesheet_rows(store, first, last, client):
+        if not r["excluded"] and r["id"] not in rolled:
+            by_day[r["date"]] = by_day.get(r["date"], 0) + r["seconds"]
+    secs = sum(round_seconds(s, c.get("block_minutes", 15), c.get("rounding", "none")) for s in by_day.values())
     return secs, (round(secs / 3600 * rate, 2) if rate else None), None
 
 
@@ -858,7 +885,7 @@ def outstanding(today: date) -> dict:
     conf = cfg.load_config()
     store = service.open_store()
     month = f"{today:%Y-%m}"
-    out = []
+    out, cache = [], {}
     for client in sorted({t["tag"] for t in store.tasks() if t["tag"]}, key=str.lower):
         c = _client_settings(conf, client)
         if c.get("notional") or c.get("billing") == "monthly":
@@ -868,7 +895,7 @@ def outstanding(today: date) -> dict:
         start = min(marked) if marked else _month_before(month)
         months, carried = [], 0
         for m in _months(start, month):
-            secs, amount, inv = _month_due(store, conf, client, m)
+            secs, amount, inv = _month_due(store, conf, client, m, cache)
             if m == month and inv:
                 carried = inv["rolled_s"] + (inv["carry"]["remaining_s"] if inv.get("carry") else 0)
             if m not in marked and secs:

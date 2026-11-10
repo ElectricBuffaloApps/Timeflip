@@ -1,5 +1,17 @@
 [
   {
+    "version": 28,
+    "changes": [
+      "Outstanding now rounds hourly clients' days the same way as the Dashboard money, so the two figures match.",
+      "Timesheet, PDF and spreadsheet totals are added up from the exact time, so they no longer drift by a few hundredths of an hour.",
+      "Dashboard income leaves out rolled-over entries and includes carried-over hours you've added to this month's invoice, to match what you invoice.",
+      "The Dashboard loads much faster when there are several months not yet invoiced.",
+      "Excluded entries are now left out of the charts and limit alerts, the same as on timesheets.",
+      "Entries that run past midnight can be added and edited (you're asked to confirm).",
+      "An entry left running for more than two days now shows on every day it covers."
+    ]
+  },
+  {
     "version": 27,
     "changes": [
       "Mark as invoiced: a button at the top of each monthly timesheet. It records the date with the hours and amount at the time, and Undo reverses it. If the timesheet changes afterwards, it warns 'Changed since'.",

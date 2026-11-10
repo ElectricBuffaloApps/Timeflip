@@ -159,6 +159,93 @@ class ApiTest(unittest.TestCase):
             server.shutdown()
 
 
+class BugFixTest(unittest.TestCase):
+    """Fixes from the November 2026 review."""
+    TASKS = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Admin", "tag": "ACME"}]
+
+    @staticmethod
+    def at(day, h, m=0, month=10):
+        return datetime(2026, month, day, h, m).astimezone().astimezone(UTC).isoformat()
+
+    def test_hourly_client_outstanding_matches_dashboard_money(self):
+        from datetime import date
+        from tftrack import web
+        from tftrack.reports import month_summary
+        store = make_store([{"id": 1, "taskId": 2, "startedAt": self.at(6, 9), "duration": 50 * 60},
+                            {"id": 2, "taskId": 2, "startedAt": self.at(7, 9), "duration": 20 * 60}], tasks=self.TASKS)
+        conf = {"clients": {"ACME": {"billing": "hourly", "rounding": "up", "block_minutes": 15, "rate": 60}}}
+        secs, amount, _ = web._month_due(store, conf, "ACME", "2026-10")
+        self.assertEqual((secs, amount), (3600 + 1800, 90.0))   # 50m -> 1h, 20m -> 30m
+        row = month_summary(store, 2026, 10, conf["clients"], {})["clients"][0]
+        self.assertEqual(row["amount"], amount)
+
+    def test_timesheet_total_uses_exact_seconds(self):
+        from datetime import date
+        from tftrack.reports import timesheet_csv, timesheet_rows
+        store = make_store([{"id": n, "taskId": 2, "startedAt": self.at(6, 9 + n), "duration": 5 * 60}
+                            for n in range(1, 7)], tasks=self.TASKS)   # six 5-minute entries: 0.08 h each, 0.50 h in all
+        rows = timesheet_rows(store, date(2026, 10, 6), date(2026, 10, 6))
+        self.assertEqual(timesheet_csv(rows).strip().splitlines()[-1].split(",")[5], "0.50")
+
+    def test_rolled_over_and_carried_hours_in_the_money(self):
+        from datetime import date
+        from tftrack.reports import money_summary, month_summary, targets_summary
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": self.at(6, 9), "duration": 3600},
+                            {"id": 2, "taskId": 1, "startedAt": self.at(7, 9), "duration": 3600}], tasks=self.TASKS)
+        clients = {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}}
+        store.set_rolled(2, "carried", "2026-10-07")
+        self.assertEqual(money_summary(store, date(2026, 10, 1), date(2026, 10, 31), clients)["earned"], 40.0)
+        m = month_summary(store, 2026, 10, clients, {}, {"htb": 1800})    # 30m of carried time charged this month
+        self.assertEqual((m["earned"], m["clients"][0]["amount"]), (60.0, 60.0))
+        m = month_summary(store, 2026, 11, clients, {}, {"htb": 3600})    # a month with only carried time
+        self.assertEqual((m["earned"], m["clients"][0]["client"]), (40.0, "HTB"))
+        t = targets_summary(store, date(2026, 10, 7), {"clients": clients}, {"htb": 1800})
+        self.assertEqual({r["period"]: r["amount"] for r in t["income"]}, {"day": 0.0, "week": 40.0, "month": 60.0})
+
+    def test_outstanding_reads_each_earlier_month_once(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import allowance, reports, web
+        store = make_store([{"id": m, "taskId": 1, "startedAt": self.at(6, 9, month=m), "duration": 3600}
+                            for m in range(1, 11)], tasks=self.TASKS)
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}},
+                "limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-01"}]}
+        store.set_invoiced("HTB", "2026-01", 3600, 40.0)
+        calls = []
+        real = store.segments
+        store.segments = lambda *a: calls.append(a) or real(*a)
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", return_value=conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            out = web.outstanding(date(2026, 10, 20))
+        self.assertEqual(len(out["clients"][0]["months"]), 9)      # February to October
+        self.assertLessEqual(len(calls), 30)                         # was several thousand: one per day, per month, again and again
+
+    def test_excluded_entries_left_out_of_charts_and_limits(self):
+        from datetime import date
+        from tftrack.reports import build_report
+        store = make_store([{"id": 1, "taskId": 2, "startedAt": self.at(6, 9), "duration": 3600},
+                            {"id": 2, "taskId": 2, "startedAt": self.at(6, 11), "duration": 1800}], tasks=self.TASKS)
+        store.set_excluded(2, True)
+        self.assertEqual(build_report(store, date(2026, 10, 6), date(2026, 10, 6))["total_seconds"], 3600)
+        start = datetime(2026, 10, 6).astimezone()
+        self.assertEqual(store.seconds_by_task(start, start + timedelta(days=1)), {2: 3600})
+
+    def test_entry_can_run_past_midnight(self):
+        from tftrack import web
+        start, seconds = web._entry_times({"date": "2026-10-06", "start": "23:00", "end": "01:00"})
+        self.assertEqual((start.hour, seconds), (23, 2 * 3600))
+        with self.assertRaises(ValueError):
+            web._entry_times({"date": "2026-10-06", "start": "09:00", "end": "09:00"})
+
+    def test_entry_longer_than_a_day_keeps_its_later_days(self):
+        from datetime import date
+        from tftrack.reports import timesheet_rows
+        store = make_store([{"id": 1, "taskId": 2, "startedAt": self.at(5, 9), "duration": 60 * 3600}], tasks=self.TASKS)
+        hours = [sum(r["seconds"] for r in timesheet_rows(store, date(2026, 10, d), date(2026, 10, d))) / 3600 for d in (5, 6, 7, 8)]
+        self.assertEqual(hours, [15.0, 24.0, 21.0, 0.0])
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -170,8 +170,12 @@ class Store:
 
         Uses the user's adjustments in place of the TimeFlip values, and includes entries they added by hand.
         """
-        # An entry can start before `start` and still overlap; look back a day to catch those.
-        lookback = (start - timedelta(days=1)).astimezone(timezone.utc).isoformat()
+        # An entry can start before `start` and still overlap; look back as far as the longest entry runs.
+        longest = self.db.execute(
+            """SELECT MAX(d) FROM (SELECT MAX(duration_s) AS d FROM interval
+               UNION ALL SELECT MAX(duration_s) FROM adjustment
+               UNION ALL SELECT MAX(duration_s) FROM manual_entry)""").fetchone()[0] or 0
+        lookback = (start - timedelta(seconds=max(86400, longest))).astimezone(timezone.utc).isoformat()
         upper = end.astimezone(timezone.utc).isoformat()
         out = []
         for row in self.db.execute(
@@ -250,9 +254,15 @@ class Store:
             self.db.execute("DELETE FROM rollover WHERE interval_id=?", (entry_id,))
 
     def seconds_by_task(self, start: datetime, end: datetime) -> dict[int, int]:
-        """Seconds tracked per task id within [start, end), clipping intervals at the edges."""
+        """Seconds tracked per task id within [start, end), clipping intervals at the edges.
+
+        Entries the user has excluded aren't counted, the same as on timesheets.
+        """
         totals: dict[int, int] = {}
+        excluded = self.excluded_ids()
         for seg in self.segments(start, end):
+            if seg["id"] in excluded:
+                continue
             totals[seg["task_id"]] = totals.get(seg["task_id"], 0) + seg["seconds"]
         return totals
 
