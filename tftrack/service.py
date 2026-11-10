@@ -37,6 +37,8 @@ def statuses(conf: dict, store: Store):
 
 def run_check(conf: dict, store: Store) -> list[str]:
     """Sync, then notify for any limit that has newly crossed an alert level."""
+    if conf.get("viewer_of"):   # a viewer shows another Mac's tracker: no syncing or alerts of its own
+        return _auto_update(conf, store)
     try:
         sync(conf, store)
     except Exception as e:  # keep checking against the last good copy
@@ -57,6 +59,11 @@ def run_check(conf: dict, store: Store) -> list[str]:
         allowance.bank_holidays()  # keep the local copy fresh so pages don't wait for gov.uk
     except Exception as e:
         print(f"{datetime.now():%Y-%m-%d %H:%M} bank holidays failed: {e}")
+    return sent + _auto_update(conf, store)
+
+
+def _auto_update(conf: dict, store: Store) -> list[str]:
+    sent = []
     try:
         from . import updater
         version = updater.maybe_auto_update(conf, store)

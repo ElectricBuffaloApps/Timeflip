@@ -709,3 +709,108 @@ class OutstandingTest(unittest.TestCase):
             self.assertEqual(store.invoiced("htb")["2026-10"]["amount"], 80.0)
             store.set_invoiced("HTB", "2026-10", None)
             self.assertEqual(store.invoiced("HTB"), {})
+
+
+class RemoteTest(unittest.TestCase):
+    def test_tailscale_serve_and_allowed_hosts(self):
+        import os, stat
+        from unittest import mock
+        from tftrack import config, remote
+        with tempfile.TemporaryDirectory() as tmp:
+            # A stand-in for the Tailscale command line: answers status, then serve status/serve.
+            fake = Path(tmp) / "tailscale"
+            log = Path(tmp) / "calls"
+            fake.write_text(f"""#!/bin/sh
+echo "$@" >> {log}
+case "$1 $2" in
+  "status --json") echo '{{"Self": {{"DNSName": "daves-mac.tail1234.ts.net."}}}}' ;;
+  "serve status") [ -f {tmp}/on ] && echo '{{"Web": {{"daves-mac.tail1234.ts.net:8765": {{"Handlers": {{"/": {{"Proxy": "http://127.0.0.1:8765"}}}}}}}}}}' || echo '{{}}' ;;
+  "serve --bg") touch {tmp}/on ;;
+  "serve --https=8765") rm -f {tmp}/on ;;
+esac
+""")
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            with mock.patch.object(config, "APP_DIR", Path(tmp)), mock.patch.object(config, "CONFIG_PATH", Path(tmp) / "c.json"), \
+                    mock.patch.object(remote, "cli", return_value=str(fake)):
+                st = remote.status()
+                self.assertEqual((st["running"], st["serving"], st["name"]), (True, False, "daves-mac.tail1234.ts.net"))
+                self.assertEqual(remote.enable(), {"url": "https://daves-mac.tail1234.ts.net:8765/"})
+                self.assertIn("serve --bg --https=8765 http://127.0.0.1:8765", log.read_text())
+                self.assertTrue(remote.status()["serving"])
+                hosts = remote.allowed_hosts()
+                self.assertIn("daves-mac.tail1234.ts.net:8765", hosts)
+                self.assertIn("127.0.0.1:8765", hosts)
+                self.assertNotIn("evil.example.com:8765", hosts)
+                remote.disable()
+                self.assertFalse(remote.status()["serving"])
+            with mock.patch.object(remote, "cli", return_value=None):
+                self.assertFalse(remote.status()["installed"])
+
+    def test_approval_link_and_bad_viewer_address(self):
+        from unittest import mock
+        from tftrack import remote
+        out = "Serve is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/serve?node=abc123\n"
+        with mock.patch.object(remote, "dns_name", return_value="m.tail1.ts.net"), \
+                mock.patch.object(remote, "_run", return_value=(124, out)):
+            self.assertEqual(remote.enable()["needs_approval"], "https://login.tailscale.com/f/serve?node=abc123")
+        with self.assertRaises(ValueError):
+            remote.check_main("http://192.168.1.5:8765/")   # only a Tailscale https address
+
+
+class MergeTest(unittest.TestCase):
+    def test_changes_from_another_mac_are_added_not_overwritten(self):
+        from tftrack import merge
+        at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}]
+        intervals = [{"id": n, "taskId": 1, "startedAt": at(n, 9), "duration": 3600} for n in range(1, 6)]
+        other, mine = make_store(intervals, tasks=tasks), make_store(intervals, tasks=tasks)
+        # On the other Mac
+        other.set_excluded(1, True)
+        other.set_adjustment(2, datetime(2026, 10, 2, 10).astimezone(), 1800, 1)
+        other.set_adjustment(3, datetime(2026, 10, 3, 10).astimezone(), 1800, 1)
+        added = other.add_manual(datetime(2026, 10, 20, 9).astimezone(), 900, 1)
+        other.set_rolled(added, "carried", "2026-10-20")
+        other.set_invoiced("HTB", "2026-09", 3600, 40.0)
+        other.set_carry_added("HTB", "2026-10", 1800)
+        other_conf = {"clients": {"HTB": {"billing": "day", "rate": 40}, "FCY": {"billing": "week", "rate": 26.5}},
+                      "monthly_income": {"FYPT1": {"2026-09": 600}}, "smooth_weeks": ["FCY"],
+                      "limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-09"}]}
+        # On this Mac: one thing done differently, plus its own manual entry
+        mine.set_adjustment(3, datetime(2026, 10, 3, 11).astimezone(), 2700, 1)
+        mine_conf = {"clients": {"HTB": {"billing": "day", "rate": 45}}, "limits": []}
+        data = json.loads(json.dumps(merge.export(other, other_conf)))   # as it would travel in the file
+        conf, report = merge.import_changes(mine, mine_conf, data)
+        text = " ".join(report)
+        self.assertIn("1 added entry", text)
+        self.assertIn("1 exclusion", text)
+        self.assertIn("1 edited entry", text)
+        self.assertIn("entry 3 was edited differently", text)
+        self.assertIn("invoicing settings for HTB differ", text)
+        self.assertEqual(conf["clients"]["HTB"]["rate"], 45)           # this Mac's kept
+        self.assertEqual(conf["clients"]["FCY"]["rate"], 26.5)         # missing one added
+        self.assertEqual(conf["monthly_income"]["FYPT1"]["2026-09"], 600)
+        self.assertEqual(conf["smooth_weeks"], ["FCY"])
+        self.assertEqual(conf["limits"][0]["task"], "Justin")
+        self.assertIn(1, mine.excluded_ids())
+        self.assertEqual(mine.invoiced("HTB")["2026-09"]["amount"], 40.0)
+        self.assertEqual(mine.carry_added("HTB"), {"2026-10": 1800})
+        rolled = list(mine.rolled())
+        self.assertEqual(len(rolled), 1)
+        # the rolled-over added entry points at this Mac's own copy of it
+        row = mine.db.execute("SELECT started_at FROM manual_entry WHERE id=?", (-rolled[0] - 10**12,)).fetchone()
+        self.assertIsNotNone(row)
+        # importing the same file again adds nothing
+        _, again = merge.import_changes(mine, conf, data)
+        self.assertFalse(any(r.startswith(("1 added", "1 exclusion")) for r in again))
+        with self.assertRaises(ValueError):
+            merge.import_changes(mine, conf, {"hello": 1})
+
+
+class ViewerTest(unittest.TestCase):
+    def test_viewer_skips_sync_and_redirects(self):
+        from unittest import mock
+        from tftrack import service, updater
+        store = make_store([])
+        with mock.patch.object(service, "sync") as sync, mock.patch.object(updater, "maybe_auto_update", return_value=None):
+            service.run_check({"viewer_of": "https://m.tail1.ts.net:8765/"}, store)
+            sync.assert_not_called()

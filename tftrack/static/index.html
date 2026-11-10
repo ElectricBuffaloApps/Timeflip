@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TimeFlip Tracker</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="TimeFlip">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
@@ -138,6 +140,15 @@ label.check { display: inline-flex; gap: 8px; align-items: center; }
 .strip-ticks { position: relative; height: 14px; font-size: 10px; color: var(--hero-muted); font-variant-numeric: tabular-nums; }
 .strip-ticks span { position: absolute; transform: translateX(-50%); }
 .strip .now { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--zing); border-radius: 1px; }
+
+/* ---------- phone & other computers ---------- */
+.dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.dev-step { background: var(--sunk); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.dev-step p { margin: 0; }
+.dev-url { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dev-url code { font-size: 12px; background: var(--surface); padding: 6px 8px; border-radius: 6px; overflow-wrap: anywhere; }
+a.btnlink { font: 600 13px Sora, Inter, sans-serif; padding: 7px 11px; border-radius: 9px; border: 1px solid var(--axis); color: var(--ink); text-decoration: none; background: var(--surface); }
+input[type=file] { font-size: 12px; max-width: 100%; }
 
 /* ---------- outstanding ---------- */
 .owed { display: grid; gap: 14px; }
@@ -534,6 +545,41 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
     </section>
     </div>
+
+    <section class="tile c12" id="devicesTile">
+      <div class="tile-head"><h2>Phone &amp; other computers</h2><span class="meta">One tracker, one set of data</span></div>
+      <div class="dev-grid">
+        <div class="dev-step">
+          <div class="lbl">1 · Share this tracker</div>
+          <p class="sub" id="remoteStatus">Checking Tailscale…</p>
+          <div class="row"><button class="primary hidden" id="remoteOn">Share with my devices</button>
+            <button class="hidden" id="remoteOff">Stop sharing</button></div>
+          <div class="dev-url hidden" id="remoteUrlBox"><code id="remoteUrl"></code> <button id="remoteCopy">Copy</button></div>
+          <p class="sub hidden" id="remoteApprove"></p>
+          <p class="note">On your phone: install Tailscale, sign in with the same account, open this address in Safari, then
+            Share → Add to Home Screen.</p>
+        </div>
+        <div class="dev-step">
+          <div class="lbl">2 · Bring in another Mac's changes</div>
+          <p class="sub">Edits, exclusions, roll-overs, invoiced marks and settings made on another Mac. On that Mac,
+            download its changes, then add the file here. Nothing here is overwritten.</p>
+          <div class="row"><a class="btnlink" href="/api/export">Download this Mac's changes</a></div>
+          <div class="row" style="margin-top:8px"><input type="file" id="importFile" accept=".json,application/json">
+            <button id="importBtn">Add changes</button></div>
+          <p class="sub" id="importMsg"></p>
+        </div>
+        <div class="dev-step">
+          <div class="lbl">3 · Make this Mac a viewer</div>
+          <p class="sub" id="viewerStatus">On your other Mac: enter the main Mac's address. Its TimeFlip Tracker app will then
+            open the main tracker, and it stops syncing and alerting on its own. Its data is backed up first.</p>
+          <div class="row"><input type="url" id="viewerUrl" placeholder="https://…ts.net:8765/" style="flex:1;min-width:0">
+            <button id="viewerCheck">Check</button></div>
+          <div class="row" style="margin-top:8px"><button class="primary hidden" id="viewerStart">Make this Mac a viewer</button>
+            <button class="hidden" id="viewerStop">Stop being a viewer</button></div>
+          <p class="sub" id="viewerMsg"></p>
+        </div>
+      </div>
+    </section>
   </div>
 </main>
 
@@ -1383,6 +1429,72 @@ async function loadMonth(auto = false) {
 }
 $("mMonth").onchange = () => loadMonth();
 
+/* ---------- phone & other computers ---------- */
+async function loadRemote() {
+  let r;
+  try { r = await api("/api/remote"); } catch (_) { return; }
+  const show = (id, on) => $(id).classList.toggle("hidden", !on);
+  $("remoteStatus").textContent = !r.installed ? "Tailscale isn't installed on this Mac. Install it from tailscale.com/download (or the Mac App Store) and sign in, then come back."
+    : !r.running ? "Tailscale is installed but not signed in or not running. Open Tailscale and sign in."
+    : r.serving ? "Shared with your devices on Tailscale. Only devices signed in to your Tailscale account can open it:"
+    : `Tailscale is on (${r.name}). Share this tracker with your other devices:`;
+  show("remoteOn", r.running && !r.serving);
+  show("remoteOff", r.serving);
+  show("remoteUrlBox", !!r.url);
+  $("remoteUrl").textContent = r.url || "";
+  if (r.viewer_of) {
+    $("viewerStatus").textContent = `This Mac is a viewer of ${r.viewer_of}. Its TimeFlip Tracker app opens that tracker.`;
+    $("viewerUrl").value = r.viewer_of;
+  }
+  show("viewerStop", !!r.viewer_of);
+}
+$("remoteOn").onclick = async () => {
+  $("remoteOn").disabled = true;
+  try {
+    const r = await api("/api/remote/enable", {});
+    if (r.needs_approval) {
+      $("remoteApprove").classList.remove("hidden");
+      $("remoteApprove").replaceChildren(document.createTextNode("Tailscale needs you to switch on HTTPS for your account first: "),
+        el("a", { href: r.needs_approval, target: "_blank" }, "approve it here"), document.createTextNode(", then press Share again."));
+    }
+  } catch (e) { $("remoteStatus").textContent = e.message; }
+  $("remoteOn").disabled = false;
+  loadRemote();
+};
+$("remoteOff").onclick = async () => { await api("/api/remote/disable", {}); loadRemote(); };
+$("remoteCopy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("remoteUrl").textContent); $("remoteCopy").textContent = "Copied ✓"; }
+  catch (_) { getSelection().selectAllChildren($("remoteUrl")); }
+  setTimeout(() => ($("remoteCopy").textContent = "Copy"), 1500);
+};
+$("importBtn").onclick = async () => {
+  const f = $("importFile").files[0];
+  if (!f) { $("importMsg").textContent = "Choose the changes file first."; return; }
+  $("importMsg").textContent = "Adding…";
+  try {
+    const r = await api("/api/import", JSON.parse(await f.text()));
+    $("importMsg").textContent = `Added: ${r.report.join(" · ")}`;
+    showState(await api("/api/state"), true); refreshAll();
+  } catch (e) { $("importMsg").textContent = e.message; }
+};
+$("viewerCheck").onclick = async () => {
+  $("viewerMsg").textContent = "Checking…";
+  try {
+    const r = await api("/api/viewer/check", { url: $("viewerUrl").value });
+    $("viewerMsg").textContent = `Found the tracker (version ${r.version}). Before you switch, bring this Mac's changes into it (step 2 on the main Mac).`;
+    $("viewerStart").classList.remove("hidden");
+  } catch (e) { $("viewerMsg").textContent = e.message; $("viewerStart").classList.add("hidden"); }
+};
+$("viewerStart").onclick = async () => {
+  if (!confirm("Make this Mac a viewer? Its own syncing and alerts stop; its data is backed up first.")) return;
+  try {
+    const r = await api("/api/viewer/start", { url: $("viewerUrl").value });
+    $("viewerMsg").textContent = `Done. This Mac's data is backed up in ${r.backup}. Opening the main tracker…`;
+    setTimeout(() => { location.href = r.url; }, 1500);
+  } catch (e) { $("viewerMsg").textContent = e.message; }
+};
+$("viewerStop").onclick = async () => { await api("/api/viewer/stop", {}); $("viewerMsg").textContent = "This Mac uses its own tracker again."; loadRemote(); };
+
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
   loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding();
@@ -1393,6 +1505,7 @@ function refreshAll(auto = false) {
   showTab(location.hash.slice(1));
   checkForUpdate(false);
   refreshAll();
+  loadRemote();
   setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); } catch (_) {} }, 60000);
 })();
 </script>

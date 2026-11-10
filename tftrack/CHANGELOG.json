@@ -1,5 +1,14 @@
 [
   {
+    "version": 28,
+    "changes": [
+      "Phone and other computers (Settings): share this tracker privately with your own devices through Tailscale. Your phone and other Mac open the same live tracker, with the same data, and nothing is copied.",
+      "Bring in another Mac's changes: download a changes file on one Mac and add it on the other. Edits, added entries, exclusions, roll-overs, carried hours, invoiced marks and settings are merged in. Nothing on the receiving Mac is overwritten, and it reports anything both Macs did differently.",
+      "Viewer mode: your other Mac's TimeFlip Tracker app can open the main Mac's tracker instead of its own. It stops syncing and alerting on its own, and its data is backed up first. 'Stop being a viewer' undoes it.",
+      "Timesheets now fit a phone screen, and there's an orange clock icon for your phone's Home Screen."
+    ]
+  },
+  {
     "version": 27,
     "changes": [
       "Mark as invoiced: a button at the top of each monthly timesheet. It records the date with the hours and amount at the time, and Undo reverses it. If the timesheet changes afterwards, it warns 'Changed since'.",

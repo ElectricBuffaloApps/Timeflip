@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import socket
 import json
 import subprocess
 import threading
@@ -11,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, pdf, service, updater
+from . import allowance, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -68,6 +69,7 @@ def state() -> dict:
         "clients": sorted({t["tag"] for t in tasks if t["tag"]}),
         "client_billing": conf.get("clients", {}),
         "status": status,
+        "viewer_of": conf.get("viewer_of"),
     }
 
 
@@ -116,6 +118,8 @@ dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5D
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
 dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
+@media (max-width:700px){body{margin:14px} table{display:block;overflow-x:auto} .lines{padding:12px}
+ th,td{padding:5px 6px;font-size:13px} dialog{min-width:0;width:calc(100% - 32px)}}
 @media print{.bar,label.ex,.lines,button.edit,.carrybox{display:none} body{margin:0}}
 """
 
@@ -266,6 +270,7 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 </form></dialog>"""
     defaults = esc(json.dumps({"date": (default_date or date.today()).isoformat(), "client": client or ""}))
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>{esc(title)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>{PAGE_STYLE}</style></head><body data-defaults="{defaults}">
@@ -496,8 +501,9 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _allowed_host(self) -> bool:
-        # Refuse requests addressed to any other name (DNS rebinding protection).
-        return self.headers.get("Host", "") in (f"127.0.0.1:{cfg.PORT}", f"localhost:{cfg.PORT}")
+        # Refuse requests addressed to any other name (DNS rebinding protection). This Mac's own Tailscale name is
+        # allowed too: Tailscale Serve passes those requests on from Dave's other devices.
+        return self.headers.get("Host", "") in remote.allowed_hosts()
 
     def _send(self, code: int, body, ctype: str = "application/json", extra: dict | None = None):
         if not isinstance(body, (bytes, str)):
@@ -523,8 +529,22 @@ class Handler(BaseHTTPRequestHandler):
         if (end - start).days > 366:
             start = end - timedelta(days=366)
         try:
+            viewer_of = cfg.load_config().get("viewer_of")
+            if url.path == "/" and viewer_of and "local" not in q:
+                return self._send(302, b"", "text/plain", {"Location": viewer_of})
+            if url.path == "/viewer":
+                return self._send(200, viewer_page(viewer_of), "text/html; charset=utf-8")
             if url.path == "/":
                 return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path in ("/apple-touch-icon.png", "/favicon.png"):
+                return self._send(200, (STATIC / "apple-touch-icon.png").read_bytes(), "image/png")
+            if url.path == "/api/remote":
+                return self._send(200, {**remote.status(), "viewer_of": viewer_of})
+            if url.path == "/api/export":
+                name = f"timeflip-changes-{_file_name(socket.gethostname())}-{date.today()}.json"
+                return self._send(200, json.dumps(merge.export(service.open_store(include_ignored=True),
+                                                               cfg.load_config()), indent=1),
+                                  "application/json", {"Content-Disposition": f'attachment; filename="{name}"'})
             if url.path == "/api/update":
                 return self._send(200, {**updater.check(), "can_update": updater.is_installed_copy()})
             if url.path == "/api/state":
@@ -737,6 +757,22 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         store.set_invoiced(client, month, None)
                     return self._send(200, {"ok": True})
+                elif self.path == "/api/remote/enable":
+                    return self._send(200, remote.enable())
+                elif self.path == "/api/remote/disable":
+                    remote.disable()
+                    return self._send(200, remote.status())
+                elif self.path == "/api/viewer/check":
+                    return self._send(200, remote.check_main(str(body.get("url") or "")))
+                elif self.path == "/api/viewer/start":
+                    return self._send(200, remote.make_viewer(str(body.get("url") or "")))
+                elif self.path == "/api/viewer/stop":
+                    remote.stop_viewer()
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/import":
+                    conf, report = merge.import_changes(service.open_store(include_ignored=True), cfg.load_config(), body)
+                    cfg.save_config(conf)
+                    return self._send(200, {"report": report})
                 elif self.path == "/api/rollover":
                     service.open_store().set_rolled(int(body["id"]), "carried" if body.get("rolled") else None,
                                                     str(date.fromisoformat(body["date"])))
@@ -759,6 +795,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": str(e)})
         except Exception as e:
             return self._send(500, {"error": str(e)})
+
+
+def viewer_page(viewer_of: str | None) -> str:
+    """This Mac's own page when it's a viewer: where it points, and how to stop."""
+    esc = html.escape
+    body = (f'<p>This Mac shows the TimeFlip tracker on your main Mac:</p><p><a class="btn" href="{esc(viewer_of)}">'
+            f'Open it</a></p><p class="small">{esc(viewer_of)}</p>'
+            '<p><button id="stop">Stop being a viewer</button></p><p class="small">Stopping goes back to this Mac\'s own '
+            'tracker and data, as they were when it became a viewer. TimeFlip syncing starts again within 5 minutes.</p>'
+            if viewer_of else '<p>This Mac uses its own tracker. <a href="/">Open it</a>.</p>')
+    return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>TimeFlip Tracker – viewer</title>
+<style>body{{font:15px/1.6 -apple-system,Inter,sans-serif;color:#111827;max-width:560px;margin:40px auto;padding:0 16px}}
+a.btn,button{{font:600 14px -apple-system,sans-serif;padding:9px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;cursor:pointer;text-decoration:none;color:#111827}}
+a.btn{{background:#F97316;border-color:#F97316;color:#fff}} .small{{color:#6B7280;font-size:13px}}</style></head>
+<body><h1>TimeFlip Tracker</h1>{body}
+<script>const b=document.getElementById("stop");if(b)b.onclick=async()=>{{b.disabled=true;
+await fetch("/api/viewer/stop",{{method:"POST",headers:{{"Content-Type":"application/json","X-TFTrack":"1"}},body:"{{}}"}});
+location.href="/";}};</script></body></html>"""
 
 
 def _file_name(s: str) -> str:

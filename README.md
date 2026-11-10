@@ -48,6 +48,16 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 
 The tracker checks TimeFlip every 5 minutes. It can only see what your phone app has already synced to TimeFlip, so alerts can lag a little.
 
+## Phone and other computers
+
+There's one tracker, on your main Mac, with one set of data. Your phone and other computers open that same tracker over [Tailscale](https://tailscale.com), a private network for your own devices. Nothing is copied.
+
+1. **Tailscale everywhere:** install Tailscale on the main Mac, the other Mac and your phone (App Store), and sign in to the **same** account on each.
+2. **Share it (main Mac):** in **Settings → Phone & other computers**, click **Share with my devices**. The first time, Tailscale may ask you to switch on HTTPS for your account: click the link it gives, approve, then click Share again. You then get an address like `https://your-mac.tailXXXX.ts.net:8765/`. Only devices signed in to your Tailscale account can open it (don't share this Mac with other people's Tailscale accounts).
+3. **Phone:** open that address in Safari, then **Share → Add to Home Screen**.
+4. **Other Mac's changes (if it was used on its own):** on the other Mac, **Settings → Phone & other computers → Download this Mac's changes**. On the main Mac, add that file under **Bring in another Mac's changes**. Anything both Macs did differently keeps the main Mac's version and is listed.
+5. **Other Mac becomes a viewer:** on the other Mac, enter the main Mac's address under **Make this Mac a viewer**, then **Check** and **Make this Mac a viewer**. Its TimeFlip Tracker app then opens the main tracker; its own syncing and alerts stop, and its data is backed up to `~/.tftrack-backup-…`. To undo, open `http://127.0.0.1:8765/viewer` on that Mac and click **Stop being a viewer**.
+
 ## Updating
 
 Updates install automatically once a day: overnight if your Mac is on, otherwise shortly after it wakes. The next time you open the tracker, a **What's new** message lists the changes.
