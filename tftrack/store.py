@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS paid (
 -- Invoices made in the app. A fixed copy: `data` holds the lines and the business and client details as they
 -- were on the day (JSON). Voided invoices stay, so numbers are never reused.
 CREATE TABLE IF NOT EXISTS bill (
-    number TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id TEXT NOT NULL,  -- which of the user's businesses sent it; each numbers its invoices separately
+    number TEXT NOT NULL,
     seq INTEGER NOT NULL,
     client TEXT NOT NULL,
     month TEXT NOT NULL,        -- YYYY-MM
@@ -85,7 +87,21 @@ CREATE TABLE IF NOT EXISTS bill (
     total REAL NOT NULL,
     data TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    voided_at TEXT
+    voided_at TEXT,
+    UNIQUE (business_id, number)
+);
+-- Extras to add to a client's invoice for a month: time not on the cube, mileage, expenses. Once invoiced, bill_id
+-- says which invoice took them; voiding that invoice frees them again.
+CREATE TABLE IF NOT EXISTS extra (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- YYYY-MM
+    kind TEXT NOT NULL,         -- time, mileage, expense
+    description TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit_price REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    bill_id INTEGER
 );
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
@@ -142,7 +158,20 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
+        # Version 30 kept one business's invoices, keyed by number. Move them to the first business ("b1").
+        cols = [r["name"] for r in self.db.execute("PRAGMA table_info(bill)")]
+        old = bool(cols) and "business_id" not in cols
+        if old:
+            self.db.execute("ALTER TABLE bill RENAME TO bill_v30")
         self.db.executescript(SCHEMA)
+        if old:
+            with self.db:
+                self.db.execute(
+                    """INSERT INTO bill (business_id, number, seq, client, month, issued_on, due_on, seconds, net, vat,
+                                         total, data, created_at, voided_at)
+                       SELECT 'b1', number, seq, client, month, issued_on, due_on, seconds, net, vat, total, data,
+                              created_at, voided_at FROM bill_v30 ORDER BY created_at""")
+                self.db.execute("DROP TABLE bill_v30")
 
     def replace_all(self, data: dict, duration_unit: str = "seconds") -> tuple[int, int]:
         """Replace the local copy with the server's full data set. Returns (tasks, intervals)."""
@@ -371,21 +400,30 @@ class Store:
     def _bill(row) -> dict:
         return {**dict(row), "data": json.loads(row["data"])}
 
-    def add_bill(self, bill: dict) -> None:
+    def add_bill(self, bill: dict) -> int:
         with self.db:
-            self.db.execute(
-                "INSERT INTO bill VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
-                (bill["number"], bill["seq"], bill["client"], bill["month"], bill["issued_on"], bill["due_on"],
-                 bill["seconds"], bill["net"], bill["vat"], bill["total"], json.dumps(bill["data"]),
+            cur = self.db.execute(
+                """INSERT INTO bill (business_id, number, seq, client, month, issued_on, due_on, seconds, net, vat,
+                                     total, data, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (bill["business_id"], bill["number"], bill["seq"], bill["client"], bill["month"], bill["issued_on"],
+                 bill["due_on"], bill["seconds"], bill["net"], bill["vat"], bill["total"], json.dumps(bill["data"]),
                  datetime.now(timezone.utc).isoformat()))
+        return cur.lastrowid
 
-    def bill(self, number: str) -> dict | None:
-        row = self.db.execute("SELECT * FROM bill WHERE number = ?", (number,)).fetchone()
+    def bill(self, bill_id) -> dict | None:
+        try:
+            row = self.db.execute("SELECT * FROM bill WHERE id = ?", (int(bill_id),)).fetchone()
+        except (TypeError, ValueError):
+            return None
         return self._bill(row) if row else None
+
+    def number_used(self, business_id: str, number: str) -> bool:
+        return self.db.execute("SELECT 1 FROM bill WHERE business_id = ? AND number = ?",
+                               (business_id, number)).fetchone() is not None
 
     def bills(self) -> list[dict]:
         """Every invoice, newest first (voided ones included)."""
-        return [self._bill(r) for r in self.db.execute("SELECT * FROM bill ORDER BY seq DESC, created_at DESC")]
+        return [self._bill(r) for r in self.db.execute("SELECT * FROM bill ORDER BY created_at DESC, id DESC")]
 
     def bill_for(self, client: str, month: str) -> dict | None:
         """The live (not voided) invoice for a client's month, if there is one."""
@@ -393,16 +431,43 @@ class Store:
                               (client, month)).fetchone()
         return self._bill(row) if row else None
 
-    def void_bill(self, number: str) -> dict | None:
+    def void_bill(self, bill_id) -> dict | None:
         """Void an invoice and put its month back to not invoiced. Returns the invoice, or None if there's no such one."""
-        bill = self.bill(number)
+        bill = self.bill(bill_id)
         if not bill or bill["voided_at"]:
             return bill
         with self.db:
-            self.db.execute("UPDATE bill SET voided_at = ? WHERE number = ?",
-                            (datetime.now(timezone.utc).isoformat(), number))
+            self.db.execute("UPDATE bill SET voided_at = ? WHERE id = ?",
+                            (datetime.now(timezone.utc).isoformat(), bill["id"]))
+            self.db.execute("UPDATE extra SET bill_id = NULL WHERE bill_id = ?", (bill["id"],))
         self.set_invoiced(bill["client"], bill["month"], None)
         return bill
+
+    # ----- extras for invoices -----
+
+    def add_extra(self, client: str, month: str, kind: str, description: str, quantity: float, unit_price: float) -> int:
+        with self.db:
+            return self.db.execute(
+                "INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at) VALUES (?,?,?,?,?,?,?)",
+                (client, month, kind, description, quantity, unit_price, datetime.now(timezone.utc).isoformat())).lastrowid
+
+    def extras(self, client: str | None = None, month: str | None = None) -> list[dict]:
+        """Extras not yet on an invoice, oldest first (for one client's month, or all of them)."""
+        sql, args = "SELECT * FROM extra WHERE bill_id IS NULL", []
+        if client is not None:
+            sql, args = sql + " AND lower(client) = lower(?)", args + [client]
+        if month is not None:
+            sql, args = sql + " AND month = ?", args + [month]
+        return [dict(r) for r in self.db.execute(sql + " ORDER BY month, id", args)]
+
+    def delete_extra(self, extra_id: int) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM extra WHERE id = ? AND bill_id IS NULL", (extra_id,))
+
+    def claim_extras(self, client: str, month: str, bill_id: int) -> None:
+        with self.db:
+            self.db.execute("UPDATE extra SET bill_id = ? WHERE bill_id IS NULL AND lower(client) = lower(?) AND month = ?",
+                            (bill_id, client, month))
 
     def dismissed(self) -> set[str]:
         return {r[0] for r in self.db.execute("SELECT key FROM dismissed")}

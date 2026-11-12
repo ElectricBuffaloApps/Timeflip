@@ -21,8 +21,42 @@ DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "compan
 CLIENT_TEXT = ("name", "address", "email", "reference")
 
 
-def business(conf: dict) -> dict:
-    return {**DEFAULT_BUSINESS, **(conf.get("business") or {})}
+def businesses(conf: dict) -> list[dict]:
+    """The user's businesses (at least one, even if blank). Each has an id, its own details and its own numbering."""
+    saved = conf.get("businesses")
+    if not saved and conf.get("business"):   # version 30 had a single business
+        saved = [{**conf["business"], "id": "b1"}]
+    return [{**DEFAULT_BUSINESS, **b} for b in saved] if saved else [{**DEFAULT_BUSINESS, "id": "b1"}]
+
+
+def business_for(conf: dict, client: str | None) -> dict:
+    """The business that invoices this client: the one chosen for it in Settings, else the first."""
+    every = businesses(conf)
+    chosen = client_details(conf, client)["business"] if client else None
+    return next((b for b in every if b["id"] == chosen), every[0])
+
+
+def clean_businesses(raw: list) -> list[dict]:
+    """Check and tidy the whole list from Settings. New businesses (no id yet) get the next free id."""
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("Keep at least one business.")
+    out, used = [], {str(b.get("id")) for b in raw if b.get("id")}
+    n = 1
+    for b in raw:
+        clean = clean_business(b)
+        bid = str(b.get("id") or "")
+        if not bid or bid in {x["id"] for x in out}:
+            while f"b{n}" in used:
+                n += 1
+            bid = f"b{n}"
+            used.add(bid)
+        out.append({**clean, "id": bid})
+    names = [b["name"].lower() for b in out if b["name"]]
+    if len(names) != len(set(names)):
+        raise ValueError("Two businesses have the same name. Give each its own name.")
+    if len(out) > 1 and any(not b["name"] for b in out):
+        raise ValueError("Give every business a name.")
+    return out
 
 
 def clean_business(raw: dict) -> dict:
@@ -51,12 +85,13 @@ def clean_business(raw: dict) -> dict:
 def client_details(conf: dict, client: str) -> dict:
     for name, d in (conf.get("client_details") or {}).items():
         if name.lower() == client.lower():
-            return {"name": "", "address": "", "email": "", "reference": "", "terms_days": None, **d}
-    return {"name": "", "address": "", "email": "", "reference": "", "terms_days": None}
+            return {"name": "", "address": "", "email": "", "reference": "", "terms_days": None, "business": None, **d}
+    return {"name": "", "address": "", "email": "", "reference": "", "terms_days": None, "business": None}
 
 
 def clean_client_details(raw: dict) -> dict:
     out = {key: str(raw.get(key) or "").strip()[:2000] for key in CLIENT_TEXT}
+    out["business"] = str(raw["business"]) if raw.get("business") else None
     days = raw.get("terms_days")
     if days in (None, ""):
         out["terms_days"] = None
@@ -69,7 +104,7 @@ def clean_client_details(raw: dict) -> dict:
 
 def missing(conf: dict, client: str | None = None) -> list[str]:
     """What still has to be filled in before an invoice can go out (plain words, for the page)."""
-    b = business(conf)
+    b = business_for(conf, client)
     out = []
     if not b["name"]:
         out.append("your business name")
@@ -80,6 +115,43 @@ def missing(conf: dict, client: str | None = None) -> list[str]:
     if client and not client_details(conf, client)["name"]:
         out.append(f"{client}'s billing name")
     return out
+
+
+EXTRA_KINDS = {"time": "h", "mileage": "miles", "expense": ""}
+
+
+def clean_extra(raw: dict) -> dict:
+    kind = raw.get("kind") if raw.get("kind") in EXTRA_KINDS else None
+    if not kind:
+        raise ValueError("Choose what kind of extra it is.")
+    description = str(raw.get("description") or "").strip()[:300]
+    if not description:
+        raise ValueError("Describe the extra, as it should read on the invoice.")
+    try:
+        quantity = 1.0 if kind == "expense" else float(raw.get("quantity"))
+        unit_price = float(raw.get("unit_price"))
+    except (TypeError, ValueError):
+        raise ValueError("Enter the amount" + ("." if kind == "expense" else " and how many."))
+    if quantity <= 0 or unit_price < 0:
+        raise ValueError("Amounts must be more than zero.")
+    return {"kind": kind, "description": description, "quantity": quantity, "unit_price": unit_price}
+
+
+def extra_lines(extras: list[dict]) -> list[dict]:
+    """Invoice lines for a month's extras, in the same shape as the time lines."""
+    return [{"description": e["description"], "hours": e["quantity"], "rate": e["unit_price"],
+             "amount": round(e["quantity"] * e["unit_price"], 2), "unit": EXTRA_KINDS.get(e["kind"], ""),
+             "extra": e["kind"]} for e in extras]
+
+
+def quantity_text(line: dict) -> str:
+    """How much of a line: hours to two places, miles and counts without needless zeros."""
+    unit = line.get("unit", "h")
+    if line.get("extra") == "expense":
+        return ""
+    if unit == "h":
+        return f"{line['hours']:.2f} h"
+    return f"{line['hours']:g} {unit}".strip()
 
 
 def format_number(b: dict, n: int) -> str:
@@ -105,17 +177,17 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
     if existing:
         raise ValueError(f"{client} already has invoice {existing['number']} for {month_title(month)}. "
                          "Void it first to make a new one.")
-    b = business(conf)
+    b = business_for(conf, client)
     details = client_details(conf, client)
     n = b["next_number"]
-    while store.bill(format_number(b, n)):   # never reuse a number, even a voided one
+    while store.number_used(b["id"], format_number(b, n)):   # never reuse a number, even a voided one
         n += 1
     net = round(sum(l["amount"] for l in lines), 2)
     vat_rate = b["vat_rate"] if b["vat_registered"] else None
     vat = round(net * vat_rate / 100, 2) if vat_rate else 0.0
     terms = details["terms_days"] if details["terms_days"] is not None else default_terms
     bill = {
-        "number": format_number(b, n), "seq": n, "client": client, "month": month,
+        "business_id": b["id"], "number": format_number(b, n), "seq": n, "client": client, "month": month,
         "issued_on": today.isoformat(), "due_on": (today + timedelta(days=terms)).isoformat(),
         "seconds": seconds, "net": net, "vat": vat, "total": round(net + vat, 2),
         "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": terms,
@@ -123,10 +195,12 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
                                                 "payment", "footer")},
                  "client": {k: details[k] for k in CLIENT_TEXT}},
     }
-    store.add_bill(bill)
+    bill["id"] = store.add_bill(bill)
+    store.claim_extras(client, month, bill["id"])
     store.set_invoiced(client, month, seconds, net)
     conf = dict(conf)
-    conf["business"] = {**b, "next_number": n + 1}
+    conf["businesses"] = [{**x, "next_number": n + 1} if x["id"] == b["id"] else x for x in businesses(conf)]
+    conf.pop("business", None)
     return bill, conf
 
 
@@ -135,8 +209,8 @@ def summary(bill: dict, paid_at: str | None, today: date) -> dict:
     due = date.fromisoformat(bill["due_on"])
     status = ("void" if bill["voided_at"] else "paid" if paid_at else
               "overdue" if today > due else "awaiting")
-    return {**{k: bill[k] for k in ("number", "client", "month", "issued_on", "due_on", "net", "vat", "total")},
-            "status": status, "days_overdue": (today - due).days if status == "overdue" else 0,
+    return {**{k: bill[k] for k in ("id", "number", "client", "month", "issued_on", "due_on", "net", "vat", "total")},
+            "business": bill["data"]["business"]["name"], "status": status, "days_overdue": (today - due).days if status == "overdue" else 0,
             "email": bill["data"]["client"].get("email") or ""}
 
 
@@ -222,7 +296,7 @@ def bill_pdf(bill: dict) -> bytes:
         y -= 12
     y -= 14
 
-    cols = (("Description", left + 6, "left"), ("Hours", right - 150, "right"), ("Rate", right - 80, "right"),
+    cols = (("Description", left + 6, "left"), ("Quantity", right - 150, "right"), ("Rate", right - 80, "right"),
             ("Amount", right - 6, "right"))
 
     def head() -> None:
@@ -242,9 +316,10 @@ def bill_pdf(bill: dict) -> bytes:
     head()
     for l in data["lines"]:
         room(18)
-        doc.text(cols[0][1], y - 12, fit(l["description"], right - 170 - cols[0][1], 9), 9)
-        doc.text(cols[1][1], y - 12, f"{l['hours']:.2f}", 9, align="right")
-        doc.text(cols[2][1], y - 12, _gbp(l["rate"]), 9, align="right")
+        doc.text(cols[0][1], y - 12, fit(l["description"], right - 215 - cols[0][1], 9), 9)
+        doc.text(cols[1][1], y - 12, quantity_text(l), 9, align="right")
+        if l.get("extra") != "expense":
+            doc.text(cols[2][1], y - 12, _gbp(l["rate"]), 9, align="right")
         doc.text(cols[3][1], y - 12, _gbp(l["amount"]), 9, align="right")
         y -= 18
         doc.line(left, y, right, y)
@@ -334,7 +409,7 @@ for (const b of document.querySelectorAll("button[data-paid]")) {
 const v = document.getElementById("void");
 if (v) v.onclick = async () => {
   if (!confirm(`Void invoice ${info.number}? Its number won't be used again, and the month goes back to "not invoiced".`)) return;
-  try { await post("/api/bill/void", {number: info.number}); location.reload(); } catch (e) { alert(e.message); }
+  try { await post("/api/bill/void", {id: info.id}); location.reload(); } catch (e) { alert(e.message); }
 };
 </script>"""
 
@@ -347,7 +422,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
     state = {"paid": f"✓ Paid {_d(paid_at[:10])}" if paid_at else "", "void": "Void",
              "overdue": f"{s['days_overdue']} day{'s' * (s['days_overdue'] != 1)} overdue",
              "awaiting": f"Awaiting payment, due {_d(bill['due_on'])}"}[s["status"]]
-    q = f"number={quote(bill['number'])}"
+    q = f"id={bill['id']}"
     sheet_q = f"client={quote(bill['client'])}&month={bill['month']}"
     buttons = ""
     if s["status"] != "void":
@@ -362,13 +437,14 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
         extra.append(f"Company number {esc(b['company_number'])}")
     if data["vat_rate"] is not None and b["vat_number"]:
         extra.append(f"VAT number {esc(b['vat_number'])}")
-    rows = "".join(f"<tr><td>{esc(l['description'])}</td><td class=n>{l['hours']:.2f}</td>"
-                   f"<td class=n>{_gbp(l['rate'])}</td><td class=n>{_gbp(l['amount'])}</td></tr>" for l in data["lines"])
+    rows = "".join(f"<tr><td>{esc(l['description'])}</td><td class=n>{quantity_text(l)}</td>"
+                   f"<td class=n>{'' if l.get('extra') == 'expense' else _gbp(l['rate'])}</td>"
+                   f"<td class=n>{_gbp(l['amount'])}</td></tr>" for l in data["lines"])
     vat = (f"<tr><td>VAT at {data['vat_rate']:g}%</td><td class=n>{_gbp(bill['vat'])}</td></tr>"
            if data["vat_rate"] is not None else "")
     pay = (f'<div class="pay"><h2>HOW TO PAY · DUE BY {_d(bill["due_on"])}</h2>{esc(b["payment"])}</div>'
            if b["payment"] else "")
-    info = esc(json.dumps({"number": bill["number"], "client": bill["client"], "month": bill["month"]}))
+    info = esc(json.dumps({"id": bill["id"], "number": bill["number"], "client": bill["client"], "month": bill["month"]}))
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invoice {esc(bill['number'])} – {esc(bill['client'])}</title>
@@ -384,7 +460,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
 <tr><td>For</td><td>{month_title(bill['month'])}</td></tr></table></div></div>
 <h2>BILL TO</h2><div class="to"><b>{esc(c['name'])}</b><div class="muted">{esc(c['address'])}</div>
 {f'<div class="muted">Reference: {esc(c["reference"])}</div>' if c.get('reference') else ''}</div>
-<table class="lines"><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
+<table class="lines"><thead><tr><th>Description</th><th class=n>Quantity</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
 <tbody>{rows}</tbody></table>
 <table class="totals"><tr><td>Subtotal</td><td class=n>{_gbp(bill['net'])}</td></tr>{vat}
 <tr class="due"><td>Total due</td><td class=n>{_gbp(bill['total'])}</td></tr></table>

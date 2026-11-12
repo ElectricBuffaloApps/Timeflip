@@ -62,7 +62,7 @@ def state() -> dict:
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
         "week_starts": conf.get("week_starts", "monday"),
         "payment_terms_days": collect.terms_days(conf),
-        "business": billing.business(conf),
+        "businesses": billing.businesses(conf),
         "client_details": conf.get("client_details", {}),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
@@ -201,7 +201,7 @@ for (const b of document.querySelectorAll("button.mkbill")) {
                                                  body: JSON.stringify({client: b.dataset.client, month: b.dataset.month})});
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Couldn't create the invoice.");
-      location.href = "/bill?number=" + encodeURIComponent(data.numbers[0]);
+      location.href = "/bill?id=" + data.ids[0];
     } catch (e) { alert(e.message); b.disabled = false; }
   });
 }
@@ -457,7 +457,7 @@ def _invoiced_status(inv: dict) -> str:
     else:
         paid = f'<button class="secondary paid" {data} data-paid="1">Mark as paid</button>'
     bill = inv.get("bill")
-    undo = (f'<a class="btn" href="/bill?number={quote(bill["number"])}">Invoice {esc(bill["number"])}</a>' if bill else
+    undo = (f'<a class="btn" href="/bill?id={bill["id"]}">Invoice {esc(bill["number"])}</a>' if bill else
             f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>')
     return (f'<span class="done">✓ Invoiced {when:%-d %b %Y} ({done["seconds"] / 3600:.2f} h{amount}){changed}</span>'
             f'{undo}{paid}')
@@ -609,7 +609,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, bills_overview(date.today()))
             if url.path in ("/bill", "/bill.pdf"):
                 store = service.open_store()
-                bill = store.bill(q.get("number") or "")
+                bill = store.bill(q.get("id"))
                 if not bill:
                     return self._send(404, "No such invoice.", "text/plain; charset=utf-8")
                 if url.path == "/bill.pdf":
@@ -624,10 +624,15 @@ class Handler(BaseHTTPRequestHandler):
                 store = service.open_store()
                 out = io.BytesIO()
                 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-                    for number in (q.get("numbers") or "").split(","):
-                        bill = store.bill(number)
+                    names = set()
+                    for bill_id in (q.get("ids") or "").split(","):
+                        bill = store.bill(bill_id)
                         if bill and not bill["voided_at"]:
-                            z.writestr(billing.file_name(bill), billing.bill_pdf(bill))
+                            name = billing.file_name(bill)
+                            if name in names:   # two businesses can share a number
+                                name = f"{bill['data']['business']['name']} {name}"
+                            names.add(name)
+                            z.writestr(name, billing.bill_pdf(bill))
                             raw, name = _sheet_pdf(bill["client"], bill["month"])
                             z.writestr(name, raw)
                 return self._send(200, out.getvalue(), "application/zip",
@@ -832,7 +837,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/business":
                     conf = cfg.load_config()
-                    conf["business"] = billing.clean_business(body)
+                    conf["businesses"] = billing.clean_businesses(body.get("businesses"))
+                    conf.pop("business", None)
                     cfg.save_config(conf)
                 elif self.path == "/api/client-details":
                     conf = cfg.load_config()
@@ -853,14 +859,32 @@ class Handler(BaseHTTPRequestHandler):
                     made, errors = [], []
                     for client, month in wanted:
                         try:
-                            made.append(_create_bill(client, month, today)["number"])
+                            bill = _create_bill(client, month, today)
+                            made.append({"id": bill["id"], "number": bill["number"]})
                         except ValueError as e:
                             if not body.get("all"):
                                 raise
                             errors.append(str(e))
-                    return self._send(200, {"ok": True, "numbers": made, "errors": errors})
+                    return self._send(200, {"ok": True, "ids": [b["id"] for b in made],
+                                            "numbers": [b["number"] for b in made], "errors": errors})
+                elif self.path == "/api/extra/add":
+                    client = str(body.get("client") or "").strip()
+                    y, m = (int(x) for x in str(body.get("month") or "").split("-"))
+                    date(y, m, 1)
+                    if not client:
+                        raise ValueError("Choose a client.")
+                    e = billing.clean_extra(body)
+                    store = service.open_store()
+                    if store.bill_for(client, f"{y}-{m:02d}"):
+                        raise ValueError(f"{client} has already been invoiced for that month. Pick the next month, "
+                                         "or void that invoice first.")
+                    store.add_extra(client, f"{y}-{m:02d}", e["kind"], e["description"], e["quantity"], e["unit_price"])
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/extra/delete":
+                    service.open_store().delete_extra(int(body.get("id")))
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/bill/void":
-                    if not service.open_store().void_bill(str(body.get("number") or "")):
+                    if not service.open_store().void_bill(body.get("id")):
                         raise ValueError("No such invoice.")
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/paid":
@@ -1020,12 +1044,18 @@ def _month_due(store, conf: dict, client: str, month: str) -> tuple[int, float |
     if c.get("billing") in ("day", "week"):
         inv = _invoice({"client": client, "month": month})
         lines = invoice_lines(inv, rate, bool(inv.get("smooth")))   # what you'd actually copy into the invoice
-        return inv["total_billed_s"], (round(sum(l["amount"] or 0 for l in lines), 2) if rate else None), inv
+        return inv["total_billed_s"], (round(sum(l["amount"] or 0 for l in lines) + _extras_total(store, client, month), 2)
+                                       if rate else None), inv
     y, m = (int(x) for x in month.split("-"))
     first = date(y, m, 1)
     last = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
     secs = sum(r["seconds"] for r in timesheet_rows(store, first, last, client) if not r["excluded"])
-    return secs, (round(secs / 3600 * rate, 2) if rate else None), None
+    return secs, (round(secs / 3600 * rate + _extras_total(store, client, month), 2) if rate else None), None
+
+
+def _extras_total(store, client: str, month: str) -> float:
+    """Extras waiting to go on this client's invoice for the month."""
+    return sum(l["amount"] for l in billing.extra_lines(store.extras(client, month)))
 
 
 def _months(start: str, end: str) -> list[str]:
@@ -1105,6 +1135,7 @@ def _create_bill(client: str, month: str, today: date) -> dict:
     if not client:
         raise ValueError("Choose a client.")
     lines, seconds = _bill_lines(store, conf, client, month)
+    lines = lines + billing.extra_lines(store.extras(client, month))
     bill, conf = billing.create(store, conf, client, month, lines, seconds, today, collect.terms_days(conf))
     cfg.save_config(conf)
     return bill
@@ -1130,6 +1161,7 @@ def bills_overview(today: date) -> dict:
             if not mo["current"]:
                 need = billing.missing(conf, c["client"]) + ([] if c["rate"] else [f"an hourly rate for {c['client']}"])
                 ready.append({"client": c["client"], "month": mo["month"], "label": billing.month_title(mo["month"]),
+                              "business": billing.business_for(conf, c["client"])["name"],
                               "seconds": mo["seconds"], "value": mo["value"], "missing": need})
     paid = {}
     bills = []
@@ -1139,8 +1171,10 @@ def bills_overview(today: date) -> dict:
         paid_at = None if b["voided_at"] else paid[b["client"].lower()].get(b["month"])
         bills.append({**billing.summary(b, paid_at, today), "label": billing.month_title(b["month"]), "paid_at": paid_at})
     live = [b for b in bills if b["status"] != "void"]
-    return {"ready": ready, "bills": bills, "missing": billing.missing(conf),
-            "vat_registered": billing.business(conf)["vat_registered"],
+    extras = [{**e, "amount": round(e["quantity"] * e["unit_price"], 2), "label": billing.month_title(e["month"])}
+              for e in store.extras()]
+    return {"ready": ready, "bills": bills, "missing": billing.missing(conf), "extras": extras,
+            "several": len(billing.businesses(conf)) > 1,
             "awaiting": round(sum(b["total"] for b in live if b["status"] == "awaiting"), 2),
             "overdue": round(sum(b["total"] for b in live if b["status"] == "overdue"), 2),
             "paid": round(sum(b["total"] for b in live if b["status"] == "paid"), 2)}

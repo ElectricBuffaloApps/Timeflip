@@ -1,5 +1,14 @@
 [
   {
+    "version": 31,
+    "changes": [
+      "More than one business: in Settings, 'Your businesses' has '+ Add another business'. Each business has its own name, address, payment details, VAT and invoice numbers. Then choose which business invoices each client under 'Who each invoice goes to' (the 'Invoiced by' column). The details you already entered are kept as your first business.",
+      "Extras on invoices: on the Invoices tab, add extra time that wasn't on the cube, mileage (45p a mile unless you change it) or an expense for a client and month. Extras go on that client's invoice for the month, after the time lines, and are counted in what's ready to invoice.",
+      "Removing an extra, or voiding an invoice, puts things back: a voided invoice's extras are ready for the next one.",
+      "Invoices now say Quantity instead of Hours, so miles and expenses read properly."
+    ]
+  },
+  {
     "version": 30,
     "changes": [
       "Invoices made in the app: a new Invoices tab lists every finished month ready to invoice. Create invoice makes a numbered invoice with your details, the client's details, VAT if you're registered, the due date and how to pay. Save it as a PDF or print it.",

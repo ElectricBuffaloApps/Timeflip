@@ -63,10 +63,10 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
     terms = terms_days(conf)
 
     def add(key, kind, level, title, detail, value=None, client=None, month=None, action=None, dismissable=True,
-            number=None):
+            number=None, bill_id=None):
         prompts.append({"key": key, "kind": kind, "level": level, "title": title, "detail": detail,
                         "value": round(value, 2) if value else None, "client": client, "month": month,
-                        "action": action, "dismissable": dismissable, "number": number})
+                        "action": action, "dismissable": dismissable, "number": number, "bill_id": bill_id})
 
     # 1. Finished months not yet invoiced: the quickest money.
     to_invoice = 0.0
@@ -99,6 +99,7 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
                     sent = datetime.fromisoformat(inv["marked_at"]).astimezone().date()
                     due = sent + timedelta(days=terms)
                     owed_amount, number, days = inv["amount"], None, terms
+                bill_id = bill["id"] if bill else None
                 which = f"invoice {number} ({label})" if number else label
                 late = (today - due).days
                 if late > 0:
@@ -106,13 +107,13 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
                     add(f"unpaid:{client.lower()}:{month}", "unpaid", "critical",
                         f"Chase {client}: {which} is {_days(late)} overdue",
                         f"Invoiced {sent:%d/%m/%Y}, due {due:%d/%m/%Y} ({days}-day terms).",
-                        owed_amount, client, month, "paid", dismissable=False, number=number)
+                        owed_amount, client, month, "paid", dismissable=False, number=number, bill_id=bill_id)
                 else:
                     awaiting += owed_amount or 0
                     add(f"unpaid:{client.lower()}:{month}", "awaiting", "info",
                         f"Waiting on {client} for {which}",
                         f"Invoiced {sent:%d/%m/%Y}, due {due:%d/%m/%Y}" + (" (today)." if late == 0 else "."),
-                        owed_amount, client, month, "paid", dismissable=False, number=number)
+                        owed_amount, client, month, "paid", dismissable=False, number=number, bill_id=bill_id)
             if month >= earliest:
                 secs, amount = month_due(client, month)
                 diff = secs - inv["seconds"]

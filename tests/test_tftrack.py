@@ -898,40 +898,72 @@ class BillingTest(unittest.TestCase):
                 web._create_bill("HTB", "2026-10", today)
             self.assertEqual(web.bills_overview(today)["missing"],
                              ["your business name", "your business address", "how clients pay you"])
-            conf["business"] = billing.clean_business({"name": "Me Ltd", "address": "1 Road\nTown", "payment": "Sort 00-00-00",
-                                                       "vat_registered": True, "vat_number": "GB1", "next_number": 7})
+            # two businesses, each with its own numbering; FCY is invoiced by the second
+            conf["businesses"] = billing.clean_businesses([
+                {"name": "Me Ltd", "address": "1 Road\nTown", "payment": "Sort 00-00-00", "vat_registered": True,
+                 "vat_number": "GB1", "next_number": 7},
+                {"name": "Other Co", "address": "2 Lane", "payment": "Sort 11-11-11", "next_number": 7}])
+            self.assertEqual([b["id"] for b in conf["businesses"]], ["b1", "b2"])
             conf["client_details"] = {"htb": billing.clean_client_details({"name": "HTB Ltd", "terms_days": "14"}),
-                                      "FCY": billing.clean_client_details({"name": "FCY Ltd"})}
+                                      "FCY": billing.clean_client_details({"name": "FCY Ltd", "business": "b2"})}
+            # extras go on the invoice after the time: mileage and an expense
+            store.add_extra("HTB", "2026-10", "mileage", "Mileage to site", 40, 0.45)
+            store.add_extra("HTB", "2026-10", "expense", "Parking", 1, 6.0)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 144.0)
             bill = web._create_bill("HTB", "2026-10", today)
-            self.assertEqual((bill["number"], bill["net"], bill["vat"], bill["total"]), ("INV-0007", 120.0, 24.0, 144.0))
+            self.assertEqual((bill["number"], bill["net"], bill["vat"], bill["total"]), ("INV-0007", 144.0, 28.8, 172.8))
+            self.assertEqual([l["amount"] for l in bill["data"]["lines"]], [80.0, 40.0, 18.0, 6.0])
+            self.assertEqual(store.extras("HTB", "2026-10"), [])                                   # used up
             self.assertEqual((bill["issued_on"], bill["due_on"]), ("2026-11-05", "2026-11-19"))   # the client's own 14 days
-            self.assertEqual(len(bill["data"]["lines"]), 2)                                        # one per day
-            self.assertEqual(saved["business"]["next_number"], 8)
-            self.assertEqual(store.invoiced("HTB")["2026-10"]["amount"], 120.0)                    # month marked invoiced
+            self.assertEqual([b["next_number"] for b in saved["businesses"]], [8, 7])
+            self.assertEqual(store.invoiced("HTB")["2026-10"]["amount"], 144.0)                    # month marked invoiced
             with self.assertRaisesRegex(ValueError, "already has invoice INV-0007"):
                 web._create_bill("HTB", "2026-10", today)
-            # an hourly client: one line per task, usual terms
+            # an hourly client: one line per task, usual terms. Its business has the same number, with no VAT
             other = web._create_bill("FCY", "2026-10", today)
-            self.assertEqual((other["number"], other["net"], other["due_on"]), ("INV-0008", 45.0, "2026-12-05"))
+            self.assertEqual((other["number"], other["net"], other["total"], other["due_on"]),
+                             ("INV-0007", 45.0, 45.0, "2026-12-05"))
+            self.assertEqual(other["data"]["business"]["name"], "Other Co")
             # the invoice is a fixed copy: later changes to Settings don't touch it
-            conf["business"]["name"] = "Renamed"
-            self.assertEqual(store.bill("INV-0007")["data"]["business"]["name"], "Me Ltd")
-            raw = billing.bill_pdf(store.bill("INV-0007"))
+            conf["businesses"][0]["name"] = "Renamed"
+            self.assertEqual(store.bill(bill["id"])["data"]["business"]["name"], "Me Ltd")
+            raw = billing.bill_pdf(store.bill(bill["id"]))
             self.assertTrue(raw.startswith(b"%PDF-1.4") and raw.rstrip().endswith(b"%%EOF"))
-            self.assertIn("INV-0007", billing.bill_page(store.bill("INV-0007"), None, today))
+            self.assertIn("INV-0007", billing.bill_page(store.bill(bill["id"]), None, today))
             # Money to collect chases it by its own due date and total
             late = web.money_to_collect(date(2026, 11, 25))
             chase = next(p for p in late["prompts"] if p["key"] == "unpaid:htb:2026-10")
-            self.assertEqual((chase["level"], chase["value"], chase["number"]), ("critical", 144.0, "INV-0007"))
+            self.assertEqual((chase["level"], chase["value"], chase["number"]), ("critical", 172.8, "INV-0007"))
             self.assertIn("6 days overdue", chase["title"])
             o = web.bills_overview(date(2026, 11, 25))
-            self.assertEqual((o["overdue"], o["awaiting"], o["ready"]), (144.0, 54.0, []))
-            # voiding frees the month but never the number
-            store.void_bill("INV-0007")
+            self.assertEqual((o["overdue"], o["awaiting"], o["ready"], o["several"]), (172.8, 45.0, [], True))
+            # voiding frees the month and its extras, but never the number
+            store.void_bill(bill["id"])
             self.assertEqual(store.invoiced("HTB"), {})
             self.assertIsNone(store.bill_for("HTB", "2026-10"))
-            self.assertEqual(web._create_bill("HTB", "2026-10", today)["number"], "INV-0009")
-            self.assertEqual([b["status"] for b in web.bills_overview(today)["bills"]], ["awaiting", "awaiting", "void"])
+            self.assertEqual(len(store.extras("HTB", "2026-10")), 2)
+            again = web._create_bill("HTB", "2026-10", today)
+            self.assertEqual((again["number"], again["net"]), ("INV-0008", 144.0))
+            self.assertEqual(sorted(b["status"] for b in web.bills_overview(today)["bills"]), ["awaiting", "awaiting", "void"])
+
+    def test_version_30_invoices_and_business_carry_over(self):
+        import sqlite3
+        from tftrack import billing
+        tmp = Path(tempfile.mkdtemp()) / "t.sqlite"
+        db = sqlite3.connect(str(tmp))
+        db.execute("""CREATE TABLE bill (number TEXT PRIMARY KEY, seq INTEGER NOT NULL, client TEXT NOT NULL, month TEXT NOT NULL,
+                      issued_on TEXT NOT NULL, due_on TEXT NOT NULL, seconds INTEGER NOT NULL, net REAL NOT NULL, vat REAL NOT NULL,
+                      total REAL NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, voided_at TEXT)""")
+        db.execute("INSERT INTO bill VALUES ('INV-0001', 1, 'HTB', '2026-10', '2026-11-01', '2026-12-01', 3600, 40, 0, 40, '{}', 'x', NULL)")
+        db.commit()
+        db.close()
+        store = Store(tmp)
+        store = Store(tmp)   # opening twice must not migrate twice
+        [b] = store.bills()
+        self.assertEqual((b["business_id"], b["number"], b["id"]), ("b1", "INV-0001", 1))
+        self.assertTrue(store.number_used("b1", "INV-0001"))
+        old = {"business": {"name": "Me", "next_number": 2}}
+        self.assertEqual([(x["id"], x["name"], x["next_number"]) for x in billing.businesses(old)], [("b1", "Me", 2)])
 
     def test_long_invoice_runs_onto_a_second_page(self):
         from tftrack import billing
