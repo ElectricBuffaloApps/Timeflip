@@ -191,6 +191,35 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
 @media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
 
+/* ---------- insights ---------- */
+.kpis.ins-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .kpis.ins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ins-chart { min-height: 240px; }
+.ins-chart .bar { gap: 2px; background: none; border-radius: 4px 4px 0 0; cursor: default; }
+.ins-chart .bar i { border-radius: 2px; min-height: 2px; }
+.ins-chart .col.now .bar { opacity: .55; }
+.ins-chart .col:hover .bar, .ins-chart .col:focus .bar { opacity: .8; }
+.ins-chart .col { outline: none; }
+@media (max-width: 700px) { .ins-chart { gap: 3px; min-height: 200px; } .ins-chart .val { display: none; } .ins-chart .day { font-size: 9px; letter-spacing: 0; } }
+.inote { padding: 12px 0; border-top: 1px solid var(--border); }
+.inote:first-child { border-top: none; padding-top: 0; }
+.inote b { display: block; font-family: Sora, Inter, sans-serif; font-size: 14px; margin-bottom: 3px; }
+.inote span { font-size: 13px; color: var(--ink-2); }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.cmp th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 0 8px 8px 0; white-space: nowrap; }
+table.cmp td { padding: 9px 8px 9px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.cmp .n { text-align: right; }
+table.cmp td.name { font-weight: 600; }
+table.cmp td.name i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; }
+table.cmp td.share { width: 34%; min-width: 90px; }
+table.cmp .track { height: 8px; border-radius: 4px; }
+table.cmp .fill { background: var(--bar); border-radius: 4px; }
+.wk { display: grid; grid-template-columns: 34px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 12px; padding: 4px 0; }
+.wk span:first-child { color: var(--ink-2); font-weight: 600; }
+.wk span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.wk .track { height: 10px; border-radius: 4px; background: none; }
+.wk .fill { background: var(--bar); border-radius: 0 4px 4px 0; }
+
 /* ---------- invoices ---------- */
 textarea { width: 100%; resize: vertical; line-height: 1.45; }
 .formgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
@@ -450,6 +479,26 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= REPORTS ================= -->
   <div class="board hidden" data-panel="reports" role="tabpanel">
+    <div class="kpis ins-kpis c12" id="insKpis" aria-label="Earnings at a glance"></div>
+    <section class="tile c8">
+      <div class="tile-head"><h2>Earned by month</h2><span class="meta" id="insMeta"></span></div>
+      <div class="chart-wrap"><div class="week ins-chart" id="insChart"></div><div class="tip hidden" id="insTip"></div></div>
+      <div class="legend" id="insLegend"></div>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>What the numbers say</h2></div>
+      <div id="insNotes"></div>
+    </section>
+    <section class="tile c8">
+      <div class="tile-head"><h2>Clients compared</h2><span class="meta" id="insSpan"></span></div>
+      <div class="tablewrap"><table class="cmp">
+        <thead><tr><th>Client</th><th class="n">Hours</th><th class="n">Earned</th><th class="n">Per hour</th><th>Share of income</th></tr></thead>
+        <tbody id="insClients"></tbody></table></div>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>Your working week</h2><span class="meta">Average day, last 12 weeks</span></div>
+      <div id="insWeek"></div>
+    </section>
     <section class="tile c8">
       <div class="tile-head">
         <h2>Where your time went</h2>
@@ -749,7 +798,7 @@ function showTab(name) {
   if (!TABS.includes(name)) name = "dashboard";
   for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll("[data-panel]")) p.classList.toggle("hidden", p.dataset.panel !== name);
-  if (name === "reports") loadReport();
+  if (name === "reports") { loadReport(); loadInsights(); }
   if (name === "invoices") loadBills();
 }
 for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.tab}`); showTab(b.dataset.tab); };
@@ -1214,6 +1263,92 @@ async function loadCollect() {
   if (unpaid) foot.push(el("span", {}, `Overdue means more than ${c.terms_days} days after invoicing. Change it in Settings.`));
   $("collectFoot").replaceChildren(...foot);
   $("collectFoot").classList.toggle("hidden", !foot.length);
+}
+
+/* ---------- insights ---------- */
+async function loadInsights() {
+  let d;
+  try { d = await api("/api/insights"); } catch (_) { return; }
+  const k = d.kpis;
+  const tile = (label, fig, foot) => {
+    const t = el("section", { class: "tile kpi" });
+    t.append(el("div", { class: "lbl" }, label), el("div", { class: "fig" }, fig), el("div", { class: "foot" }, foot));
+    return t;
+  };
+  const change = k.recent_avg != null && k.before_avg ? Math.round((100 * (k.recent_avg - k.before_avg)) / k.before_avg) : null;
+  const [ty] = k.tax_year_from.split("-");
+  $("insKpis").replaceChildren(
+    tile("Tax year to date", gbp0(k.tax_year), `Since 06/04/${ty}`),
+    tile("Monthly average", k.recent_avg == null ? "–" : gbp0(k.recent_avg),
+         k.recent_avg == null ? "After your first full month" : change == null ? "Last 3 full months" : `${change >= 0 ? "Up" : "Down"} ${Math.abs(change)}% on the 3 months before`),
+    tile("This month so far", gbp0(k.this_month), k.recent_avg ? `${Math.round((100 * k.this_month) / k.recent_avg)}% of your monthly average` : ""),
+    tile("Average per paid hour", k.avg_rate == null ? "–" : gbp(k.avg_rate), d.span_label[0].toUpperCase() + d.span_label.slice(1)));
+
+  // Colour follows the client: fixed by 12-month total, seven hues, the rest folded into "Other".
+  const totals = {};
+  for (const m of d.months) for (const c of m.clients) totals[c.client] = (totals[c.client] || 0) + c.amount;
+  const order = Object.keys(totals).filter((c) => totals[c] > 0).sort((a, b) => totals[b] - totals[a]);
+  const colour = (c) => { const i = order.indexOf(c); return i >= 0 && i < SLOTS - 1 ? `var(--s${i + 1})` : "var(--other)"; };
+  const max = Math.max(1, ...d.months.map((m) => m.earned));
+  const tip = $("insTip"), chart = $("insChart");
+  chart.style.setProperty("--cols", d.months.length);
+  $("insMeta").textContent = k.best ? `Best month: ${k.best.name}, ${gbp0(k.best.earned)}` : "";
+  chart.replaceChildren(...d.months.map((m) => {
+    const col = el("div", { class: `col${m.current ? " now today" : ""}`, tabindex: "0",
+                            "aria-label": `${m.name}: ${gbp(m.earned)} earned, ${hm(m.seconds)} tracked` });
+    const bar = el("div", { class: "bar" });
+    bar.style.height = `${Math.max(1, (100 * m.earned) / max) * 0.78}%`;
+    const parts = m.clients.filter((c) => c.amount > 0).sort((a, b) => order.indexOf(a.client) - order.indexOf(b.client));
+    for (const c of parts) {
+      const seg = el("i"); seg.style.background = colour(c.client); seg.style.flex = `${c.amount} 0 0`;
+      bar.append(seg);
+    }
+    col.append(el("div", { class: "val" }, m.earned ? gbp0(m.earned) : "–"), bar, el("div", { class: "day" }, m.label));
+    const show = () => {
+      tip.replaceChildren(el("b", {}, m.name), el("div", {}, `${gbp(m.earned)} earned${m.current ? " so far" : ""} · ${hm(m.seconds)} tracked`));
+      for (const c of parts) {
+        const row = el("div"); const key = el("span", { class: "k" }); key.style.background = colour(c.client);
+        row.append(key, `${c.client}: ${gbp(c.amount)}`); tip.append(row);
+      }
+      tip.classList.remove("hidden");
+      const box = chart.getBoundingClientRect(), cb = col.getBoundingClientRect();
+      const left = Math.min(Math.max(0, cb.left - box.left + cb.width / 2 - tip.offsetWidth / 2), box.width - tip.offsetWidth);
+      tip.style.left = `${left}px`; tip.style.top = "0px";
+    };
+    col.onmouseenter = show; col.onfocus = show;
+    col.onmouseleave = col.onblur = () => tip.classList.add("hidden");
+    return col;
+  }));
+  const shown = order.slice(0, SLOTS - 1);
+  $("insLegend").replaceChildren(...[...shown, ...(order.length > shown.length ? ["Other"] : [])].map((c) => {
+    const item = el("span"); const sw = el("i"); sw.style.background = c === "Other" ? "var(--other)" : colour(c);
+    item.append(sw, c); return item;
+  }));
+
+  $("insNotes").replaceChildren(...(d.notes.length ? d.notes.map((n) => {
+    const box = el("div", { class: "inote" }); box.append(el("b", {}, n.title), el("span", {}, n.text)); return box;
+  }) : [el("div", { class: "empty" }, "Nothing stands out yet. Notes appear here once there are a few weeks of paid time to compare.")]));
+
+  $("insSpan").textContent = d.span_label[0].toUpperCase() + d.span_label.slice(1);
+  $("insClients").replaceChildren(...(d.clients.length ? d.clients.map((c) => {
+    const tr = el("tr");
+    const name = el("td", { class: "name" }); const sw = el("i"); sw.style.background = colour(c.client); name.append(sw, c.client);
+    const share = el("td", { class: "share" });
+    const track = el("div", { class: "track" }), fill = el("div", { class: "fill" }); fill.style.width = `${c.share}%`; track.append(fill);
+    const row = el("div", { style: "display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:8px;align-items:center" });
+    row.append(track, el("span", {}, `${Math.round(c.share)}%`)); share.append(row);
+    tr.append(name, el("td", { class: "n" }, hm(c.seconds)), el("td", { class: "n" }, c.amount ? gbp(c.amount) : "–"),
+              el("td", { class: "n" }, c.rate == null ? "–" : gbp(c.rate)), share);
+    return tr;
+  }) : [(() => { const tr = el("tr"); tr.append(el("td", { colspan: "5", class: "empty" }, "No paid time yet. Set hourly rates in Settings.")); return tr; })()]));
+
+  const top = Math.max(1, ...d.weekdays.map((w) => w.seconds));
+  $("insWeek").replaceChildren(...d.weekdays.map((w) => {
+    const row = el("div", { class: "wk" });
+    const track = el("div", { class: "track" }), fill = el("div", { class: "fill" }); fill.style.width = `${(100 * w.seconds) / top}%`; track.append(fill);
+    row.append(el("span", {}, w.day), track, el("span", {}, w.seconds ? hm(w.seconds) : "–"));
+    return row;
+  }));
 }
 
 /* ---------- invoices ---------- */

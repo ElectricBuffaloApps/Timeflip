@@ -943,3 +943,31 @@ class BillingTest(unittest.TestCase):
                                       "vat_number": "", "payment": "Pay me", "footer": "Thanks"},
                          "client": {"name": "X Ltd", "address": "", "email": "", "reference": "PO1"}}}
         self.assertIn(b"/Count 2", billing.bill_pdf(bill))
+
+
+class InsightsTest(unittest.TestCase):
+    def test_months_clients_and_notes(self):
+        from datetime import date
+        from tftrack import insights
+        at = lambda mo, d, h: datetime(2026, mo, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "A", "tag": "Low"}, {"id": 2, "name": "B", "tag": "High"}, {"id": 3, "name": "Admin", "tag": None}]
+        iv, n = [], 0
+        for mo in (8, 9, 10):
+            for task, hours in ((1, 10), (2, 5), (3, 5)):
+                n += 1
+                iv.append({"id": n, "taskId": task, "startedAt": at(mo, 3 + task, 8), "duration": hours * 3600})
+        iv.append({"id": 99, "taskId": 2, "startedAt": at(11, 3, 9), "duration": 2 * 3600})
+        store = make_store(iv, tasks=tasks)
+        conf = {"clients": {"Low": {"billing": "hourly", "rate": 20}, "High": {"billing": "hourly", "rate": 80}}}
+        d = insights.build(store, conf, date(2026, 11, 12))
+        self.assertEqual([(m["month"], m["earned"]) for m in d["months"]],
+                         [("2026-08", 600.0), ("2026-09", 600.0), ("2026-10", 600.0), ("2026-11", 160.0)])   # empty months trimmed
+        self.assertEqual([(c["client"], c["amount"], c["rate"]) for c in d["clients"]],
+                         [("High", 1200.0, 80.0), ("Low", 600.0, 20.0)])
+        k = d["kpis"]
+        self.assertEqual((k["recent_avg"], k["this_month"], k["avg_rate"], k["tax_year"]), (600.0, 160.0, 40.0, 1960.0))
+        kinds = {x["kind"]: x for x in d["notes"]}
+        self.assertIn("Low pays the least", kinds["rate"]["title"])
+        self.assertIn("£200.00 more a month", kinds["rate"]["text"])        # 10h a month at £20 below the £40 average
+        self.assertIn("25% of your tracked time", kinds["unpaid"]["title"])  # 5h of 20h a month is admin
+        self.assertEqual(d["weekdays"][0]["day"], "Mon")

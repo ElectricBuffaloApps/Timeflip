@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, billing, collect, merge, pdf, remote, service, updater
+from . import allowance, billing, collect, insights, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -603,6 +603,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
+            if url.path == "/api/insights":
+                return self._send(200, insights.build(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/bills":
                 return self._send(200, bills_overview(date.today()))
             if url.path in ("/bill", "/bill.pdf"):

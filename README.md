@@ -31,6 +31,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 - **Tasks not counted:** in Settings, tick sides like breaks, timers or "off" to leave them out of every figure. Today still shows how much time wasn't counted.
 - **Limits:** in **Settings → Limits**, pick a task or a client, and enter the hours per day and/or per week.
 - **Clients** are the **tags** you give tasks in the TimeFlip app. Give every task for a client the same tag.
+- **Reports:** the top shows earnings: tax year to date (from 6 April), your monthly average, this month so far and average pay per paid hour. **Earned by month** charts the last 12 months by client (hover or tap a month for the detail). **Clients compared** ranks clients by income, with hours, pay per hour and share of income over the last 3 full months. **What the numbers say** points out your lowest-paying client, reliance on one client, and tracked time that earns nothing. Every figure is arithmetic on your own data, not a forecast.
 - **Charts:** pick a date range and choose **By task** or **By client**.
 - **Timesheets:** pick a client and a month, then click **Open timesheet**, **Save PDF** (an A4 PDF straight to your Downloads folder, no print box) or **Download spreadsheet**. Timesheet pages have the same **Save PDF** button.
 - **How each client is invoiced** (Settings):

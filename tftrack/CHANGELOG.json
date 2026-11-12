@@ -7,7 +7,8 @@
       "Create all invoices: one button makes every invoice that's ready, then offers them in one ZIP with the matching timesheet PDFs.",
       "Each invoice page has Email it (a ready-written email to the client: attach the saved PDF), Save timesheet PDF, Mark as paid and Void. An invoice is a fixed copy and never changes. Void one that's wrong and create it again: the number isn't reused.",
       "Creating an invoice marks the month as invoiced. Money to collect then chases it by its own due date and total, including VAT.",
-      "Monthly timesheets have a Create invoice button at the top. Mark as invoiced and the Copy buttons still work if you invoice somewhere else."
+      "Monthly timesheets have a Create invoice button at the top. Mark as invoiced and the Copy buttons still work if you invoice somewhere else.",
+      "Reports now opens with your earnings: tax year to date, monthly average, this month so far and average per paid hour; a chart of what you earned each month by client; clients compared by hours, income and pay per hour; your average working week; and 'What the numbers say', which points out things like your lowest-paying client and how much tracked time earns nothing."
     ]
   },
   {
