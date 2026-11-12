@@ -1,12 +1,52 @@
 [
   {
-    "version": 29,
+    "version": 33,
     "changes": [
       "Carried hours ledger: a new page showing, month by month for each allowance, the max, hours worked, hours rolled over, hours added to an invoice, the balance left and its value, and whether the month is marked as invoiced. Open it from Outstanding on the Dashboard, from Settings, or from the allowance line on a timesheet. Each month links to its timesheet.",
       "Allowances for a whole client: tick 'Bill as allowance' on a client's weekly limit and all of that client's work counts, so any of its entries can be rolled over.",
       "Several allowances for one client: each task's allowance has its own maximum, Roll over ticks, carried-over box and balance.",
       "A client can have allowances on its tasks or one for all its work, not both, because the same hours would count twice. Settings tells you if you try.",
       "Your existing Justin allowance, rolled-over entries and carried hours are unchanged."
+    ]
+  },
+  {
+    "version": 32,
+    "changes": [
+      "Email invoices from the app: Email it on an invoice (or Email in the Invoices list) attaches the invoice PDF and the timesheet PDF, addresses it to the client and writes the message for you.",
+      "Each business chooses how, under Settings → Your businesses → 'Email invoices with'. Apple Mail on this Mac makes a draft for you to check and send, from that business's email address. The first time, macOS asks to let the tracker control Mail: click OK.",
+      "Or use your own email provider: enter its outgoing mail server (SMTP), username and password. Invoices are then sent straight away, after you confirm, with a copy to you. The password is kept in the Mac's Keychain. Most providers need an 'app password'.",
+      "Send a test email checks a business's email setup before you rely on it.",
+      "The invoice number to start from is 'Next number' in Settings → Your businesses, one per business."
+    ]
+  },
+  {
+    "version": 31,
+    "changes": [
+      "More than one business: in Settings, 'Your businesses' has '+ Add another business'. Each business has its own name, address, payment details, VAT and invoice numbers. Then choose which business invoices each client under 'Who each invoice goes to' (the 'Invoiced by' column). The details you already entered are kept as your first business.",
+      "Extras on invoices: on the Invoices tab, add extra time that wasn't on the cube, mileage (45p a mile unless you change it) or an expense for a client and month. Extras go on that client's invoice for the month, after the time lines, and are counted in what's ready to invoice.",
+      "Removing an extra, or voiding an invoice, puts things back: a voided invoice's extras are ready for the next one.",
+      "Invoices now say Quantity instead of Hours, so miles and expenses read properly."
+    ]
+  },
+  {
+    "version": 30,
+    "changes": [
+      "Invoices made in the app: a new Invoices tab lists every finished month ready to invoice. Create invoice makes a numbered invoice with your details, the client's details, VAT if you're registered, the due date and how to pay. Save it as a PDF or print it.",
+      "First, fill in Settings: 'Your business' (name, address, how clients pay you, VAT, and the next invoice number so it carries on from your old ones) and 'Who each invoice goes to' (each client's name, address, email and payment terms).",
+      "Create all invoices: one button makes every invoice that's ready, then offers them in one ZIP with the matching timesheet PDFs.",
+      "Each invoice page has Email it (a ready-written email to the client: attach the saved PDF), Save timesheet PDF, Mark as paid and Void. An invoice is a fixed copy and never changes. Void one that's wrong and create it again: the number isn't reused.",
+      "Creating an invoice marks the month as invoiced. Money to collect then chases it by its own due date and total, including VAT.",
+      "Monthly timesheets have a Create invoice button at the top. Mark as invoiced and the Copy buttons still work if you invoice somewhere else.",
+      "Reports now opens with your earnings: tax year to date, monthly average, this month so far and average per paid hour; a chart of what you earned each month by client; clients compared by hours, income and pay per hour; your average working week; and 'What the numbers say', which points out things like your lowest-paying client and how much tracked time earns nothing."
+    ]
+  },
+  {
+    "version": 29,
+    "changes": [
+      "Money to collect: a new panel at the top of the Dashboard. It lists what to do to get paid, most urgent first, with what each item is worth: months to invoice, invoices to chase, and things worth a second look.",
+      "Mark as paid: on an invoiced timesheet or in Money to collect. Unpaid invoices show as awaiting payment, then as overdue once your payment terms have passed (30 days unless you change 'Clients pay within' in Settings). If you have old invoices that were paid long ago, use 'Mark all as paid' once.",
+      "Missed money prompts: time added after you invoiced, carried hours not yet charged, excluded time on invoices that haven't gone out, working days with nothing tracked, and falling behind the pace for this month's targets.",
+      "Press Hide on a prompt you've dealt with. It comes back only if the figures change. 'Show hidden' brings them all back."
     ]
   },
   {

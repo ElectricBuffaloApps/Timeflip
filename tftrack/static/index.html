@@ -103,7 +103,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 64px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 
 /* ---------- controls ---------- */
-button, select, input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 9px; padding: 7px 11px; }
+button, select, input, textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 9px; padding: 7px 11px; }
 button { cursor: pointer; font-weight: 600; }
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -171,6 +171,83 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .owed-line.late span:first-child { color: var(--critical); font-weight: 600; }
 .owed-line .mark { font-size: 12px; padding: 0 4px; }
 @media (max-width: 560px) { .owed-total { text-align: left; } .owed-total b { font-size: 22px; } }
+
+/* ---------- money to collect ---------- */
+.collect { display: grid; gap: 14px; border-top: 3px solid var(--accent); }
+.owed-total.overdue b { color: var(--critical); }
+.owed-total.zero b { color: var(--ink-2); }
+.collect-list { display: grid; gap: 8px; }
+.cprompt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; background: var(--sunk);
+  border-radius: 12px; padding: 11px 14px; border-left: 4px solid var(--bar-soft); }
+.cprompt.critical { border-left-color: var(--critical); }
+.cprompt.warning { border-left-color: var(--accent); }
+.cprompt b.title { font-family: Sora, Inter, sans-serif; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.cprompt .detail { font-size: 12px; color: var(--ink-2); grid-column: 1; }
+.cprompt .side { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.cprompt .worth { font-family: Sora, Inter, sans-serif; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.cprompt button { font-size: 12px; padding: 5px 10px; }
+.cprompt button.hide { border: none; background: none; color: var(--ink-2); font-weight: 500; padding: 5px 4px; }
+.collect-foot { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
+.collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
+@media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
+
+/* ---------- insights ---------- */
+.kpis.ins-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .kpis.ins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ins-chart { min-height: 240px; }
+.ins-chart .bar { gap: 2px; background: none; border-radius: 4px 4px 0 0; cursor: default; }
+.ins-chart .bar i { border-radius: 2px; min-height: 2px; }
+.ins-chart .col.now .bar { opacity: .55; }
+.ins-chart .col:hover .bar, .ins-chart .col:focus .bar { opacity: .8; }
+.ins-chart .col { outline: none; }
+@media (max-width: 700px) { .ins-chart { gap: 3px; min-height: 200px; } .ins-chart .val { display: none; } .ins-chart .day { font-size: 8px; letter-spacing: 0; } }
+.inote { padding: 12px 0; border-top: 1px solid var(--border); }
+.inote:first-child { border-top: none; padding-top: 0; }
+.inote b { display: block; font-family: Sora, Inter, sans-serif; font-size: 14px; margin-bottom: 3px; }
+.inote span { font-size: 13px; color: var(--ink-2); }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.cmp th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 0 8px 8px 0; white-space: nowrap; }
+table.cmp td { padding: 9px 8px 9px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.cmp .n { text-align: right; }
+table.cmp td.name { font-weight: 600; }
+table.cmp td.name i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; }
+table.cmp td.share { width: 34%; min-width: 90px; }
+table.cmp .track { height: 8px; border-radius: 4px; }
+table.cmp .fill { background: var(--bar); border-radius: 4px; }
+.wk { display: grid; grid-template-columns: 34px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 12px; padding: 4px 0; }
+.wk span:first-child { color: var(--ink-2); font-weight: 600; }
+.wk span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.wk .track { height: 10px; border-radius: 4px; background: none; }
+.wk .fill { background: var(--bar); border-radius: 0 4px 4px 0; }
+
+/* ---------- invoices ---------- */
+textarea { width: 100%; resize: vertical; line-height: 1.45; }
+.formgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.formgrid .wide { grid-column: 1 / -1; }
+.formgrid .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 700px) { .formgrid { grid-template-columns: 1fr; } }
+.field .hint { font-weight: 400; }
+.bizbar { margin-bottom: 16px; flex-wrap: wrap; }
+.bizbar select { min-width: 200px; max-width: 100%; }
+.xform { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.xform .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.xform input, .xform select { width: 100%; }
+.xform .desc { grid-column: span 2; }
+@media (max-width: 900px) { .xform { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.xlist { display: grid; gap: 6px; margin-top: 14px; }
+.xrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; background: var(--sunk); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.xrow .sub { font-size: 12px; }
+.xrow b { font-variant-numeric: tabular-nums; }
+.setup { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; border-left: 4px solid var(--accent); }
+table.bills td, table.bills th { padding: 8px 6px; white-space: nowrap; }
+table.bills td { border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+table.bills .n { text-align: right; }
+table.bills tr.void td { color: var(--ink-2); text-decoration: line-through; }
+table.bills tr.void td:last-child, table.bills tr.void td.st { text-decoration: none; }
+table.bills a { color: var(--accent-deep); font-weight: 600; text-decoration: none; margin-right: 10px; }
+table.bills button { font-size: 12px; padding: 4px 9px; }
+table.edit textarea { min-width: 180px; }
+.empty { color: var(--ink-2); font-size: 13px; }
 
 /* ---------- KPI tiles ---------- */
 .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -312,6 +389,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
       <button role="tab" data-tab="reports" aria-selected="false">Reports</button>
       <button role="tab" data-tab="timesheets" aria-selected="false">Timesheets</button>
+      <button role="tab" data-tab="invoices" aria-selected="false">Invoices</button>
       <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     </nav>
     <div class="sync">
@@ -334,11 +412,21 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= DASHBOARD ================= -->
   <div class="board" data-panel="dashboard" role="tabpanel">
+    <section class="tile c12 collect hidden" id="collectTile" aria-label="Money to collect">
+      <div class="owed-head">
+        <div><div class="lbl">Money to collect</div><div class="owed-sub" id="collectSub"></div></div>
+        <div class="owed-total" id="colInvoiceBox"><b id="colInvoice">–</b><span>ready to invoice</span></div>
+        <div class="owed-total" id="colAwaitingBox"><b id="colAwaiting">–</b><span>awaiting payment</span></div>
+        <div class="owed-total overdue" id="colOverdueBox"><b id="colOverdue">–</b><span>overdue</span></div>
+      </div>
+      <div class="collect-list" id="collectList"></div>
+      <div class="collect-foot" id="collectFoot"></div>
+    </section>
     <section class="tile c12 owed hidden" id="owedTile" aria-label="Outstanding">
       <div class="owed-head">
         <div><div class="lbl">Outstanding</div><div class="owed-sub" id="owedSub"></div></div>
         <div class="owed-total"><b id="owedTotal">–</b><span>to invoice</span></div>
-        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged · <a href="/carried" target="_blank">ledger →</a></span></div>
+        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged · <a href="/carried" target="_blank" style="color:inherit">ledger →</a></span></div>
       </div>
       <div class="owed-grid" id="owedGrid"></div>
     </section>
@@ -402,6 +490,26 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= REPORTS ================= -->
   <div class="board hidden" data-panel="reports" role="tabpanel">
+    <div class="kpis ins-kpis c12" id="insKpis" aria-label="Earnings at a glance"></div>
+    <section class="tile c8">
+      <div class="tile-head"><h2>Earned by month</h2><span class="meta" id="insMeta"></span></div>
+      <div class="chart-wrap"><div class="week ins-chart" id="insChart"></div><div class="tip hidden" id="insTip"></div></div>
+      <div class="legend" id="insLegend"></div>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>What the numbers say</h2></div>
+      <div id="insNotes"></div>
+    </section>
+    <section class="tile c8">
+      <div class="tile-head"><h2>Clients compared</h2><span class="meta" id="insSpan"></span></div>
+      <div class="tablewrap"><table class="cmp">
+        <thead><tr><th>Client</th><th class="n">Hours</th><th class="n">Earned</th><th class="n">Per hour</th><th>Share of income</th></tr></thead>
+        <tbody id="insClients"></tbody></table></div>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>Your working week</h2><span class="meta">Average day, last 12 weeks</span></div>
+      <div id="insWeek"></div>
+    </section>
     <section class="tile c8">
       <div class="tile-head">
         <h2>Where your time went</h2>
@@ -448,7 +556,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <section class="tile c7">
       <div class="tile-head"><h2>On the timesheet</h2></div>
       <ol class="steps">
-        <li><span><b>Invoice lines</b> at the top: one line per day or week, with <b>Copy</b> buttons for your Revolut Business invoice. They don't print.</span></li>
+        <li><span><b>Create invoice</b> at the top makes a numbered invoice from the sheet (set up your details in Settings first). Or use <b>Invoice lines</b>, with <b>Copy</b> buttons, to paste into another invoicing app.</span></li>
         <li><span><b>Edit</b> an entry to change its date, times or task. It's marked “adjusted” with the original time, also on the printed sheet.</span></li>
         <li><span><b>Exclude</b> anything you won't charge for. It stays on the sheet, crossed out, and isn't counted.</span></li>
         <li><span><b>+ Add entry</b> for time you didn't track. Added entries are marked “added”.</span></li>
@@ -457,8 +565,95 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     </section>
   </div>
 
+  <!-- ================= INVOICES ================= -->
+  <div class="board hidden" data-panel="invoices" role="tabpanel">
+    <div class="callout setup c12 hidden" id="billSetup">
+      <span id="billSetupText"></span><button class="primary" data-goto="settings">Open Settings</button>
+    </div>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Ready to invoice</h2>
+        <div class="row"><span class="meta" id="billReadyMeta"></span><button class="primary hidden" id="billAll">Create all</button></div></div>
+      <div class="collect-list" id="billReady"></div>
+      <div class="callout hidden" id="billMade" style="margin-top:12px"></div>
+    </section>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Extras</h2><span class="meta">Time not on the cube, mileage and expenses. They go on that client's next invoice for the month.</span></div>
+      <div class="xform">
+        <label class="field">Client<select id="xClient"></select></label>
+        <label class="field">Month<input type="month" id="xMonth"></label>
+        <label class="field">Type<select id="xKind"><option value="time">Extra time</option><option value="mileage">Mileage</option><option value="expense">Expense</option></select></label>
+        <label class="field desc">On the invoice as<input id="xDesc" placeholder="e.g. Site visit, 12/11/2026"></label>
+        <label class="field" id="xQtyField"><span id="xQtyLabel">Hours</span><input id="xQty" type="number" min="0" step="0.25"></label>
+        <label class="field"><span id="xPriceLabel">Rate £ per hour</span><input id="xPrice" type="number" min="0" step="0.01"></label>
+        <div><button class="primary" id="xAdd">Add extra</button></div>
+      </div>
+      <p class="msg" id="xMsg"></p>
+      <div class="xlist" id="xList"></div>
+    </section>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Invoices</h2><span class="meta" id="billMeta"></span></div>
+      <div class="tablewrap">
+        <table class="edit bills">
+          <thead><tr><th>Number</th><th class="fromcol">From</th><th>Client</th><th>For</th><th>Sent</th><th>Due</th><th class="n">Total</th><th>Status</th><th></th></tr></thead>
+          <tbody id="billRows"></tbody>
+        </table>
+      </div>
+      <p class="empty hidden" id="billNone">No invoices yet. Create one above, or from the top of any monthly timesheet.</p>
+    </section>
+  </div>
+
   <!-- ================= SETTINGS ================= -->
   <div class="board hidden" data-panel="settings" role="tabpanel">
+    <section class="tile c12" id="businessTile">
+      <div class="tile-head"><h2>Your businesses</h2><span class="meta">Each has its own details and invoice numbers</span></div>
+      <div class="row bizbar"><select id="bPick" aria-label="Business to edit"></select>
+        <button id="bAdd">+ Add another business</button><button class="link hidden" id="bRemove">Remove this one</button></div>
+      <div class="form formgrid">
+        <label class="field">Business name<input id="bName" autocomplete="organization"></label>
+        <label class="field">Email <span class="hint">(invoices are sent from this address)</span><input id="bEmail" type="email"></label>
+        <label class="field wide">Address<textarea id="bAddress" rows="3"></textarea></label>
+        <label class="field">Phone <span class="hint">(optional)</span><input id="bPhone"></label>
+        <label class="field">Company number <span class="hint">(limited companies only)</span><input id="bCompany"></label>
+        <label class="field wide">How clients pay you <span class="hint">(printed on the invoice: account name, sort code, account number)</span>
+          <textarea id="bPayment" rows="3"></textarea></label>
+        <label class="field wide">Note at the bottom <span class="hint">(optional, e.g. “Thank you for your business”)</span>
+          <textarea id="bFooter" rows="2"></textarea></label>
+        <div class="wide"><label class="check"><input type="checkbox" id="bVat"> I'm VAT registered (adds VAT to every invoice)</label></div>
+        <label class="field vatonly">VAT number<input id="bVatNumber"></label>
+        <label class="field vatonly">VAT rate %<input id="bVatRate" type="number" min="0" max="100" step="0.5"></label>
+        <label class="field wide">Email invoices with
+          <select id="bMethod">
+            <option value="mail">Apple Mail on this Mac: makes a draft for me to check and send</option>
+            <option value="smtp">My email provider: sends straight away, with a copy to me</option>
+          </select></label>
+        <div class="wide trio smtponly">
+          <label class="field">Outgoing mail server <span class="hint">(SMTP)</span><input id="bSmtpHost" placeholder="e.g. smtp.gmail.com" autocapitalize="off"></label>
+          <label class="field">Port<input id="bSmtpPort" type="number" min="1" max="65535"></label>
+          <label class="field">Security<select id="bSmtpSecurity"><option value="starttls">STARTTLS (usually port 587)</option><option value="ssl">SSL/TLS (usually port 465)</option><option value="none">None (not recommended)</option></select></label>
+        </div>
+        <label class="field smtponly">Username <span class="hint">(usually your email address)</span><input id="bSmtpUser" autocapitalize="off" autocomplete="off"></label>
+        <label class="field smtponly">Password <span class="hint" id="bSmtpSaved"></span><input id="bSmtpPass" type="password" autocomplete="new-password"></label>
+        <p class="note wide smtponly" style="margin:0">Your email provider's help pages list these settings under “SMTP”. Gmail, Outlook, iCloud and others need an <b>app password</b> made in your account's security settings, not your normal password. It's kept in this Mac's Keychain.</p>
+        <div class="wide trio">
+          <label class="field">Invoice numbers start with<input id="bPrefix"></label>
+          <label class="field">Digits<input id="bDigits" type="number" min="1" max="10" step="1"></label>
+          <label class="field">Next number<input id="bNext" type="number" min="1" step="1"></label>
+        </div>
+      </div>
+      <div class="actions"><button class="primary" id="saveBusiness">Save business details</button>
+        <button id="bTest">Send a test email</button><span class="msg" id="businessMsg"></span><span class="meta" id="bPreview"></span></div>
+    </section>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Who each invoice goes to</h2><span class="meta">Paying clients only</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Client</th><th class="bizcol">Invoiced by</th><th>Name on the invoice</th><th>Address</th><th>Email</th><th>Pays within (days)</th><th>Reference / PO</th></tr></thead>
+          <tbody id="detailRows"></tbody>
+        </table>
+      </div>
+      <div class="actions"><button class="primary" id="saveDetails">Save client details</button><span class="msg" id="detailMsg"></span></div>
+      <p class="note">Leave <b>Pays within</b> empty to use your usual terms (App &amp; updates, below).</p>
+    </section>
     <section class="tile c12">
       <div class="tile-head"><h2>How each client is invoiced</h2><span class="meta">Clients are the tags you give tasks in the TimeFlip app</span></div>
       <div class="tablewrap">
@@ -538,6 +733,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
             <option value="monday">Monday</option><option value="sunday">Sunday</option>
             <option value="saturday">Saturday</option>
           </select></div>
+        <div><label class="k" for="termsDays">Clients pay within (days)</label>
+          <input type="number" id="termsDays" min="0" max="365" step="1" style="width:90px"></div>
         <div><label class="check k"><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label></div>
         <div><span class="k">Updates <span class="v" id="updateMsg"></span></span><button id="checkUpdate">Check for updates</button></div>
         <div><span class="k">App <span class="v" id="appPath">not created yet</span></span><button id="revealApp">Show in Finder</button></div>
@@ -636,12 +833,13 @@ async function api(path, body) {
 }
 
 /* ---------- tabs ---------- */
-const TABS = ["dashboard", "reports", "timesheets", "settings"];
+const TABS = ["dashboard", "reports", "timesheets", "invoices", "settings"];
 function showTab(name) {
   if (!TABS.includes(name)) name = "dashboard";
   for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll("[data-panel]")) p.classList.toggle("hidden", p.dataset.panel !== name);
-  if (name === "reports") loadReport();
+  if (name === "reports") { loadReport(); loadInsights(); }
+  if (name === "invoices") loadBills();
 }
 for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.tab}`); showTab(b.dataset.tab); };
 for (const b of document.querySelectorAll("[data-goto]")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.goto}`); showTab(b.dataset.goto); window.scrollTo(0, 0); };
@@ -668,10 +866,13 @@ function showState(s, redraw = false) {
   $("autoUpdate").checked = s.auto_update;
   showNews(s.whats_new || []);
   $("weekStarts").value = s.week_starts;
+  if (document.activeElement !== $("termsDays")) $("termsDays").value = s.payment_terms_days;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
   if (draw("limits")) renderLimitRows(s.limits);
   if (draw("clients")) renderClientRows(s);
+  if (draw("business")) renderBusiness(s);
+  if (draw("details") || draw("clients")) renderDetailRows(s);
   if (draw("ignored")) renderIgnored(s);
   if (draw("targets")) renderTargetSettings(s);
   const cur = $("tsClient").value;
@@ -1021,6 +1222,411 @@ $("weekRange").onchange = () => {
   loadWeek();
 };
 
+/* ---------- money to collect ---------- */
+function openSheet(client, month) {
+  const hourly = billingFor(client).billing === "hourly";
+  let url = `/invoice?client=${encodeURIComponent(client)}&month=${month}`;
+  if (hourly) {
+    const [y, m] = month.split("-").map(Number);
+    url = `/timesheet?start=${month}-01&end=${iso(new Date(y, m, 0))}&client=${encodeURIComponent(client)}`;
+  }
+  window.open(url, "_blank");
+}
+const COLLECT_SHOWN = 5;
+let collectAll = false;
+async function loadCollect() {
+  let c;
+  try { c = await api("/api/collect"); } catch (_) { return; }
+  const any = c.prompts.length || c.hidden;
+  $("collectTile").classList.toggle("hidden", !any);
+  if (!any) return;
+  for (const [id, v] of [["colInvoice", c.to_invoice], ["colAwaiting", c.awaiting], ["colOverdue", c.overdue]]) {
+    $(id).textContent = gbp(v);
+    $(`${id}Box`).classList.toggle("zero", !v);
+  }
+  const urgent = c.prompts.filter((p) => p.level === "critical").length;
+  $("collectSub").textContent = !c.prompts.length ? "Nothing needs doing" :
+    urgent ? `${urgent} to do now, ${c.prompts.length - urgent} worth a look` : `${c.prompts.length} worth a look`;
+  const act = (label, fn, cls = "") => {
+    const b = el("button", cls ? { class: cls } : {}, label);
+    b.onclick = async () => {
+      b.disabled = true;
+      try { await fn(); } catch (e) { alert(e.message); }
+      b.disabled = false;
+    };
+    return b;
+  };
+  const again = () => { loadCollect(); loadOutstanding(); };
+  const urgentOrFive = Math.max(COLLECT_SHOWN, urgent);   // never tuck away something that needs doing now
+  const visible = collectAll ? c.prompts : c.prompts.slice(0, urgentOrFive);
+  $("collectList").replaceChildren(...visible.map((p) => {
+    const row = el("div", { class: `cprompt ${p.level}` });
+    const side = el("div", { class: "side" });
+    if (p.value != null) side.append(el("span", { class: "worth" }, gbp(p.value)));
+    if (p.action === "invoice") {
+      side.append(act("Create invoice", () => createBill(p.client, p.month), "primary"),
+                  act("Open timesheet", () => openSheet(p.client, p.month)),
+                  act("Mark invoiced", async () => { await api("/api/invoiced", { client: p.client, month: p.month, invoiced: true }); again(); }));
+    } else if (p.action === "paid") {
+      if (p.bill_id) side.append(act("Open invoice", () => window.open(`/bill?id=${p.bill_id}`, "_blank")));
+      side.append(act("Mark paid", async () => { await api("/api/paid", { client: p.client, month: p.month, paid: true }); again(); },
+                      p.level === "critical" ? "primary" : ""));
+    } else if (p.action === "timesheet") {
+      side.append(act("Open timesheet", () => openSheet(p.client, p.month)));
+    } else if (p.action === "timesheets" || p.action === "settings") {
+      side.append(act(p.action === "settings" ? "Open Settings" : "Add time", () => {
+        history.replaceState(null, "", `#${p.action}`); showTab(p.action); window.scrollTo(0, 0);
+      }));
+    }
+    if (p.dismissable) side.append(act("Hide", async () => { await api("/api/dismiss", { key: p.key }); loadCollect(); }, "hide"));
+    row.append(el("b", { class: "title" }, p.title), side, el("div", { class: "detail" }, p.detail));
+    return row;
+  }));
+  if (!c.prompts.length) $("collectList").replaceChildren(el("div", { class: "collect-clear" }, "✓ All caught up."));
+  const foot = [];
+  if (c.prompts.length > urgentOrFive) {
+    foot.push(act(collectAll ? "Show fewer" : `Show all ${c.prompts.length}`, () => { collectAll = !collectAll; loadCollect(); }, "link"));
+  }
+  const unpaid = c.prompts.filter((p) => p.action === "paid").length;
+  if (unpaid > 2) {
+    foot.push(act(`Mark all ${unpaid} as paid`, async () => {
+      if (!confirm(`Mark all ${unpaid} invoices as paid?`)) return;
+      await api("/api/paid", { all: true }); again();
+    }, "link"));
+  }
+  if (c.hidden) foot.push(act(`Show ${c.hidden} hidden`, async () => { await api("/api/dismiss", { reset: true }); loadCollect(); }, "link"));
+  if (unpaid) foot.push(el("span", {}, `Overdue means more than ${c.terms_days} days after invoicing. Change it in Settings.`));
+  $("collectFoot").replaceChildren(...foot);
+  $("collectFoot").classList.toggle("hidden", !foot.length);
+}
+
+/* ---------- insights ---------- */
+async function loadInsights() {
+  let d;
+  try { d = await api("/api/insights"); } catch (_) { return; }
+  const k = d.kpis;
+  const tile = (label, fig, foot) => {
+    const t = el("section", { class: "tile kpi" });
+    t.append(el("div", { class: "lbl" }, label), el("div", { class: "fig" }, fig), el("div", { class: "foot" }, foot));
+    return t;
+  };
+  const change = k.recent_avg != null && k.before_avg ? Math.round((100 * (k.recent_avg - k.before_avg)) / k.before_avg) : null;
+  const [ty] = k.tax_year_from.split("-");
+  $("insKpis").replaceChildren(
+    tile("Tax year to date", gbp0(k.tax_year), `Since 06/04/${ty}`),
+    tile("Monthly average", k.recent_avg == null ? "–" : gbp0(k.recent_avg),
+         k.recent_avg == null ? "After your first full month" : change == null ? "Last 3 full months" : `${change >= 0 ? "Up" : "Down"} ${Math.abs(change)}% on the 3 months before`),
+    tile("This month so far", gbp0(k.this_month), k.recent_avg ? `${Math.round((100 * k.this_month) / k.recent_avg)}% of your monthly average` : ""),
+    tile("Average per paid hour", k.avg_rate == null ? "–" : gbp(k.avg_rate), d.span_label[0].toUpperCase() + d.span_label.slice(1)));
+
+  // Colour follows the client: fixed by 12-month total, seven hues, the rest folded into "Other".
+  const totals = {};
+  for (const m of d.months) for (const c of m.clients) totals[c.client] = (totals[c.client] || 0) + c.amount;
+  const order = Object.keys(totals).filter((c) => totals[c] > 0).sort((a, b) => totals[b] - totals[a]);
+  const colour = (c) => { const i = order.indexOf(c); return i >= 0 && i < SLOTS - 1 ? `var(--s${i + 1})` : "var(--other)"; };
+  const max = Math.max(1, ...d.months.map((m) => m.earned));
+  const tip = $("insTip"), chart = $("insChart");
+  chart.style.setProperty("--cols", d.months.length);
+  $("insMeta").textContent = k.best ? `Best month: ${k.best.name}, ${gbp0(k.best.earned)}` : "";
+  chart.replaceChildren(...d.months.map((m) => {
+    const col = el("div", { class: `col${m.current ? " now today" : ""}`, tabindex: "0",
+                            "aria-label": `${m.name}: ${gbp(m.earned)} earned, ${hm(m.seconds)} tracked` });
+    const bar = el("div", { class: "bar" });
+    bar.style.height = `${Math.max(1, (100 * m.earned) / max) * 0.78}%`;
+    const parts = m.clients.filter((c) => c.amount > 0).sort((a, b) => order.indexOf(a.client) - order.indexOf(b.client));
+    for (const c of parts) {
+      const seg = el("i"); seg.style.background = colour(c.client); seg.style.flex = `${c.amount} 0 0`;
+      bar.append(seg);
+    }
+    col.append(el("div", { class: "val" }, m.earned ? gbp0(m.earned) : "–"), bar, el("div", { class: "day" }, m.label));
+    const show = () => {
+      tip.replaceChildren(el("b", {}, m.name), el("div", {}, `${gbp(m.earned)} earned${m.current ? " so far" : ""} · ${hm(m.seconds)} tracked`));
+      for (const c of parts) {
+        const row = el("div"); const key = el("span", { class: "k" }); key.style.background = colour(c.client);
+        row.append(key, `${c.client}: ${gbp(c.amount)}`); tip.append(row);
+      }
+      tip.classList.remove("hidden");
+      const box = chart.getBoundingClientRect(), cb = col.getBoundingClientRect();
+      const left = Math.min(Math.max(0, cb.left - box.left + cb.width / 2 - tip.offsetWidth / 2), box.width - tip.offsetWidth);
+      tip.style.left = `${left}px`; tip.style.top = "0px";
+    };
+    col.onmouseenter = show; col.onfocus = show;
+    col.onmouseleave = col.onblur = () => tip.classList.add("hidden");
+    return col;
+  }));
+  const shown = order.slice(0, SLOTS - 1);
+  $("insLegend").replaceChildren(...[...shown, ...(order.length > shown.length ? ["Other"] : [])].map((c) => {
+    const item = el("span"); const sw = el("i"); sw.style.background = c === "Other" ? "var(--other)" : colour(c);
+    item.append(sw, c); return item;
+  }));
+
+  $("insNotes").replaceChildren(...(d.notes.length ? d.notes.map((n) => {
+    const box = el("div", { class: "inote" }); box.append(el("b", {}, n.title), el("span", {}, n.text)); return box;
+  }) : [el("div", { class: "empty" }, "Nothing stands out yet. Notes appear here once there are a few weeks of paid time to compare.")]));
+
+  $("insSpan").textContent = d.span_label[0].toUpperCase() + d.span_label.slice(1);
+  $("insClients").replaceChildren(...(d.clients.length ? d.clients.map((c) => {
+    const tr = el("tr");
+    const name = el("td", { class: "name" }); const sw = el("i"); sw.style.background = colour(c.client); name.append(sw, c.client);
+    const share = el("td", { class: "share" });
+    const track = el("div", { class: "track" }), fill = el("div", { class: "fill" }); fill.style.width = `${c.share}%`; track.append(fill);
+    const row = el("div", { style: "display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:8px;align-items:center" });
+    row.append(track, el("span", {}, `${Math.round(c.share)}%`)); share.append(row);
+    tr.append(name, el("td", { class: "n" }, hm(c.seconds)), el("td", { class: "n" }, c.amount ? gbp(c.amount) : "–"),
+              el("td", { class: "n" }, c.rate == null ? "–" : gbp(c.rate)), share);
+    return tr;
+  }) : [(() => { const tr = el("tr"); tr.append(el("td", { colspan: "5", class: "empty" }, "No paid time yet. Set hourly rates in Settings.")); return tr; })()]));
+
+  const top = Math.max(1, ...d.weekdays.map((w) => w.seconds));
+  $("insWeek").replaceChildren(...d.weekdays.map((w) => {
+    const row = el("div", { class: "wk" });
+    const track = el("div", { class: "track" }), fill = el("div", { class: "fill" }); fill.style.width = `${(100 * w.seconds) / top}%`; track.append(fill);
+    row.append(el("span", {}, w.day), track, el("span", {}, w.seconds ? hm(w.seconds) : "–"));
+    return row;
+  }));
+}
+
+/* ---------- invoices ---------- */
+const ukDate = (isoDay) => isoDay.slice(0, 10).split("-").reverse().join("/");
+async function createBill(client, month) {
+  const w = window.open("", "_blank");   // opened before the request, or the browser blocks it as a pop-up
+  try {
+    const r = await api("/api/bill/create", { client, month });
+    const url = `/bill?id=${r.ids[0]}`;
+    if (w) w.location = url; else location.href = url;
+  } catch (e) { if (w) w.close(); throw e; }
+  loadBills(); loadCollect(); loadOutstanding();
+}
+async function loadBills() {
+  let b;
+  try { b = await api("/api/bills"); } catch (_) { return; }
+  $("billSetup").classList.toggle("hidden", !b.missing.length);
+  $("billSetupText").textContent = `Before your first invoice, add ${b.missing.join(", ")} in Settings.`;
+  const can = b.ready.filter((r) => !r.missing.length);
+  $("billReadyMeta").textContent = b.ready.length
+    ? `${b.ready.length} finished month${b.ready.length === 1 ? "" : "s"} · ${gbp(b.ready.reduce((t, r) => t + (r.value || 0), 0))}` : "";
+  $("billAll").classList.toggle("hidden", can.length < 2);
+  $("billAll").textContent = `Create all ${can.length} invoices`;
+  $("billReady").replaceChildren(...b.ready.map((r) => {
+    const row = el("div", { class: `cprompt ${r.missing.length ? "" : "warning"}` });
+    const side = el("div", { class: "side" });
+    side.append(el("span", { class: "worth" }, r.value == null ? "no rate" : gbp(r.value)));
+    const make = el("button", { class: "primary" }, "Create invoice");
+    make.disabled = !!r.missing.length;
+    make.onclick = async () => {
+      make.disabled = true;
+      try { await createBill(r.client, r.month); } catch (e) { alert(e.message); make.disabled = false; }
+    };
+    const sheet = el("button", {}, "Timesheet"); sheet.onclick = () => openSheet(r.client, r.month);
+    side.append(make, sheet);
+    const xs = b.extras.filter((x) => x.client.toLowerCase() === r.client.toLowerCase() && x.month === r.month);
+    const extra = xs.length ? ` plus ${xs.length} extra${xs.length === 1 ? "" : "s"} (${gbp(xs.reduce((t, x) => t + x.amount, 0))})` : "";
+    const from = b.several && r.business ? ` From ${r.business}.` : "";
+    row.append(el("b", { class: "title" }, `${r.client}: ${r.label}`), side,
+               el("div", { class: "detail" }, r.missing.length ? `${hm(r.seconds)}${extra}. Still needed: ${r.missing.join(", ")}.` : `${hm(r.seconds)}${extra} to invoice.${from}`));
+    return row;
+  }));
+  if (!b.ready.length) $("billReady").replaceChildren(el("div", { class: "collect-clear" }, "✓ Every finished month has been invoiced."));
+  const live = b.bills.filter((x) => x.status !== "void");
+  $("billMeta").textContent = live.length ? `Awaiting ${gbp(b.awaiting)} · Overdue ${gbp(b.overdue)} · Paid ${gbp(b.paid)}` : "";
+  $("billNone").classList.toggle("hidden", !!b.bills.length);
+  const STATUS = { paid: ["good", "Paid"], awaiting: ["warning", "Awaiting payment"], overdue: ["critical", "Overdue"], void: ["", "Void"] };
+  renderExtras(b);
+  for (const c of document.querySelectorAll(".fromcol")) c.classList.toggle("hidden", !b.several);
+  $("billRows").replaceChildren(...b.bills.map((x) => {
+    const tr = el("tr", x.status === "void" ? { class: "void" } : {});
+    const q = `id=${x.id}`;
+    const num = el("td"); num.append(el("a", { href: `/bill?${q}`, target: "_blank" }, x.number));
+    const st = el("td", { class: "st" });
+    st.append(chip(STATUS[x.status][0], x.status === "overdue" ? `${x.days_overdue} day${x.days_overdue === 1 ? "" : "s"} overdue` : STATUS[x.status][1]));
+    const acts = el("td");
+    if (x.status !== "void") {
+      acts.append(el("a", { href: `/bill.pdf?${q}` }, "PDF"));
+      const mail = el("button", {}, "Email");
+      mail.onclick = async () => {
+        if (x.direct && !confirm(`Send invoice ${x.number} to ${x.to || "the client"} now? It goes straight away.`)) return;
+        mail.disabled = true; mail.textContent = x.direct ? "Sending…" : "Making draft…";
+        try { await api("/api/bill/email", { id: x.id }); mail.textContent = x.direct ? "Sent ✓" : "Draft in Mail ✓"; }
+        catch (e) { alert(e.message); mail.textContent = "Email"; }
+        mail.disabled = false;
+      };
+      acts.append(mail, " ");
+      const pay = el("button", {}, x.status === "paid" ? "Not paid" : "Mark paid");
+      pay.onclick = async () => {
+        pay.disabled = true;
+        try { await api("/api/paid", { client: x.client, month: x.month, paid: x.status !== "paid" }); loadBills(); loadCollect(); }
+        catch (e) { alert(e.message); pay.disabled = false; }
+      };
+      acts.append(pay);
+    }
+    tr.append(num, el("td", { class: "fromcol" }, x.business), el("td", {}, x.client), el("td", {}, x.label), el("td", {}, ukDate(x.issued_on)), el("td", {}, ukDate(x.due_on)),
+              el("td", { class: "n" }, gbp(x.total)), st, acts);
+    return tr;
+  }));
+}
+$("billAll").onclick = async () => {
+  $("billAll").disabled = true;
+  try {
+    const r = await api("/api/bill/create", { all: true });
+    const box = $("billMade");
+    box.classList.remove("hidden");
+    box.replaceChildren(el("b", {}, `Created ${r.numbers.length} invoice${r.numbers.length === 1 ? "" : "s"}. `));
+    if (r.ids.length) box.append(el("a", { href: `/bills.zip?ids=${r.ids.join(",")}` }, "Download them all with their timesheets (ZIP)"));
+    for (const e of r.errors) box.append(el("div", {}, e));
+  } catch (e) { alert(e.message); }
+  $("billAll").disabled = false;
+  loadBills(); loadCollect(); loadOutstanding();
+};
+
+/* extras */
+const X_KINDS = { time: ["Hours", "Rate £ per hour", "0.25"], mileage: ["Miles", "£ per mile", "1"], expense: ["", "Amount £", "1"] };
+function payingClients(s) { return s.clients.filter((c) => { const b = billingFor(c); return !b.notional && b.billing !== "monthly"; }); }
+function extraDefaults() {
+  const [qty, price, step] = X_KINDS[$("xKind").value];
+  $("xQtyField").classList.toggle("hidden", !qty);
+  $("xQtyLabel").textContent = qty; $("xPriceLabel").textContent = price; $("xQty").step = step;
+  const rate = billingFor($("xClient").value).rate;
+  $("xPrice").value = $("xKind").value === "time" ? (rate ?? "") : $("xKind").value === "mileage" ? "0.45" : "";
+}
+$("xKind").onchange = extraDefaults;
+$("xClient").onchange = extraDefaults;
+function renderExtras(b) {
+  if (!$("xClient").options.length && state) {
+    $("xClient").replaceChildren(...payingClients(state).map((c) => el("option", { value: c }, c)));
+    $("xMonth").value = iso(new Date()).slice(0, 7);
+    extraDefaults();
+  }
+  const KIND = { time: "Extra time", mileage: "Mileage", expense: "Expense" };
+  $("xList").replaceChildren(...b.extras.map((x) => {
+    const row = el("div", { class: "xrow" });
+    const what = el("div"); what.append(el("div", {}, x.description),
+      el("div", { class: "sub" }, `${x.client} · ${x.label} · ${KIND[x.kind]}` + (x.kind === "expense" ? "" : ` · ${x.quantity} ${x.kind === "time" ? "h" : "miles"} at ${gbp(x.unit_price)}`)));
+    const del = el("button", { class: "link" }, "Remove");
+    del.onclick = async () => { try { await api("/api/extra/delete", { id: x.id }); loadBills(); loadOutstanding(); loadCollect(); } catch (e) { alert(e.message); } };
+    row.append(what, el("b", {}, gbp(x.amount)), del);
+    return row;
+  }));
+}
+$("xAdd").onclick = async () => {
+  try {
+    await api("/api/extra/add", { client: $("xClient").value, month: $("xMonth").value, kind: $("xKind").value,
+                                  description: $("xDesc").value, quantity: $("xQty").value, unit_price: $("xPrice").value });
+    $("xDesc").value = ""; $("xQty").value = ""; $("xMsg").textContent = "";
+    loadBills(); loadOutstanding(); loadCollect();
+  } catch (e) { $("xMsg").textContent = e.message; }
+};
+
+/* businesses: edit one at a time, save them all together */
+let bizList = [], bizAt = 0;
+const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bAddress", "address"], ["bPhone", "phone"], ["bCompany", "company_number"],
+                    ["bPayment", "payment"], ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
+                    ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
+                    ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
+                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"]];
+function bizStash() {   // keep what's typed for the business on screen
+  const b = bizList[bizAt]; if (!b) return;
+  for (const [id, key] of BIZ_FIELDS) b[key] = $(id).value;
+  b.vat_registered = $("bVat").checked;
+}
+function bizShow() {
+  const b = bizList[bizAt];
+  for (const [id, key] of BIZ_FIELDS) $(id).value = b[key] ?? "";
+  $("bVat").checked = !!b.vat_registered;
+  $("bPick").replaceChildren(...bizList.map((x, i) => el("option", { value: String(i) }, x.name || `New business ${i + 1}`)));
+  $("bPick").value = String(bizAt);
+  $("bPick").classList.toggle("hidden", bizList.length < 2);
+  $("bRemove").classList.toggle("hidden", bizList.length < 2);
+  businessPreview();
+}
+function renderBusiness(s) {
+  bizList = s.businesses.map((b) => ({ ...b }));
+  bizAt = Math.min(bizAt, bizList.length - 1);
+  bizShow();
+}
+$("bPick").onchange = () => { bizStash(); bizAt = Number($("bPick").value); bizShow(); };
+$("bAdd").onclick = () => {
+  bizStash();
+  bizList.push({ name: "", email: "", address: "", phone: "", company_number: "", payment: "", footer: "", vat_registered: false,
+                 vat_number: "", vat_rate: 20, prefix: "INV-", digits: 4, next_number: 1, mail_method: "mail", smtp_host: "",
+                 smtp_port: 587, smtp_security: "starttls", smtp_user: "" });
+  bizAt = bizList.length - 1; bizShow(); $("bName").focus();
+  $("businessMsg").textContent = "Fill in the new business, then click Save business details.";
+};
+$("bRemove").onclick = () => {
+  if (!confirm(`Remove ${bizList[bizAt].name || "this business"}? Invoices it already sent are kept. Its clients switch to your first business.`)) return;
+  bizList.splice(bizAt, 1); bizAt = 0; bizShow();
+  $("businessMsg").textContent = "Unsaved changes: click Save business details.";
+};
+function businessPreview() {
+  for (const f of document.querySelectorAll(".vatonly")) f.classList.toggle("hidden", !$("bVat").checked);
+  for (const f of document.querySelectorAll(".smtponly")) f.classList.toggle("hidden", $("bMethod").value !== "smtp");
+  $("bSmtpSaved").textContent = bizList[bizAt]?.smtp_password_saved ? "(saved: leave empty to keep it)" : "";
+  const n = String(Math.max(1, Number($("bNext").value) || 1)).padStart(Math.min(10, Math.max(1, Number($("bDigits").value) || 4)), "0");
+  $("bPreview").textContent = `Next invoice: ${$("bPrefix").value}${n}`;
+}
+$("bSmtpSecurity").onchange = () => { $("bSmtpPort").value = { ssl: 465, starttls: 587 }[$("bSmtpSecurity").value] || $("bSmtpPort").value; };
+$("bTest").onclick = async () => {
+  const b = bizList[bizAt];
+  if (!b?.id || $("businessMsg").textContent.startsWith("Unsaved") || $("businessMsg").textContent.startsWith("Fill")) {
+    $("businessMsg").textContent = "Click Save business details first, then test."; return;
+  }
+  $("bTest").disabled = true; $("businessMsg").textContent = "Trying…";
+  try {
+    const r = await api("/api/business/test-email", { id: b.id });
+    $("businessMsg").textContent = r.mode === "sent" ? `Sent. Check the inbox for ${b.email}.` : "A test draft is open in Mail on your Mac.";
+  } catch (e) { $("businessMsg").textContent = e.message; }
+  $("bTest").disabled = false;
+};
+$("businessTile").addEventListener("change", (ev) => {
+  if (ev.target.id === "bPick") return;
+  businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
+});
+$("businessTile").addEventListener("input", (ev) => {
+  if (ev.target.id === "bPick") return;
+  businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
+});
+$("saveBusiness").onclick = async () => {
+  bizStash();
+  try {
+    showState(await api("/api/business", { businesses: bizList }), "business");
+    renderDetailRows(state);
+    $("businessMsg").textContent = "Saved."; loadCollect();
+  } catch (e) { $("businessMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("businessMsg").textContent === "Saved.") $("businessMsg").textContent = ""; }, 4000);
+};
+function renderDetailRows(s) {
+  const paying = payingClients(s);
+  const several = s.businesses.length > 1;
+  for (const c of document.querySelectorAll(".bizcol")) c.classList.toggle("hidden", !several);
+  const saved = (c) => (Object.entries(s.client_details || {}).find(([k]) => k.toLowerCase() === c.toLowerCase()) || [null, {}])[1];
+  $("detailRows").replaceChildren(...paying.map((c) => {
+    const d = saved(c);
+    const tr = el("tr");
+    const name = el("input", { "aria-label": `Name on ${c}'s invoice`, placeholder: "e.g. Acme Ltd" }); name.value = d.name || "";
+    const addr = el("textarea", { rows: "2", "aria-label": `${c}'s address` }); addr.value = d.address || "";
+    const mail = el("input", { type: "email", "aria-label": `${c}'s email` }); mail.value = d.email || "";
+    const days = el("input", { type: "number", min: "0", max: "365", step: "1", style: "width:80px", placeholder: String(s.payment_terms_days), "aria-label": `Days ${c} has to pay` });
+    days.value = d.terms_days ?? "";
+    const ref = el("input", { "aria-label": `${c}'s reference or PO` }); ref.value = d.reference || "";
+    const cell = (x) => { const td = el("td"); td.append(x); return td; };
+    const biz = el("select", { "aria-label": `Business that invoices ${c}` });
+    biz.append(...s.businesses.map((b) => el("option", { value: b.id }, b.name || "(unnamed)")));
+    biz.value = s.businesses.some((b) => b.id === d.business) ? d.business : s.businesses[0].id;
+    const bizCell = cell(biz); bizCell.className = `bizcol${several ? "" : " hidden"}`;
+    tr.append(el("td", {}, c), bizCell, cell(name), cell(addr), cell(mail), cell(days), cell(ref));
+    tr.read = () => [c, { name: name.value, address: addr.value, email: mail.value, terms_days: days.value, reference: ref.value, business: biz.value }];
+    return tr;
+  }));
+}
+$("detailRows").addEventListener("change", () => { $("detailMsg").textContent = "Unsaved changes: click Save client details."; });
+$("detailRows").addEventListener("input", () => { $("detailMsg").textContent = "Unsaved changes: click Save client details."; });
+$("saveDetails").onclick = async () => {
+  const details = Object.fromEntries([...$("detailRows").children].map((tr) => tr.read()));
+  try { showState(await api("/api/client-details", { details }), "details"); $("detailMsg").textContent = "Saved."; }
+  catch (e) { $("detailMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("detailMsg").textContent === "Saved.") $("detailMsg").textContent = ""; }, 4000);
+};
+
 /* ---------- outstanding ---------- */
 async function loadOutstanding() {
   let o;
@@ -1058,7 +1664,7 @@ async function loadOutstanding() {
         const mark = el("button", { class: "link mark" }, "Mark invoiced");
         mark.onclick = async () => {
           mark.disabled = true;
-          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); }
+          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); loadCollect(); }
           catch (_) { mark.disabled = false; }
         };
         l.firstChild.append(" ", mark);
@@ -1152,6 +1758,10 @@ function showNews(notes) {
   $("newsList").replaceChildren(...notes.flatMap((n) => n.changes).map((c) => el("li", {}, c)));
 }
 $("newsOk").onclick = async () => { showState(await api("/api/seen", {})); };
+$("termsDays").onchange = async () => {
+  try { showState(await api("/api/settings", { payment_terms_days: $("termsDays").value })); loadCollect(); }
+  catch (e) { alert(e.message); }
+};
 $("autoUpdate").onchange = async () => { showState(await api("/api/settings", { auto_update: $("autoUpdate").checked })); };
 async function checkForUpdate(manual) {
   if (manual) $("updateMsg").textContent = "Checking…";
@@ -1492,7 +2102,7 @@ $("viewerStop").onclick = async () => { await api("/api/viewer/stop", {}); $("vi
 
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
-  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding();
+  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect();
 }
 (async () => {
   try { showState(await api("/api/state"), true); }
@@ -1501,7 +2111,7 @@ function refreshAll(auto = false) {
   checkForUpdate(false);
   refreshAll();
   loadRemote();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); } catch (_) {} }, 60000);
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); loadCollect(); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

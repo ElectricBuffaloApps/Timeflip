@@ -919,3 +919,276 @@ class ViewerTest(unittest.TestCase):
         with mock.patch.object(service, "sync") as sync, mock.patch.object(updater, "maybe_auto_update", return_value=None):
             service.run_check({"viewer_of": "https://m.tail1.ts.net:8765/"}, store)
             sync.assert_not_called()
+
+
+class CollectTest(unittest.TestCase):
+    def test_prompts_for_money_to_collect(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        at = lambda mo, d, h: datetime(2026, mo, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 7, 9), "duration": 3 * 3600},    # September, HTB
+            {"id": 2, "taskId": 1, "startedAt": at(10, 5, 9), "duration": 2 * 3600},   # October, HTB
+            {"id": 3, "taskId": 1, "startedAt": at(10, 6, 9), "duration": 3600},       # October, HTB, excluded
+            {"id": 4, "taskId": 2, "startedAt": at(10, 7, 9), "duration": 3600},       # October, FCY
+            {"id": 5, "taskId": 1, "startedAt": at(11, 2, 9), "duration": 3600},       # Mon 2 Nov
+            {"id": 6, "taskId": 1, "startedAt": at(11, 4, 9), "duration": 3600},       # Wed 4 Nov: Tue 3 is a gap
+        ], tasks=tasks)
+        store.set_excluded(3, True)
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40},
+                            "FCY": {"billing": "hourly"}},
+                "payment_terms_days": 14}
+        patches = (mock.patch.object(web.service, "open_store", return_value=store),
+                   mock.patch.object(web.cfg, "load_config", return_value=conf),
+                   mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)))
+        with patches[0], patches[1], patches[2]:
+            # September invoiced 40 days ago and never paid; October not invoiced yet
+            store.set_invoiced("HTB", "2026-09", 3 * 3600, 120.0)
+            store.db.execute("UPDATE invoiced SET marked_at = ?", (datetime(2026, 9, 26, 12, tzinfo=UTC).isoformat(),))
+            store.db.commit()
+            c = web.money_to_collect(date(2026, 11, 5))
+            by = {p["key"]: p for p in c["prompts"]}
+            self.assertEqual((c["to_invoice"], c["overdue"], c["awaiting"]), (80.0, 120.0, 0.0))
+            self.assertEqual(by["invoice:htb:2026-10"]["value"], 80.0)
+            self.assertEqual(by["unpaid:htb:2026-09"]["level"], "critical")
+            self.assertIn("26 days overdue", by["unpaid:htb:2026-09"]["title"])      # due 10/10/2026
+            self.assertEqual(by["excluded:htb:2026-10:3600"]["value"], 40.0)
+            self.assertIn("rate:fcy", by)
+            self.assertIn("Tue 03/11", by["gap:2026-11-03"]["detail"])
+            self.assertEqual(c["prompts"][0]["level"], "critical")                    # most urgent first
+            # hiding a judgement call; it comes back if the figure changes
+            store.set_dismissed("excluded:htb:2026-10:3600")
+            c = web.money_to_collect(date(2026, 11, 5))
+            self.assertNotIn("excluded:htb:2026-10:3600", {p["key"] for p in c["prompts"]})
+            self.assertEqual(c["hidden"], 1)
+            # paid: no longer chased; time added after invoicing is flagged with what it's worth
+            store.set_paid("HTB", "2026-09")
+            store.add_manual(datetime(2026, 9, 8, 9).astimezone(), 1800, 1)
+            c = web.money_to_collect(date(2026, 11, 5))
+            by = {p["key"]: p for p in c["prompts"]}
+            self.assertEqual(c["overdue"], 0.0)
+            self.assertNotIn("unpaid:htb:2026-09", by)
+            self.assertEqual(by[f"changed:htb:2026-09:{3 * 3600 + 1800}"]["value"], 20.0)
+            # un-invoicing clears the paid mark
+            store.set_invoiced("HTB", "2026-09", None)
+            self.assertEqual(store.paid("HTB"), {})
+            store.set_invoiced("HTB", "2026-09", 3600, 40.0)
+            self.assertEqual(store.mark_all_paid(), 1)
+            self.assertIn("2026-09", store.paid("htb"))
+
+
+class BillingTest(unittest.TestCase):
+    def test_create_number_vat_void_and_pdf(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance, billing, collect
+        at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(5, 9), "duration": 2 * 3600},
+            {"id": 2, "taskId": 1, "startedAt": at(6, 9), "duration": 3600},
+            {"id": 3, "taskId": 2, "startedAt": at(7, 9), "duration": 90 * 60},
+        ], tasks=tasks)
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40},
+                            "FCY": {"billing": "hourly", "rate": 30}}}
+        saved = {}
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: dict(conf)), \
+                mock.patch.object(web.cfg, "save_config", side_effect=lambda c: (conf.clear(), conf.update(c), saved.update(c))), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            today = date(2026, 11, 5)
+            with self.assertRaisesRegex(ValueError, "your business name"):
+                web._create_bill("HTB", "2026-10", today)
+            self.assertEqual(web.bills_overview(today)["missing"],
+                             ["your business name", "your business address", "how clients pay you"])
+            # two businesses, each with its own numbering; FCY is invoiced by the second
+            conf["businesses"] = billing.clean_businesses([
+                {"name": "Me Ltd", "address": "1 Road\nTown", "payment": "Sort 00-00-00", "vat_registered": True,
+                 "vat_number": "GB1", "next_number": 7},
+                {"name": "Other Co", "address": "2 Lane", "payment": "Sort 11-11-11", "next_number": 7}])
+            self.assertEqual([b["id"] for b in conf["businesses"]], ["b1", "b2"])
+            conf["client_details"] = {"htb": billing.clean_client_details({"name": "HTB Ltd", "terms_days": "14"}),
+                                      "FCY": billing.clean_client_details({"name": "FCY Ltd", "business": "b2"})}
+            # extras go on the invoice after the time: mileage and an expense
+            store.add_extra("HTB", "2026-10", "mileage", "Mileage to site", 40, 0.45)
+            store.add_extra("HTB", "2026-10", "expense", "Parking", 1, 6.0)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 144.0)
+            bill = web._create_bill("HTB", "2026-10", today)
+            self.assertEqual((bill["number"], bill["net"], bill["vat"], bill["total"]), ("INV-0007", 144.0, 28.8, 172.8))
+            self.assertEqual([l["amount"] for l in bill["data"]["lines"]], [80.0, 40.0, 18.0, 6.0])
+            self.assertEqual(store.extras("HTB", "2026-10"), [])                                   # used up
+            self.assertEqual((bill["issued_on"], bill["due_on"]), ("2026-11-05", "2026-11-19"))   # the client's own 14 days
+            self.assertEqual([b["next_number"] for b in saved["businesses"]], [8, 7])
+            self.assertEqual(store.invoiced("HTB")["2026-10"]["amount"], 144.0)                    # month marked invoiced
+            with self.assertRaisesRegex(ValueError, "already has invoice INV-0007"):
+                web._create_bill("HTB", "2026-10", today)
+            # an hourly client: one line per task, usual terms. Its business has the same number, with no VAT
+            other = web._create_bill("FCY", "2026-10", today)
+            self.assertEqual((other["number"], other["net"], other["total"], other["due_on"]),
+                             ("INV-0007", 45.0, 45.0, "2026-12-05"))
+            self.assertEqual(other["data"]["business"]["name"], "Other Co")
+            # the invoice is a fixed copy: later changes to Settings don't touch it
+            conf["businesses"][0]["name"] = "Renamed"
+            self.assertEqual(store.bill(bill["id"])["data"]["business"]["name"], "Me Ltd")
+            raw = billing.bill_pdf(store.bill(bill["id"]))
+            self.assertTrue(raw.startswith(b"%PDF-1.4") and raw.rstrip().endswith(b"%%EOF"))
+            self.assertIn("INV-0007", billing.bill_page(store.bill(bill["id"]), None, today))
+            # Money to collect chases it by its own due date and total
+            late = web.money_to_collect(date(2026, 11, 25))
+            chase = next(p for p in late["prompts"] if p["key"] == "unpaid:htb:2026-10")
+            self.assertEqual((chase["level"], chase["value"], chase["number"]), ("critical", 172.8, "INV-0007"))
+            self.assertIn("6 days overdue", chase["title"])
+            o = web.bills_overview(date(2026, 11, 25))
+            self.assertEqual((o["overdue"], o["awaiting"], o["ready"], o["several"]), (172.8, 45.0, [], True))
+            # voiding frees the month and its extras, but never the number
+            store.void_bill(bill["id"])
+            self.assertEqual(store.invoiced("HTB"), {})
+            self.assertIsNone(store.bill_for("HTB", "2026-10"))
+            self.assertEqual(len(store.extras("HTB", "2026-10")), 2)
+            again = web._create_bill("HTB", "2026-10", today)
+            self.assertEqual((again["number"], again["net"]), ("INV-0008", 144.0))
+            self.assertEqual(sorted(b["status"] for b in web.bills_overview(today)["bills"]), ["awaiting", "awaiting", "void"])
+
+    def test_version_30_invoices_and_business_carry_over(self):
+        import sqlite3
+        from tftrack import billing
+        tmp = Path(tempfile.mkdtemp()) / "t.sqlite"
+        db = sqlite3.connect(str(tmp))
+        db.execute("""CREATE TABLE bill (number TEXT PRIMARY KEY, seq INTEGER NOT NULL, client TEXT NOT NULL, month TEXT NOT NULL,
+                      issued_on TEXT NOT NULL, due_on TEXT NOT NULL, seconds INTEGER NOT NULL, net REAL NOT NULL, vat REAL NOT NULL,
+                      total REAL NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, voided_at TEXT)""")
+        db.execute("INSERT INTO bill VALUES ('INV-0001', 1, 'HTB', '2026-10', '2026-11-01', '2026-12-01', 3600, 40, 0, 40, '{}', 'x', NULL)")
+        db.commit()
+        db.close()
+        store = Store(tmp)
+        store = Store(tmp)   # opening twice must not migrate twice
+        [b] = store.bills()
+        self.assertEqual((b["business_id"], b["number"], b["id"]), ("b1", "INV-0001", 1))
+        self.assertTrue(store.number_used("b1", "INV-0001"))
+        old = {"business": {"name": "Me", "next_number": 2}}
+        self.assertEqual([(x["id"], x["name"], x["next_number"]) for x in billing.businesses(old)], [("b1", "Me", 2)])
+
+    def test_long_invoice_runs_onto_a_second_page(self):
+        from tftrack import billing
+        lines = [{"description": f"Line {i}", "hours": 1.0, "rate": 10.0, "amount": 10.0} for i in range(60)]
+        bill = {"number": "INV-1", "client": "X", "month": "2026-10", "issued_on": "2026-11-01", "due_on": "2026-12-01",
+                "net": 600.0, "vat": 0.0, "total": 600.0,
+                "data": {"lines": lines, "vat_rate": None, "terms_days": 30,
+                         "business": {"name": "Me", "address": "A", "email": "", "phone": "", "company_number": "",
+                                      "vat_number": "", "payment": "Pay me", "footer": "Thanks"},
+                         "client": {"name": "X Ltd", "address": "", "email": "", "reference": "PO1"}}}
+        self.assertIn(b"/Count 2", billing.bill_pdf(bill))
+
+
+class InsightsTest(unittest.TestCase):
+    def test_months_clients_and_notes(self):
+        from datetime import date
+        from tftrack import insights
+        at = lambda mo, d, h: datetime(2026, mo, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "A", "tag": "Low"}, {"id": 2, "name": "B", "tag": "High"}, {"id": 3, "name": "Admin", "tag": None}]
+        iv, n = [], 0
+        for mo in (8, 9, 10):
+            for task, hours in ((1, 10), (2, 5), (3, 5)):
+                n += 1
+                iv.append({"id": n, "taskId": task, "startedAt": at(mo, 3 + task, 8), "duration": hours * 3600})
+        iv.append({"id": 99, "taskId": 2, "startedAt": at(11, 3, 9), "duration": 2 * 3600})
+        store = make_store(iv, tasks=tasks)
+        conf = {"clients": {"Low": {"billing": "hourly", "rate": 20}, "High": {"billing": "hourly", "rate": 80}}}
+        d = insights.build(store, conf, date(2026, 11, 12))
+        self.assertEqual([(m["month"], m["earned"]) for m in d["months"]],
+                         [("2026-08", 600.0), ("2026-09", 600.0), ("2026-10", 600.0), ("2026-11", 160.0)])   # empty months trimmed
+        self.assertEqual([(c["client"], c["amount"], c["rate"]) for c in d["clients"]],
+                         [("High", 1200.0, 80.0), ("Low", 600.0, 20.0)])
+        k = d["kpis"]
+        self.assertEqual((k["recent_avg"], k["this_month"], k["avg_rate"], k["tax_year"]), (600.0, 160.0, 40.0, 1960.0))
+        kinds = {x["kind"]: x for x in d["notes"]}
+        self.assertIn("Low pays the least", kinds["rate"]["title"])
+        self.assertIn("£200.00 more a month", kinds["rate"]["text"])        # 10h a month at £20 below the £40 average
+        self.assertIn("25% of your tracked time", kinds["unpaid"]["title"])  # 5h of 20h a month is admin
+        self.assertEqual(d["weekdays"][0]["day"], "Mon")
+
+
+class MailerTest(unittest.TestCase):
+    def test_draft_passes_everything_as_arguments(self):
+        import subprocess
+        from unittest import mock
+        from tftrack import mailer
+        home = Path(tempfile.mkdtemp())
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch.object(mailer.cfg, "APP_DIR", home), \
+                mock.patch.object(mailer.shutil, "which", return_value="/usr/bin/osascript"), \
+                mock.patch.object(mailer.subprocess, "run", return_value=ok) as run:
+            mailer.draft('Invoice "1"', "Hi\nthere", "a@example.com", "me@example.com", [("INV 1.pdf", b"%PDF"), ("T/S.pdf", b"x")], 7)
+        args = run.call_args[0][0]
+        self.assertEqual(args[:2], ["osascript", "-e"])
+        self.assertNotIn("a@example.com", args[2])                       # the script text holds no user data
+        self.assertEqual(args[3:7], ['Invoice "1"', "Hi\nthere", "a@example.com", "me@example.com"])
+        self.assertEqual([Path(p).name for p in args[7:]], ["INV 1.pdf", "T-S.pdf"])
+        self.assertEqual(Path(args[7]).read_bytes(), b"%PDF")
+        self.assertEqual(Path(args[7]).parent, home / "outbox" / "7")
+        denied = subprocess.CompletedProcess([], 1, "", "execution error: Not authorized to send Apple events to Mail. (-1743)")
+        with mock.patch.object(mailer.cfg, "APP_DIR", home), \
+                mock.patch.object(mailer.shutil, "which", return_value="/usr/bin/osascript"), \
+                mock.patch.object(mailer.subprocess, "run", return_value=denied):
+            with self.assertRaisesRegex(ValueError, "Automation"):
+                mailer.draft("s", "b", "", "", [], 7)
+        with mock.patch.object(mailer.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "needs Apple Mail"):
+                mailer.draft("s", "b", "", "", [], 7)
+
+
+class SmtpTest(unittest.TestCase):
+    def test_sends_through_a_mail_server_with_attachments_and_a_copy(self):
+        import socketserver
+        from email import message_from_bytes
+        from tftrack import billing, mailer
+        got = {}
+
+        class Fake(socketserver.StreamRequestHandler):   # just enough SMTP to accept one message
+            def handle(self):
+                self.wfile.write(b"220 fake\r\n")
+                while True:
+                    line = self.rfile.readline()
+                    cmd = line[:4].upper()
+                    if cmd in (b"EHLO", b"HELO"):
+                        self.wfile.write(b"250 fake\r\n")
+                    elif cmd == b"RCPT":
+                        got.setdefault("rcpt", []).append(line.decode().strip())
+                        self.wfile.write(b"250 ok\r\n")
+                    elif cmd == b"DATA":
+                        self.wfile.write(b"354 go\r\n")
+                        data = b""
+                        while not data.endswith(b"\r\n.\r\n"):
+                            data += self.rfile.readline()
+                        got["data"] = data
+                        self.wfile.write(b"250 ok\r\n")
+                    elif cmd == b"QUIT" or not line:
+                        self.wfile.write(b"221 bye\r\n")
+                        return
+                    else:
+                        self.wfile.write(b"250 ok\r\n")
+
+        server = socketserver.TCPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            b = billing.clean_business({"name": "Me Ltd", "email": "me@example.com", "mail_method": "smtp",
+                                        "smtp_host": "127.0.0.1", "smtp_port": server.server_address[1], "smtp_security": "none"})
+            mailer.send(b, None, "client@example.com", "Invoice INV-1 from Me Ltd", "Hi\n\nAttached.", [("INV-1.pdf", b"%PDF-1.4 x")])
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(len(got["rcpt"]), 2)                                  # the client, and a copy to the sender
+        self.assertTrue(any("client@example.com" in r for r in got["rcpt"]) and any("me@example.com" in r for r in got["rcpt"]))
+        msg = message_from_bytes(got["data"])
+        self.assertEqual((msg["Subject"], msg["To"]), ("Invoice INV-1 from Me Ltd", "client@example.com"))
+        self.assertIsNone(msg["Bcc"])                                           # the copy isn't visible to the client
+        files = [p for p in msg.walk() if p.get_filename()]
+        self.assertEqual([(p.get_filename(), p.get_payload(decode=True)) for p in files], [("INV-1.pdf", b"%PDF-1.4 x")])
+        with self.assertRaisesRegex(ValueError, "no email address for this client"):
+            mailer.send(b, None, "", "s", "b", [])
+        with self.assertRaisesRegex(ValueError, "outgoing mail server"):
+            billing.clean_business({"name": "X", "email": "x@example.com", "mail_method": "smtp"})
+        with self.assertRaisesRegex(ValueError, "Couldn't send"):
+            mailer.send({**b, "smtp_port": 1}, None, "c@example.com", "s", "b", [])
