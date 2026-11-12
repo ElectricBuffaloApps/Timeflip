@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, billing, collect, insights, merge, pdf, remote, service, updater
+from . import allowance, billing, collect, insights, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -616,7 +616,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, billing.bill_pdf(bill), "application/pdf",
                                       {"Content-Disposition": f'attachment; filename="{billing.file_name(bill)}"'})
                 paid_at = store.paid(bill["client"]).get(bill["month"])
-                return self._send(200, billing.bill_page(bill, paid_at, date.today()), "text/html; charset=utf-8")
+                conf = cfg.load_config()
+                sends = next((b for b in billing.businesses(conf) if b["id"] == bill["business_id"]), {})
+                to = billing.client_details(conf, bill["client"])["email"] or bill["data"]["client"].get("email") or ""
+                return self._send(200, billing.bill_page(bill, paid_at, date.today(), store.get_meta(f"bill_emailed:{bill['id']}"),
+                                                         sends.get("mail_method") == "smtp", to), "text/html; charset=utf-8")
             if url.path == "/sheet.pdf":
                 raw, name = _sheet_pdf(q.get("client") or "", q.get("month") or "")
                 return self._send(200, raw, "application/pdf", {"Content-Disposition": f'attachment; filename="{name}"'})
@@ -837,9 +841,33 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/business":
                     conf = cfg.load_config()
-                    conf["businesses"] = billing.clean_businesses(body.get("businesses"))
+                    raw = body.get("businesses")
+                    before = {b["id"]: b for b in billing.businesses(conf)}
+                    cleaned = billing.clean_businesses(raw)
+                    for b, given in zip(cleaned, raw):
+                        b["smtp_password_saved"] = bool(before.get(b["id"], {}).get("smtp_password_saved"))
+                        if given.get("smtp_password"):   # typed just now: into the Keychain, never the settings file
+                            mailer.save_password(b["id"], str(given["smtp_password"]))
+                            b["smtp_password_saved"] = True
+                    for gone in set(before) - {b["id"] for b in cleaned}:
+                        mailer.delete_password(gone)
+                    conf["businesses"] = cleaned
                     conf.pop("business", None)
                     cfg.save_config(conf)
+                elif self.path == "/api/business/test-email":
+                    conf = cfg.load_config()
+                    b = next((x for x in billing.businesses(conf) if x["id"] == body.get("id")), None)
+                    if not b:
+                        raise ValueError("Save the business first.")
+                    if not b["email"]:
+                        raise ValueError("Enter and save this business's email address first.")
+                    subject = f"Test email from TimeFlip Tracker ({b['name']})"
+                    text = "If you're reading this, invoices from this business can be emailed."
+                    if b["mail_method"] == "smtp":
+                        mailer.send(b, mailer.get_password(b["id"]), b["email"], subject, text, [])
+                    else:
+                        mailer.draft(subject, text, b["email"], b["email"], [], 0)
+                    return self._send(200, {"ok": True, "mode": "sent" if b["mail_method"] == "smtp" else "draft"})
                 elif self.path == "/api/client-details":
                     conf = cfg.load_config()
                     conf["client_details"] = {
@@ -883,6 +911,27 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/api/extra/delete":
                     service.open_store().delete_extra(int(body.get("id")))
                     return self._send(200, {"ok": True})
+                elif self.path == "/api/bill/email":
+                    store = service.open_store()
+                    bill = store.bill(body.get("id"))
+                    if not bill or bill["voided_at"]:
+                        raise ValueError("No such invoice.")
+                    conf = cfg.load_config()
+                    # addresses as they are in Settings now, so one added after the invoice was made still works
+                    now = next((b for b in billing.businesses(conf) if b["id"] == bill["business_id"]), {})
+                    sender = now.get("email") or bill["data"]["business"].get("email") or ""
+                    to = billing.client_details(conf, bill["client"])["email"] or bill["data"]["client"].get("email") or ""
+                    subject, text = billing.email_text(bill)
+                    sheet, sheet_name = _sheet_pdf(bill["client"], bill["month"])
+                    files = [(billing.file_name(bill), billing.bill_pdf(bill)), (sheet_name, sheet)]
+                    direct = now.get("mail_method") == "smtp"
+                    if direct:
+                        mailer.send(now, mailer.get_password(now["id"]), to, subject, text, files)
+                    else:
+                        mailer.draft(subject, text, to, sender, files, bill["id"])
+                    store.set_meta(f"bill_emailed:{bill['id']}",
+                                   f"{'sent' if direct else 'draft'}:{datetime.now().astimezone().isoformat()}")
+                    return self._send(200, {"ok": True, "to": to, "sender": sender, "mode": "sent" if direct else "draft"})
                 elif self.path == "/api/bill/void":
                     if not service.open_store().void_bill(body.get("id")):
                         raise ValueError("No such invoice.")
@@ -1165,11 +1214,14 @@ def bills_overview(today: date) -> dict:
                               "seconds": mo["seconds"], "value": mo["value"], "missing": need})
     paid = {}
     bills = []
+    direct = {b["id"] for b in billing.businesses(conf) if b["mail_method"] == "smtp"}
     for b in store.bills():
         if b["client"].lower() not in paid:
             paid[b["client"].lower()] = store.paid(b["client"])
         paid_at = None if b["voided_at"] else paid[b["client"].lower()].get(b["month"])
-        bills.append({**billing.summary(b, paid_at, today), "label": billing.month_title(b["month"]), "paid_at": paid_at})
+        bills.append({**billing.summary(b, paid_at, today), "label": billing.month_title(b["month"]), "paid_at": paid_at,
+                      "direct": b["business_id"] in direct,
+                      "to": billing.client_details(conf, b["client"])["email"] or b["data"]["client"].get("email") or ""})
     live = [b for b in bills if b["status"] != "void"]
     extras = [{**e, "amount": round(e["quantity"] * e["unit_price"], 2), "label": billing.month_title(e["month"])}
               for e in store.extras()]

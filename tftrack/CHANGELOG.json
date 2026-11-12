@@ -1,5 +1,15 @@
 [
   {
+    "version": 32,
+    "changes": [
+      "Email invoices from the app: Email it on an invoice (or Email in the Invoices list) attaches the invoice PDF and the timesheet PDF, addresses it to the client and writes the message for you.",
+      "Each business chooses how, under Settings → Your businesses → 'Email invoices with'. Apple Mail on this Mac makes a draft for you to check and send, from that business's email address. The first time, macOS asks to let the tracker control Mail: click OK.",
+      "Or use your own email provider: enter its outgoing mail server (SMTP), username and password. Invoices are then sent straight away, after you confirm, with a copy to you. The password is kept in the Mac's Keychain. Most providers need an 'app password'.",
+      "Send a test email checks a business's email setup before you rely on it.",
+      "The invoice number to start from is 'Next number' in Settings → Your businesses, one per business."
+    ]
+  },
+  {
     "version": 31,
     "changes": [
       "More than one business: in Settings, 'Your businesses' has '+ Add another business'. Each business has its own name, address, payment details, VAT and invoice numbers. Then choose which business invoices each client under 'Who each invoice goes to' (the 'Invoiced by' column). The details you already entered are kept as your first business.",

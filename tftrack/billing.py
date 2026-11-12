@@ -17,7 +17,11 @@ from .pdf import ACCENT, FAINT, GREY_BG, INK, MARGIN, MUTED, PAGE_H, PAGE_W, Doc
 BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix")
 DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "company_number": "", "vat_registered": False,
                     "vat_number": "", "vat_rate": 20.0, "payment": "", "footer": "", "prefix": "INV-", "digits": 4,
-                    "next_number": 1}
+                    "next_number": 1,
+                    # how invoices are emailed: "mail" (a draft in Apple Mail) or "smtp" (your email provider, sent
+                    # straight away; the password lives in the Keychain, never in this file)
+                    "mail_method": "mail", "smtp_host": "", "smtp_port": 587, "smtp_security": "starttls",
+                    "smtp_user": "", "smtp_password_saved": False}
 CLIENT_TEXT = ("name", "address", "email", "reference")
 
 
@@ -79,6 +83,21 @@ def clean_business(raw: dict) -> dict:
         raise ValueError("The next invoice number must be 1 or more.")
     if out["vat_registered"] and not out["vat_number"]:
         raise ValueError("Enter your VAT number, or untick VAT registered.")
+    out["mail_method"] = "smtp" if raw.get("mail_method") == "smtp" else "mail"
+    out["smtp_host"] = str(raw.get("smtp_host") or "").strip()[:200]
+    out["smtp_user"] = str(raw.get("smtp_user") or "").strip()[:200]
+    out["smtp_security"] = raw.get("smtp_security") if raw.get("smtp_security") in ("ssl", "starttls", "none") else "starttls"
+    try:
+        out["smtp_port"] = int(raw.get("smtp_port") or 587)
+    except (TypeError, ValueError):
+        raise ValueError("The mail server port must be a number (usually 587 or 465).")
+    if not 1 <= out["smtp_port"] <= 65535:
+        raise ValueError("The mail server port must be between 1 and 65535.")
+    if out["mail_method"] == "smtp":
+        if not out["smtp_host"]:
+            raise ValueError(f"Enter the outgoing mail server for {out['name'] or 'this business'}, or choose Apple Mail.")
+        if not out["email"]:
+            raise ValueError(f"Enter the email address {out['name'] or 'this business'} sends from.")
     return out
 
 
@@ -211,7 +230,7 @@ def summary(bill: dict, paid_at: str | None, today: date) -> dict:
               "overdue" if today > due else "awaiting")
     return {**{k: bill[k] for k in ("id", "number", "client", "month", "issued_on", "due_on", "net", "vat", "total")},
             "business": bill["data"]["business"]["name"], "status": status, "days_overdue": (today - due).days if status == "overdue" else 0,
-            "email": bill["data"]["client"].get("email") or ""}
+            "email": bill["data"]["client"].get("email") or "", "business_id": bill["business_id"]}
 
 
 def file_name(bill: dict) -> str:
@@ -227,13 +246,19 @@ def _gbp(v: float) -> str:
     return f"£{v:,.2f}"
 
 
-def mailto(bill: dict) -> str:
-    b, c = bill["data"]["business"], bill["data"]["client"]
+def email_text(bill: dict) -> tuple[str, str]:
+    """(subject, body) of the email that goes with an invoice."""
+    b = bill["data"]["business"]
     subject = f"Invoice {bill['number']} from {b['name']}"
-    body = (f"Hi,\n\nPlease find attached invoice {bill['number']} for {month_title(bill['month'])}.\n\n"
-            f"Amount due: {_gbp(bill['total'])}\nDue by: {_d(bill['due_on'])}\n\n"
+    body = (f"Hi,\n\nPlease find attached invoice {bill['number']} for {month_title(bill['month'])}, with the "
+            f"timesheet.\n\nAmount due: {_gbp(bill['total'])}\nDue by: {_d(bill['due_on'])}\n\n"
             + (f"How to pay:\n{b['payment']}\n\n" if b["payment"] else "") + f"Thank you,\n{b['name']}")
-    return f"mailto:{quote(c.get('email') or '')}?subject={quote(subject)}&body={quote(body)}"
+    return subject, body
+
+
+def mailto(bill: dict) -> str:
+    subject, body = email_text(bill)
+    return f"mailto:{quote(bill['data']['client'].get('email') or '')}?subject={quote(subject)}&body={quote(body)}"
 
 
 # ---------- PDF ----------
@@ -406,6 +431,18 @@ for (const b of document.querySelectorAll("button[data-paid]")) {
     catch (e) { alert(e.message); }
   };
 }
+const em = document.getElementById("email");
+if (em) em.onclick = async () => {
+  if (info.direct && !confirm(`Send invoice ${info.number} to ${info.to || "the client"} now? It goes straight away.`)) return;
+  em.disabled = true; em.textContent = info.direct ? "Sending…" : "Making the draft…";
+  try {
+    await post("/api/bill/email", {id: info.id});
+    em.textContent = info.direct ? "Sent ✓" : "Draft is in Mail ✓";
+    document.getElementById("emailed").textContent = info.direct ? "Sent just now, with a copy to you."
+      : "A draft is open in Mail on your Mac: check it and press send.";
+  } catch (e) { alert(e.message); em.textContent = "Email it"; }
+  em.disabled = false;
+};
 const v = document.getElementById("void");
 if (v) v.onclick = async () => {
   if (!confirm(`Void invoice ${info.number}? Its number won't be used again, and the month goes back to "not invoiced".`)) return;
@@ -414,8 +451,13 @@ if (v) v.onclick = async () => {
 </script>"""
 
 
-def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
+def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | None = None, direct: bool = False,
+              to: str = "") -> str:
     esc = html.escape
+    emailed = ""
+    if emailed_at:
+        kind, _, when = emailed_at.partition(":") if emailed_at[:1] in "ds" else ("draft", "", emailed_at)
+        emailed = f"{'Sent' if kind == 'sent' else 'Draft last made'} {_d(when[:10])}."
     data = bill["data"]
     b, c = data["business"], data["client"]
     s = summary(bill, paid_at, today)
@@ -427,7 +469,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
     buttons = ""
     if s["status"] != "void":
         buttons = (f'<a class="btn primary" href="/bill.pdf?{q}">Save PDF</a>'
-                   f'<a class="btn" href="{esc(mailto(bill))}">Email it</a>'
+                   '<button id="email">Email it</button>'
                    f'<a class="btn" href="/sheet.pdf?{sheet_q}">Save timesheet PDF</a>'
                    '<button onclick="window.print()">Print</button>'
                    + ('<button data-paid="0">Not paid</button>' if paid_at else '<button data-paid="1">Mark as paid</button>')
@@ -444,7 +486,8 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
            if data["vat_rate"] is not None else "")
     pay = (f'<div class="pay"><h2>HOW TO PAY · DUE BY {_d(bill["due_on"])}</h2>{esc(b["payment"])}</div>'
            if b["payment"] else "")
-    info = esc(json.dumps({"id": bill["id"], "number": bill["number"], "client": bill["client"], "month": bill["month"]}))
+    info = esc(json.dumps({"id": bill["id"], "number": bill["number"], "client": bill["client"], "month": bill["month"],
+                           "direct": direct, "to": to}))
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invoice {esc(bill['number'])} – {esc(bill['client'])}</title>
@@ -466,5 +509,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date) -> str:
 <tr class="due"><td>Total due</td><td class=n>{_gbp(bill['total'])}</td></tr></table>
 {pay}<div class="foot">{esc(b['footer'])}</div></div>
 <p class="hint">This invoice is a fixed copy from {_d(bill['issued_on'])}. If something on it is wrong, void it and make a new one
-from the <a href="/invoice?{sheet_q}">timesheet</a>. <b>Email it</b> opens a ready-written email: attach the saved PDF.</p>
+from the <a href="/invoice?{sheet_q}">timesheet</a>. <b>Email it</b> sends the invoice and timesheet the way this business is set up in Settings: a draft in Mail on your Mac to
+check and send, or straight from your email provider. <span id="emailed">{emailed}</span>
+<a href="{esc(mailto(bill))}">Use another email app instead</a> (you attach the PDF yourself).</p>
 {SCRIPT}</body></html>"""

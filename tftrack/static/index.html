@@ -610,7 +610,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <button id="bAdd">+ Add another business</button><button class="link hidden" id="bRemove">Remove this one</button></div>
       <div class="form formgrid">
         <label class="field">Business name<input id="bName" autocomplete="organization"></label>
-        <label class="field">Email<input id="bEmail" type="email"></label>
+        <label class="field">Email <span class="hint">(invoices are sent from this address)</span><input id="bEmail" type="email"></label>
         <label class="field wide">Address<textarea id="bAddress" rows="3"></textarea></label>
         <label class="field">Phone <span class="hint">(optional)</span><input id="bPhone"></label>
         <label class="field">Company number <span class="hint">(limited companies only)</span><input id="bCompany"></label>
@@ -621,6 +621,19 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <div class="wide"><label class="check"><input type="checkbox" id="bVat"> I'm VAT registered (adds VAT to every invoice)</label></div>
         <label class="field vatonly">VAT number<input id="bVatNumber"></label>
         <label class="field vatonly">VAT rate %<input id="bVatRate" type="number" min="0" max="100" step="0.5"></label>
+        <label class="field wide">Email invoices with
+          <select id="bMethod">
+            <option value="mail">Apple Mail on this Mac: makes a draft for me to check and send</option>
+            <option value="smtp">My email provider: sends straight away, with a copy to me</option>
+          </select></label>
+        <div class="wide trio smtponly">
+          <label class="field">Outgoing mail server <span class="hint">(SMTP)</span><input id="bSmtpHost" placeholder="e.g. smtp.gmail.com" autocapitalize="off"></label>
+          <label class="field">Port<input id="bSmtpPort" type="number" min="1" max="65535"></label>
+          <label class="field">Security<select id="bSmtpSecurity"><option value="starttls">STARTTLS (usually port 587)</option><option value="ssl">SSL/TLS (usually port 465)</option><option value="none">None (not recommended)</option></select></label>
+        </div>
+        <label class="field smtponly">Username <span class="hint">(usually your email address)</span><input id="bSmtpUser" autocapitalize="off" autocomplete="off"></label>
+        <label class="field smtponly">Password <span class="hint" id="bSmtpSaved"></span><input id="bSmtpPass" type="password" autocomplete="new-password"></label>
+        <p class="note wide smtponly" style="margin:0">Your email provider's help pages list these settings under “SMTP”. Gmail, Outlook, iCloud and others need an <b>app password</b> made in your account's security settings, not your normal password. It's kept in this Mac's Keychain.</p>
         <div class="wide trio">
           <label class="field">Invoice numbers start with<input id="bPrefix"></label>
           <label class="field">Digits<input id="bDigits" type="number" min="1" max="10" step="1"></label>
@@ -628,7 +641,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         </div>
       </div>
       <div class="actions"><button class="primary" id="saveBusiness">Save business details</button>
-        <span class="msg" id="businessMsg"></span><span class="meta" id="bPreview"></span></div>
+        <button id="bTest">Send a test email</button><span class="msg" id="businessMsg"></span><span class="meta" id="bPreview"></span></div>
     </section>
     <section class="tile c12">
       <div class="tile-head"><h2>Who each invoice goes to</h2><span class="meta">Paying clients only</span></div>
@@ -1434,6 +1447,15 @@ async function loadBills() {
     const acts = el("td");
     if (x.status !== "void") {
       acts.append(el("a", { href: `/bill.pdf?${q}` }, "PDF"));
+      const mail = el("button", {}, "Email");
+      mail.onclick = async () => {
+        if (x.direct && !confirm(`Send invoice ${x.number} to ${x.to || "the client"} now? It goes straight away.`)) return;
+        mail.disabled = true; mail.textContent = x.direct ? "Sending…" : "Making draft…";
+        try { await api("/api/bill/email", { id: x.id }); mail.textContent = x.direct ? "Sent ✓" : "Draft in Mail ✓"; }
+        catch (e) { alert(e.message); mail.textContent = "Email"; }
+        mail.disabled = false;
+      };
+      acts.append(mail, " ");
       const pay = el("button", {}, x.status === "paid" ? "Not paid" : "Mark paid");
       pay.onclick = async () => {
         pay.disabled = true;
@@ -1503,7 +1525,9 @@ $("xAdd").onclick = async () => {
 let bizList = [], bizAt = 0;
 const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bAddress", "address"], ["bPhone", "phone"], ["bCompany", "company_number"],
                     ["bPayment", "payment"], ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
-                    ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"]];
+                    ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
+                    ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
+                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"]];
 function bizStash() {   // keep what's typed for the business on screen
   const b = bizList[bizAt]; if (!b) return;
   for (const [id, key] of BIZ_FIELDS) b[key] = $(id).value;
@@ -1528,7 +1552,8 @@ $("bPick").onchange = () => { bizStash(); bizAt = Number($("bPick").value); bizS
 $("bAdd").onclick = () => {
   bizStash();
   bizList.push({ name: "", email: "", address: "", phone: "", company_number: "", payment: "", footer: "", vat_registered: false,
-                 vat_number: "", vat_rate: 20, prefix: "INV-", digits: 4, next_number: 1 });
+                 vat_number: "", vat_rate: 20, prefix: "INV-", digits: 4, next_number: 1, mail_method: "mail", smtp_host: "",
+                 smtp_port: 587, smtp_security: "starttls", smtp_user: "" });
   bizAt = bizList.length - 1; bizShow(); $("bName").focus();
   $("businessMsg").textContent = "Fill in the new business, then click Save business details.";
 };
@@ -1539,9 +1564,28 @@ $("bRemove").onclick = () => {
 };
 function businessPreview() {
   for (const f of document.querySelectorAll(".vatonly")) f.classList.toggle("hidden", !$("bVat").checked);
+  for (const f of document.querySelectorAll(".smtponly")) f.classList.toggle("hidden", $("bMethod").value !== "smtp");
+  $("bSmtpSaved").textContent = bizList[bizAt]?.smtp_password_saved ? "(saved: leave empty to keep it)" : "";
   const n = String(Math.max(1, Number($("bNext").value) || 1)).padStart(Math.min(10, Math.max(1, Number($("bDigits").value) || 4)), "0");
   $("bPreview").textContent = `Next invoice: ${$("bPrefix").value}${n}`;
 }
+$("bSmtpSecurity").onchange = () => { $("bSmtpPort").value = { ssl: 465, starttls: 587 }[$("bSmtpSecurity").value] || $("bSmtpPort").value; };
+$("bTest").onclick = async () => {
+  const b = bizList[bizAt];
+  if (!b?.id || $("businessMsg").textContent.startsWith("Unsaved") || $("businessMsg").textContent.startsWith("Fill")) {
+    $("businessMsg").textContent = "Click Save business details first, then test."; return;
+  }
+  $("bTest").disabled = true; $("businessMsg").textContent = "Trying…";
+  try {
+    const r = await api("/api/business/test-email", { id: b.id });
+    $("businessMsg").textContent = r.mode === "sent" ? `Sent. Check the inbox for ${b.email}.` : "A test draft is open in Mail on your Mac.";
+  } catch (e) { $("businessMsg").textContent = e.message; }
+  $("bTest").disabled = false;
+};
+$("businessTile").addEventListener("change", (ev) => {
+  if (ev.target.id === "bPick") return;
+  businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
+});
 $("businessTile").addEventListener("input", (ev) => {
   if (ev.target.id === "bPick") return;
   businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";

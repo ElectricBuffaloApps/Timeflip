@@ -1003,3 +1003,87 @@ class InsightsTest(unittest.TestCase):
         self.assertIn("£200.00 more a month", kinds["rate"]["text"])        # 10h a month at £20 below the £40 average
         self.assertIn("25% of your tracked time", kinds["unpaid"]["title"])  # 5h of 20h a month is admin
         self.assertEqual(d["weekdays"][0]["day"], "Mon")
+
+
+class MailerTest(unittest.TestCase):
+    def test_draft_passes_everything_as_arguments(self):
+        import subprocess
+        from unittest import mock
+        from tftrack import mailer
+        home = Path(tempfile.mkdtemp())
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch.object(mailer.cfg, "APP_DIR", home), \
+                mock.patch.object(mailer.shutil, "which", return_value="/usr/bin/osascript"), \
+                mock.patch.object(mailer.subprocess, "run", return_value=ok) as run:
+            mailer.draft('Invoice "1"', "Hi\nthere", "a@example.com", "me@example.com", [("INV 1.pdf", b"%PDF"), ("T/S.pdf", b"x")], 7)
+        args = run.call_args[0][0]
+        self.assertEqual(args[:2], ["osascript", "-e"])
+        self.assertNotIn("a@example.com", args[2])                       # the script text holds no user data
+        self.assertEqual(args[3:7], ['Invoice "1"', "Hi\nthere", "a@example.com", "me@example.com"])
+        self.assertEqual([Path(p).name for p in args[7:]], ["INV 1.pdf", "T-S.pdf"])
+        self.assertEqual(Path(args[7]).read_bytes(), b"%PDF")
+        self.assertEqual(Path(args[7]).parent, home / "outbox" / "7")
+        denied = subprocess.CompletedProcess([], 1, "", "execution error: Not authorized to send Apple events to Mail. (-1743)")
+        with mock.patch.object(mailer.cfg, "APP_DIR", home), \
+                mock.patch.object(mailer.shutil, "which", return_value="/usr/bin/osascript"), \
+                mock.patch.object(mailer.subprocess, "run", return_value=denied):
+            with self.assertRaisesRegex(ValueError, "Automation"):
+                mailer.draft("s", "b", "", "", [], 7)
+        with mock.patch.object(mailer.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "needs Apple Mail"):
+                mailer.draft("s", "b", "", "", [], 7)
+
+
+class SmtpTest(unittest.TestCase):
+    def test_sends_through_a_mail_server_with_attachments_and_a_copy(self):
+        import socketserver
+        from email import message_from_bytes
+        from tftrack import billing, mailer
+        got = {}
+
+        class Fake(socketserver.StreamRequestHandler):   # just enough SMTP to accept one message
+            def handle(self):
+                self.wfile.write(b"220 fake\r\n")
+                while True:
+                    line = self.rfile.readline()
+                    cmd = line[:4].upper()
+                    if cmd in (b"EHLO", b"HELO"):
+                        self.wfile.write(b"250 fake\r\n")
+                    elif cmd == b"RCPT":
+                        got.setdefault("rcpt", []).append(line.decode().strip())
+                        self.wfile.write(b"250 ok\r\n")
+                    elif cmd == b"DATA":
+                        self.wfile.write(b"354 go\r\n")
+                        data = b""
+                        while not data.endswith(b"\r\n.\r\n"):
+                            data += self.rfile.readline()
+                        got["data"] = data
+                        self.wfile.write(b"250 ok\r\n")
+                    elif cmd == b"QUIT" or not line:
+                        self.wfile.write(b"221 bye\r\n")
+                        return
+                    else:
+                        self.wfile.write(b"250 ok\r\n")
+
+        server = socketserver.TCPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            b = billing.clean_business({"name": "Me Ltd", "email": "me@example.com", "mail_method": "smtp",
+                                        "smtp_host": "127.0.0.1", "smtp_port": server.server_address[1], "smtp_security": "none"})
+            mailer.send(b, None, "client@example.com", "Invoice INV-1 from Me Ltd", "Hi\n\nAttached.", [("INV-1.pdf", b"%PDF-1.4 x")])
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(len(got["rcpt"]), 2)                                  # the client, and a copy to the sender
+        self.assertTrue(any("client@example.com" in r for r in got["rcpt"]) and any("me@example.com" in r for r in got["rcpt"]))
+        msg = message_from_bytes(got["data"])
+        self.assertEqual((msg["Subject"], msg["To"]), ("Invoice INV-1 from Me Ltd", "client@example.com"))
+        self.assertIsNone(msg["Bcc"])                                           # the copy isn't visible to the client
+        files = [p for p in msg.walk() if p.get_filename()]
+        self.assertEqual([(p.get_filename(), p.get_payload(decode=True)) for p in files], [("INV-1.pdf", b"%PDF-1.4 x")])
+        with self.assertRaisesRegex(ValueError, "no email address for this client"):
+            mailer.send(b, None, "", "s", "b", [])
+        with self.assertRaisesRegex(ValueError, "outgoing mail server"):
+            billing.clean_business({"name": "X", "email": "x@example.com", "mail_method": "smtp"})
+        with self.assertRaisesRegex(ValueError, "Couldn't send"):
+            mailer.send({**b, "smtp_port": 1}, None, "c@example.com", "s", "b", [])
