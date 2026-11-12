@@ -338,7 +338,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="owed-head">
         <div><div class="lbl">Outstanding</div><div class="owed-sub" id="owedSub"></div></div>
         <div class="owed-total"><b id="owedTotal">–</b><span>to invoice</span></div>
-        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged</span></div>
+        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged · <a href="/carried" target="_blank">ledger →</a></span></div>
       </div>
       <div class="owed-grid" id="owedGrid"></div>
     </section>
@@ -487,7 +487,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <button class="primary" id="saveLimits">Save limits</button>
         <span class="sub" id="saveMsg"></span>
       </div>
-      <p class="note">Hours. Leave a box empty for no limit. Tick <b>Bill as allowance</b> on a task's weekly limit to get a monthly maximum (the weekly hours shared across the month's working days). On the timesheet, tick <b>Roll over</b> on that task's entries to carry them, then add carried hours to a later timesheet with its buttons.</p>
+      <p class="note">Hours. Leave a box empty for no limit. Tick <b>Bill as allowance</b> on a weekly limit, for a task or a whole client, to get a monthly maximum (the weekly hours shared across the month's working days). A client can have allowances on several tasks, or one for all its work, but not both. On the timesheet, tick <b>Roll over</b> on entries to carry them, then add carried hours to a later timesheet with its buttons. <a href="/carried" target="_blank">Carried hours ledger →</a></p>
       <p class="note" id="holidayNote">Bank holidays (England and Wales) aren't counted.</p>
     </section>
 
@@ -719,7 +719,7 @@ function limitRow(lim = {}) {
   daily.value = lim.daily_hours ?? "";
   const weekly = el("input", { type: "number", min: "0.25", step: "0.25", "aria-label": "Hours per week" });
   weekly.value = lim.weekly_hours ?? "";
-  // Bill as a monthly allowance: only for a task with hours per week.
+  // Bill as a monthly allowance: for a task or a whole client with hours per week.
   const allow = el("input", { type: "checkbox", "aria-label": "Bill as a monthly allowance" });
   allow.checked = !!lim.allowance;
   const allowLabel = el("label", { class: "check sub" }); allowLabel.append(allow, document.createTextNode("Bill as allowance"));
@@ -733,14 +733,9 @@ function limitRow(lim = {}) {
   const openLabel = el("label", { class: "sub" }, "brought in "); openLabel.append(opening, document.createTextNode(" h"));
   extra.append(fromLabel, openLabel);
   const allowCell = el("div", { class: "allow-cell" }); allowCell.append(allowLabel, extra);
-  const sync = () => {
-    const ok = kind.value === "task";
-    allowLabel.classList.toggle("hidden", !ok);
-    if (!ok) allow.checked = false;
-    extra.classList.toggle("hidden", !allow.checked);
-  };
+  const sync = () => extra.classList.toggle("hidden", !allow.checked);
   allow.onchange = sync;
-  kind.addEventListener("change", sync);
+  kind.addEventListener("change", () => { allow.checked = false; sync(); });
   sync();
   const del = el("button", { class: "link", "aria-label": "Remove limit" }, "Remove");
   del.onclick = () => tr.remove();
@@ -1383,7 +1378,7 @@ async function loadAllowances() {
     const over = used > m.max_s;
     const brought = m.carry.added_s ? ` · incl. ${hm(m.carry.added_s)} carried over` : "";
     const rolling = m.carry.remaining_s ? ` · ${hm(m.carry.remaining_s)} carried, not yet charged` : "";
-    return meterRow(`${m.task} · ${monthName(m.month, 0)}`, `${hm(used)} / ${hm(m.max_s)}`, pct,
+    return meterRow(`${m.scope === "task" ? m.name : m.client + " (all work)"} · ${monthName(m.month, 0)}`, `${hm(used)} / ${hm(m.max_s)}`, pct,
                     over ? "critical" : pct >= 80 ? "warning" : "plain",
                     over ? `${hm(used - m.max_s)} over: roll some over on the timesheet` : `${hm(m.max_s - used)} left`,
                     `${m.working_days} working days${brought}${rolling}`);

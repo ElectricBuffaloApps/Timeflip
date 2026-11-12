@@ -1,5 +1,15 @@
 [
   {
+    "version": 29,
+    "changes": [
+      "Carried hours ledger: a new page showing, month by month for each allowance, the max, hours worked, hours rolled over, hours added to an invoice, the balance left and its value, and whether the month is marked as invoiced. Open it from Outstanding on the Dashboard, from Settings, or from the allowance line on a timesheet. Each month links to its timesheet.",
+      "Allowances for a whole client: tick 'Bill as allowance' on a client's weekly limit and all of that client's work counts, so any of its entries can be rolled over.",
+      "Several allowances for one client: each task's allowance has its own maximum, Roll over ticks, carried-over box and balance.",
+      "A client can have allowances on its tasks or one for all its work, not both, because the same hours would count twice. Settings tells you if you try.",
+      "Your existing Justin allowance, rolled-over entries and carried hours are unchanged."
+    ]
+  },
+  {
     "version": 28,
     "changes": [
       "Phone and other computers (Settings): share this tracker privately with your own devices through Tailscale. Your phone and other Mac open the same live tracker, with the same data, and nothing is copied.",

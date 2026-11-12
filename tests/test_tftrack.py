@@ -509,14 +509,16 @@ class AllowanceTest(unittest.TestCase):
         ], tasks=tasks)
         self.conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15}},
                      "limits": [{"task": "Justin", "weekly_hours": 1, "allowance": True, "allowance_start": "2026-09"}]}
-        self.a = {"task": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}
+        self.a = {"scope": "task", "name": "Justin", "hours_per_week": 1, "start": "2026-09", "opening_hours": 0}
 
     def _inv(self, month):
         from tftrack import allowance
         from tftrack.reports import invoice
         inv = invoice(self.store, "HTB", 2026, month, "day", 15, "up")
-        info = allowance.for_invoice(self.store, self.conf, inv, set())
-        return allowance.apply(inv, info) if info else inv
+        inv = allowance.apply(inv, allowance.for_invoice(self.store, self.conf, inv, set()))
+        if inv["allowances"]:   # the first allowance, as most of these tests have one
+            inv["allowance"], inv["carry"] = inv["allowances"][0], inv["allowances"][0]["carry"]
+        return inv
 
     def test_monthly_max_and_week_maxes(self):
         sep = self._inv(9)["allowance"]
@@ -561,7 +563,7 @@ class AllowanceTest(unittest.TestCase):
             self.assertIn("rolled over: carried to a later invoice", page)
             self.assertIn("Week of Mon 31 Aug total", page)
             page = web.invoice_page(self._inv(10))
-            self.assertIn("Carried over to charge: 2h 00m", page)
+            self.assertIn("Justin: carried over to charge: 2h 00m", page)
             self.assertIn('data-seconds="2700"', page)   # +15m from the 30m already added
         finally:
             web._task_options = orig
@@ -570,7 +572,108 @@ class AllowanceTest(unittest.TestCase):
         from tftrack import allowance
         from tftrack.reports import invoice
         inv = invoice(self.store, "HTB", 2026, 9, "day", 15, "up")
-        self.assertEqual(allowance.for_invoice(self.store, conf, inv, set())["carry"]["available_s"], 3600)
+        self.assertEqual(allowance.for_invoice(self.store, conf, inv, set())[0]["carry"]["available_s"], 3600)
+
+    def test_allowance_for_a_whole_client(self):
+        # all of HTB's work counts, so Build entries can be rolled over too
+        from tftrack import web
+        self.conf["limits"] = [{"client": "HTB", "weekly_hours": 1, "allowance": True, "allowance_start": "2026-09"}]
+        sep = self._inv(9)
+        al = sep["allowance"]
+        self.assertEqual((al["scope"], al["name"], al["key"]), ("client", "HTB", ""))
+        self.assertEqual(al["worked_s"], 3 * 3600 + 2 * 3600 + 30 * 60)   # 3 Sept 3h; 4 Sept 1h55 + 30m rounds to 2h30
+        self.store.set_rolled(3, "carried", "2026-09-04")                 # the Build entry
+        sep = self._inv(9)
+        self.assertEqual((sep["allowance"]["worked_s"], sep["allowance"]["rolling_s"]), (5 * 3600, 30 * 60))
+        self.assertEqual(self._inv(10)["carry"]["available_s"], 30 * 60)
+        orig, web._task_options = web._task_options, lambda: ""
+        try:
+            page = web.invoice_page(sep)
+        finally:
+            web._task_options = orig
+        self.assertEqual(page.count("data-roll="), 3)   # every HTB entry in September has a Roll over tick
+        from tftrack.reports import invoice_lines
+        from tftrack import allowance
+        allowance.set_added(self.store, self.conf, "HTB", "", "2026-10", 30 * 60)
+        self.assertTrue(invoice_lines(self._inv(10), 40)[0]["description"].startswith("HTB, carried over (week of "))
+
+    def test_two_allowances_for_one_client_keep_separate_balances(self):
+        from tftrack import allowance
+        self.conf["limits"].append({"task": "Build", "weekly_hours": 2, "allowance": True, "allowance_start": "2026-09",
+                                    "opening_hours": 1})
+        self.store.set_carry_added("HTB", "2026-10", 15 * 60)   # added before allowances had names: stays with Justin
+        self.store.set_rolled(2, "carried", "2026-09-04")       # Justin, 1h55
+        self.store.set_rolled(3, "carried", "2026-09-04")       # Build, 30m
+        sep = self._inv(9)
+        justin, build = sep["allowances"]
+        # the day's charge was 2h30 (1h55 + 30m, rounded up); Justin's share is the first drop, Build's the rest
+        self.assertEqual((justin["rolling_s"], build["rolling_s"], sep["rolled_s"]), (2 * 3600, 30 * 60, 150 * 60))
+        self.assertEqual(build["carry"]["available_s"], 3600)   # the hour brought in
+        justin, build = self._inv(10)["allowances"]
+        self.assertEqual((justin["carry"]["available_s"], justin["carry"]["added_s"]), (2 * 3600, 15 * 60))
+        self.assertEqual((build["carry"]["available_s"], build["carry"]["added_s"]), (90 * 60, 0))
+        allowance.set_added(self.store, self.conf, "HTB", "Build", "2026-10", 3600)
+        allowance.set_added(self.store, self.conf, "HTB", "justin", "2026-10", 30 * 60)   # replaces the unnamed 15m
+        oct_ = self._inv(10)
+        justin, build = oct_["allowances"]
+        self.assertEqual((justin["carry"]["added_s"], build["carry"]["added_s"]), (30 * 60, 3600))
+        self.assertEqual(oct_["total_billed_s"], 3600 + 90 * 60)
+        self.assertEqual(sorted((r["task"], r["seconds"]) for r in self.store.carry_rows("HTB")),
+                         [("Build", 3600), ("Justin", 1800)])
+        justin, build = self._inv(11)["allowances"]
+        self.assertEqual((justin["carry"]["available_s"], build["carry"]["available_s"]), (90 * 60, 30 * 60))
+
+    def test_a_client_cannot_have_a_whole_client_allowance_and_a_task_one(self):
+        from tftrack import allowance
+        tasks = self.store.tasks()
+        whole = {"client": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-09"}
+        allowance.validate(self.conf["limits"] + [{"task": "Build", "weekly_hours": 2, "allowance": True,
+                                                   "allowance_start": "2026-09"}], tasks)   # two tasks: fine
+        allowance.validate(self.conf["limits"] + [{"client": "HTB", "weekly_hours": 20}], tasks)  # a plain limit: fine
+        with self.assertRaisesRegex(ValueError, "HTB has an allowance for all its work and one for Justin"):
+            allowance.validate(self.conf["limits"] + [whole], tasks)
+        with self.assertRaisesRegex(ValueError, "more than one"):
+            allowance.validate(self.conf["limits"] * 2, tasks)
+        # if both ever arrive (from another Mac, say), the whole-client one is used alone
+        both = dict(self.conf, limits=self.conf["limits"] + [whole])
+        self.assertEqual([a["scope"] for a in allowance.for_client(self.store, both, "htb")], ["client"])
+
+    def test_ledger_of_carried_hours_month_by_month(self):
+        from datetime import date
+        from tftrack import allowance, web
+        self.conf["clients"]["HTB"]["rate"] = 40
+        self.store.set_rolled(2, "carried", "2026-09-04")
+        self.store.set_carry_added("HTB", "2026-10", 30 * 60)
+        self.store.set_invoiced("HTB", "2026-09", 3 * 3600, 120.0)
+        (book,) = allowance.ledger(self.store, self.conf, date(2026, 11, 12), set())
+        self.assertEqual((book["client"], book["name"], book["balance_s"], book["balance_value"]),
+                         ("HTB", "Justin", 90 * 60, 60.0))
+        rows = {r["month"]: r for r in book["rows"]}
+        self.assertEqual(list(rows), ["2026-09", "2026-10", "2026-11"])
+        self.assertEqual([(r["worked_s"], r["rolled_s"], r["added_s"], r["balance_s"], r["invoiced"])
+                          for r in book["rows"]],
+                         [(5 * 3600, 2 * 3600, 0, 2 * 3600, True), (3600, 0, 30 * 60, 90 * 60, False),
+                          (0, 0, 0, 90 * 60, False)])
+        # the ledger and the timesheets agree
+        self.assertEqual(self._inv(11)["carry"]["remaining_s"], book["balance_s"])
+        page = web.ledger_page([book], date(2026, 11, 12))
+        for text in ("HTB – Justin", "September 2026", "1h 30m", "£60.00", "As at 12/11/2026", "/invoice?client=HTB&month=2026-10"):
+            self.assertIn(text, page)
+        self.assertIn("No monthly allowances yet", web.ledger_page([], date(2026, 11, 12)))
+
+    def test_older_carried_hours_table_is_moved_across(self):
+        import sqlite3
+        path = Path(tempfile.mkdtemp()) / "old.sqlite"
+        db = sqlite3.connect(str(path))
+        db.execute("CREATE TABLE carry_added (client TEXT NOT NULL, month TEXT NOT NULL, seconds INTEGER NOT NULL, "
+                   "PRIMARY KEY (client, month))")
+        db.execute("INSERT INTO carry_added VALUES ('HTB', '2026-10', 2700)")
+        db.commit()
+        db.close()
+        store = Store(path)
+        self.assertEqual(store.carry_rows("htb"), [{"month": "2026-10", "task": "", "seconds": 2700}])
+        store.set_carry_added("HTB", "2026-10", 900, "Build")   # a second allowance in the same month now fits
+        self.assertEqual(len(Store(path).carry_rows("HTB")), 2)
 
     def test_allowance_is_a_ticked_task_limit(self):
         from tftrack import allowance, config, web
@@ -583,8 +686,10 @@ class AllowanceTest(unittest.TestCase):
         self.assertEqual(new["limits"][0], {"task": "Justin", "daily_hours": 2, "weekly_hours": 6.0, "allowance": True,
                                             "allowance_start": "2026-09", "opening_hours": 1.5})
         self.assertEqual(allowance.configured(old)[0]["hours_per_week"], 6.0)
-        with self.assertRaises(ValueError):   # a client limit can't be an allowance
-            web._clean_limit({"client": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-09"})
+        with self.assertRaises(ValueError):   # an allowance needs hours per week
+            web._clean_limit({"client": "HTB", "daily_hours": 6, "allowance": True, "allowance_start": "2026-09"})
+        self.assertEqual(web._clean_limit({"client": "HTB", "weekly_hours": 6, "allowance": True,
+                                           "allowance_start": "2026-09"})["allowance_start"], "2026-09")
         self.assertEqual(web._clean_limit({"task": "Justin", "weekly_hours": "6", "allowance": True,
                                            "allowance_start": "2026-09", "opening_hours": ""}),
                          {"task": "Justin", "weekly_hours": 6.0, "allowance": True, "allowance_start": "2026-09",
@@ -793,7 +898,7 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(conf["limits"][0]["task"], "Justin")
         self.assertIn(1, mine.excluded_ids())
         self.assertEqual(mine.invoiced("HTB")["2026-09"]["amount"], 40.0)
-        self.assertEqual(mine.carry_added("HTB"), {"2026-10": 1800})
+        self.assertEqual(mine.carry_rows("HTB"), [{"month": "2026-10", "task": "", "seconds": 1800}])
         rolled = list(mine.rolled())
         self.assertEqual(len(rolled), 1)
         # the rolled-over added entry points at this Mac's own copy of it

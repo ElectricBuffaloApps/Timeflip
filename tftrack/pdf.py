@@ -244,17 +244,15 @@ def invoice_pdf(inv: dict) -> bytes:
     cols = [("Date", MARGIN + 4, "left"), ("Time", MARGIN + 74, "left"), ("Task", MARGIN + 150, "left"),
             ("Duration", PAGE_W - MARGIN - 70, "right"), ("Hours", PAGE_W - MARGIN - 4, "right")]
     t = _Sheet(doc, title, f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", cols)
-    al = inv.get("allowance")
-    if al:
+    als = inv.get("allowances") or []
+    for al in als:
         over = al["charging_s"] - al["max_s"]
         state = f"{_hm(over)} over the max" if over > 0 else f"{_hm(-over)} under the max"
         added = al["carry"]["added_s"]
         extra = (f" (incl. {_hm(added)} carried over)" if added else "")
         t.note(f"max {_hm(al['max_s'])} ({al['working_days']} working days) · charging {_hm(al['charging_s'])}"
-               f"{extra} · {state}", f"{al['task']}, {month:%B %Y}:")
+               f"{extra} · {state}", f"{al['name']}, {month:%B %Y}:")
     t.head()
-    weeks = {w["monday"]: w for w in al["weeks"]} if al else {}
-    carried = {w["monday"]: w["seconds"] for w in al["carry"]["by_week"]} if al else {}
 
     def day_rows(d: dict) -> None:
         day = date.fromisoformat(d["date"])
@@ -284,14 +282,18 @@ def invoice_pdf(inv: dict) -> bytes:
                 monday = day - timedelta(days=day.weekday())
                 nxt = date.fromisoformat(g["days"][i + 1]["date"]) if i + 1 < len(g["days"]) else None
                 if nxt is None or nxt - timedelta(days=nxt.weekday()) != monday:
-                    w = weeks.get(monday.isoformat())
-                    note = None
-                    if w:
+                    bits, any_over = [], False
+                    for al in als:
+                        w = next((w for w in al["weeks"] if w["monday"] == monday.isoformat()), None)
+                        if not w:
+                            continue
                         over = w["worked_s"] - w["max_s"]
-                        extra = carried.get(monday.isoformat())
-                        note = (f"{al['task']} {_hm(w['worked_s'])} of {_hm(w['max_s'])} max"
-                                + (f" · {_hm(over)} over" if over > 0 else "")
-                                + (f" · +{_hm(extra)} carried over" if extra else ""), ORANGE_TEXT if over > 0 else MUTED)
+                        any_over = any_over or over > 0
+                        extra = next((x["seconds"] for x in al["carry"]["by_week"] if x["monday"] == w["monday"]), 0)
+                        bits.append(f"{al['name']} {_hm(w['worked_s'])} of {_hm(w['max_s'])} max"
+                                    + (f" · {_hm(over)} over" if over > 0 else "")
+                                    + (f" · +{_hm(extra)} carried over" if extra else ""))
+                    note = ("; ".join(bits), ORANGE_TEXT if any_over else MUTED) if bits else None
                     t.row([f"Week of {monday:%a %d %b} total", "", "", _hm(week_s), f"{week_s / 3600:.2f} h"],
                           bold=True, fill=GREY_BG, notes={0: note} if note else None)
                     week_s = 0
@@ -301,13 +303,13 @@ def invoice_pdf(inv: dict) -> bytes:
     t.room(4)
     if inv["style"] == "day":
         t.row(["Days worked", "", "", str(inv["days_worked"]), ""], bold=True, size=10)
-    if al:
+    for al in als:
         for w in al["carry"]["by_week"]:
-            t.row([f"{al['task']}: carried over, week of {date.fromisoformat(w['monday']):%a %d %b}", "", "",
+            t.row([f"{al['name']}: carried over, week of {date.fromisoformat(w['monday']):%a %d %b}", "", "",
                    _hm(w["seconds"]), f"{w['seconds'] / 3600:.2f} h"], bold=True, size=10)
         left = al["carry"]["unplaced_s"]
         if left:
-            t.row([f"{al['task']}: carried over from earlier months", "", "", _hm(left), f"{left / 3600:.2f} h"],
+            t.row([f"{al['name']}: carried over from earlier months", "", "", _hm(left), f"{left / 3600:.2f} h"],
                   bold=True, size=10)
     t.doc.line(MARGIN, t.y, PAGE_W - MARGIN, t.y, 1.2, INK)
     t.row([f"Total for {month:%B %Y}", "", "", _hm(inv["total_billed_s"]), f"{inv['total_billed_s'] / 3600:.2f} h"],

@@ -243,13 +243,11 @@ def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) ->
         lines.append({"description": description, "hours": hours, "rate": rate,
                       "amount": round(hours * rate, 2) if rate else None})
 
-    carry = inv.get("carry")
-    if carry:   # carried-over hours added this month, placed in the weeks with spare room
-        task = inv["allowance"]["task"]
-        for w in carry["by_week"]:
-            add(f"{inv['client']} – {task}, carried over (week of {date.fromisoformat(w['monday']):%a %d %b %Y})",
-                w["seconds"])
-        add(f"{inv['client']} – {task}, carried over from earlier months", carry["unplaced_s"])
+    for al in inv.get("allowances") or []:   # carried-over hours added this month, in the weeks with spare room
+        who = f"{inv['client']} – {al['name']}" if al["scope"] == "task" else inv["client"]
+        for w in al["carry"]["by_week"]:
+            add(f"{who}, carried over (week of {date.fromisoformat(w['monday']):%a %d %b %Y})", w["seconds"])
+        add(f"{who}, carried over from earlier months", al["carry"]["unplaced_s"])
     for i, g in enumerate(inv["groups"]):
         if inv["style"] == "week":
             add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}",
