@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, merge, pdf, remote, service, updater
+from . import allowance, collect, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -59,6 +59,7 @@ def state() -> dict:
         "last_error": error.split("|", 1)[1] if error else None,
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
         "week_starts": conf.get("week_starts", "monday"),
+        "payment_terms_days": collect.terms_days(conf),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
         "tasks": sorted({t["name"] for t in tasks}),
@@ -185,6 +186,13 @@ for (const b of document.querySelectorAll("button.invoiced")) {
   b.addEventListener("click", async () => {
     b.disabled = true;
     try { await post("/api/invoiced", {client: b.dataset.client, month: b.dataset.month, invoiced: !!b.dataset.invoiced}); location.reload(); }
+    catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
+for (const b of document.querySelectorAll("button.paid")) {
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await post("/api/paid", {client: b.dataset.client, month: b.dataset.month, paid: !!b.dataset.paid}); location.reload(); }
     catch (e) { alert(e.message); b.disabled = false; }
   });
 }
@@ -425,8 +433,14 @@ def _invoiced_status(inv: dict) -> str:
     changed = ""
     if done["seconds"] != inv["total_billed_s"]:
         changed = (f' <b class="warn">Changed since: now {inv["total_billed_s"] / 3600:.2f} h</b>')
+    if inv.get("paid"):
+        paid_on = datetime.fromisoformat(inv["paid"]).astimezone()
+        paid = (f'<span class="done">✓ Paid {paid_on:%-d %b %Y}</span>'
+                f'<button class="secondary paid" {data} data-paid="">Not paid</button>')
+    else:
+        paid = f'<button class="secondary paid" {data} data-paid="1">Mark as paid</button>'
     return (f'<span class="done">✓ Invoiced {when:%-d %b %Y} ({done["seconds"] / 3600:.2f} h{amount}){changed}</span>'
-            f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>')
+            f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>{paid}')
 
 
 def _carry_box(inv: dict, c: dict) -> str:
@@ -569,6 +583,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
+            if url.path == "/api/collect":
+                return self._send(200, money_to_collect(date.today()))
             if url.path == "/api/allowances":
                 return self._send(200, allowance.summary(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/targets":
@@ -641,6 +657,11 @@ class Handler(BaseHTTPRequestHandler):
                         conf["week_starts"] = body["week_starts"]
                     if isinstance(body.get("auto_update"), bool):
                         conf["auto_update"] = body["auto_update"]
+                    if body.get("payment_terms_days") not in (None, ""):
+                        days = int(body["payment_terms_days"])
+                        if not 0 <= days <= 365:
+                            raise ValueError("Payment terms must be between 0 and 365 days.")
+                        conf["payment_terms_days"] = days
                     cfg.save_config(conf)
                 elif self.path == "/api/seen":
                     conf = cfg.load_config()
@@ -756,6 +777,31 @@ class Handler(BaseHTTPRequestHandler):
                         store.set_invoiced(client, month, secs, amount)
                     else:
                         store.set_invoiced(client, month, None)
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/paid":
+                    store = service.open_store()
+                    if body.get("all"):
+                        store.mark_all_paid()
+                        return self._send(200, {"ok": True})
+                    client = str(body.get("client") or "").strip()
+                    y, m = (int(x) for x in str(body.get("month") or "").split("-"))
+                    date(y, m, 1)
+                    month = f"{y}-{m:02d}"
+                    if not client:
+                        raise ValueError("Choose a client.")
+                    if body.get("paid") and month not in store.invoiced(client):
+                        raise ValueError("Mark the month as invoiced first.")
+                    store.set_paid(client, month, bool(body.get("paid")))
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/dismiss":
+                    store = service.open_store()
+                    if body.get("reset"):
+                        store.set_dismissed(None)
+                    else:
+                        key = str(body.get("key") or "")[:300]
+                        if not key:
+                            raise ValueError("Nothing to hide.")
+                        store.set_dismissed(key, body.get("dismissed", True) is not False)
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/remote/enable":
                     return self._send(200, remote.enable())
@@ -877,6 +923,7 @@ def _invoice(q: dict) -> dict:
     inv["rate"] = c.get("rate")
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
+    inv["paid"] = service.open_store().paid(client).get(inv["month"])
     return inv
 
 
@@ -937,6 +984,15 @@ def outstanding(today: date) -> dict:
     total = lambda key: round(sum(c[key] or 0 for c in out), 2)
     return {"month": month, "clients": out, "due_value": total("due_value"), "carried_value": total("carried_value"),
             "missing_rate": [c["client"] for c in out if not c["rate"]]}
+
+
+def money_to_collect(today: date) -> dict:
+    """Prompts for the Dashboard's Money to collect panel."""
+    conf = cfg.load_config()
+    store = service.open_store()
+    holidays, _ = allowance.bank_holidays()
+    due = lambda client, month: _month_due(store, conf, client, month)[:2]
+    return collect.build(store, conf, today, outstanding(today), due, holidays or set())
 
 
 def _month_before(month: str) -> str:

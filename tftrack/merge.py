@@ -13,9 +13,10 @@ from datetime import datetime, timezone
 from .store import MANUAL_ID_OFFSET
 
 FORMAT = "timeflip-tracker-changes/1"
-_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced")
+_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed")
 # Settings worth carrying over; the TimeFlip account, update and viewer settings stay with each Mac.
-_SETTINGS = ("clients", "limits", "targets", "monthly_income", "ignored_tasks", "smooth_weeks", "week_starts")
+_SETTINGS = ("clients", "limits", "targets", "monthly_income", "ignored_tasks", "smooth_weeks", "week_starts",
+             "payment_terms_days")
 
 
 def export(store, conf: dict) -> dict:
@@ -98,6 +99,15 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
                             (i["client"], i["month"], i["marked_at"], i["seconds"], i["amount"])).rowcount
         if n:
             report.append(f"{n} month{'s' * (n != 1)} marked as invoiced")
+
+        n = 0
+        for p in t.get("paid", []):
+            n += db.execute("INSERT OR IGNORE INTO paid VALUES (?, ?, ?)",
+                            (p["client"], p["month"], p["paid_at"])).rowcount
+        if n:
+            report.append(f"{n} month{'s' * (n != 1)} marked as paid")
+        for d in t.get("dismissed", []):
+            db.execute("INSERT OR IGNORE INTO dismissed VALUES (?, ?)", (d["key"], d["dismissed_at"]))
 
     conf = dict(conf)
     s = data.get("settings") or {}

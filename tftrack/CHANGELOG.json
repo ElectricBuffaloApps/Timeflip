@@ -1,5 +1,14 @@
 [
   {
+    "version": 29,
+    "changes": [
+      "Money to collect: a new panel at the top of the Dashboard. It lists what to do to get paid, most urgent first, with what each item is worth: months to invoice, invoices to chase, and things worth a second look.",
+      "Mark as paid: on an invoiced timesheet or in Money to collect. Unpaid invoices show as awaiting payment, then as overdue once your payment terms have passed (30 days unless you change 'Clients pay within' in Settings). If you have old invoices that were paid long ago, use 'Mark all as paid' once.",
+      "Missed money prompts: time added after you invoiced, carried hours not yet charged, excluded time on invoices that haven't gone out, working days with nothing tracked, and falling behind the pace for this month's targets.",
+      "Press Hide on a prompt you've dealt with. It comes back only if the figures change. 'Show hidden' brings them all back."
+    ]
+  },
+  {
     "version": 28,
     "changes": [
       "Phone and other computers (Settings): share this tracker privately with your own devices through Tailscale. Your phone and other Mac open the same live tracker, with the same data, and nothing is copied.",

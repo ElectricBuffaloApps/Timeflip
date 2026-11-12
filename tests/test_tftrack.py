@@ -814,3 +814,61 @@ class ViewerTest(unittest.TestCase):
         with mock.patch.object(service, "sync") as sync, mock.patch.object(updater, "maybe_auto_update", return_value=None):
             service.run_check({"viewer_of": "https://m.tail1.ts.net:8765/"}, store)
             sync.assert_not_called()
+
+
+class CollectTest(unittest.TestCase):
+    def test_prompts_for_money_to_collect(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        at = lambda mo, d, h: datetime(2026, mo, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(9, 7, 9), "duration": 3 * 3600},    # September, HTB
+            {"id": 2, "taskId": 1, "startedAt": at(10, 5, 9), "duration": 2 * 3600},   # October, HTB
+            {"id": 3, "taskId": 1, "startedAt": at(10, 6, 9), "duration": 3600},       # October, HTB, excluded
+            {"id": 4, "taskId": 2, "startedAt": at(10, 7, 9), "duration": 3600},       # October, FCY
+            {"id": 5, "taskId": 1, "startedAt": at(11, 2, 9), "duration": 3600},       # Mon 2 Nov
+            {"id": 6, "taskId": 1, "startedAt": at(11, 4, 9), "duration": 3600},       # Wed 4 Nov: Tue 3 is a gap
+        ], tasks=tasks)
+        store.set_excluded(3, True)
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40},
+                            "FCY": {"billing": "hourly"}},
+                "payment_terms_days": 14}
+        patches = (mock.patch.object(web.service, "open_store", return_value=store),
+                   mock.patch.object(web.cfg, "load_config", return_value=conf),
+                   mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)))
+        with patches[0], patches[1], patches[2]:
+            # September invoiced 40 days ago and never paid; October not invoiced yet
+            store.set_invoiced("HTB", "2026-09", 3 * 3600, 120.0)
+            store.db.execute("UPDATE invoiced SET marked_at = ?", (datetime(2026, 9, 26, 12, tzinfo=UTC).isoformat(),))
+            store.db.commit()
+            c = web.money_to_collect(date(2026, 11, 5))
+            by = {p["key"]: p for p in c["prompts"]}
+            self.assertEqual((c["to_invoice"], c["overdue"], c["awaiting"]), (80.0, 120.0, 0.0))
+            self.assertEqual(by["invoice:htb:2026-10"]["value"], 80.0)
+            self.assertEqual(by["unpaid:htb:2026-09"]["level"], "critical")
+            self.assertIn("26 days overdue", by["unpaid:htb:2026-09"]["title"])      # due 10/10/2026
+            self.assertEqual(by["excluded:htb:2026-10:3600"]["value"], 40.0)
+            self.assertIn("rate:fcy", by)
+            self.assertIn("Tue 03/11", by["gap:2026-11-03"]["detail"])
+            self.assertEqual(c["prompts"][0]["level"], "critical")                    # most urgent first
+            # hiding a judgement call; it comes back if the figure changes
+            store.set_dismissed("excluded:htb:2026-10:3600")
+            c = web.money_to_collect(date(2026, 11, 5))
+            self.assertNotIn("excluded:htb:2026-10:3600", {p["key"] for p in c["prompts"]})
+            self.assertEqual(c["hidden"], 1)
+            # paid: no longer chased; time added after invoicing is flagged with what it's worth
+            store.set_paid("HTB", "2026-09")
+            store.add_manual(datetime(2026, 9, 8, 9).astimezone(), 1800, 1)
+            c = web.money_to_collect(date(2026, 11, 5))
+            by = {p["key"]: p for p in c["prompts"]}
+            self.assertEqual(c["overdue"], 0.0)
+            self.assertNotIn("unpaid:htb:2026-09", by)
+            self.assertEqual(by[f"changed:htb:2026-09:{3 * 3600 + 1800}"]["value"], 20.0)
+            # un-invoicing clears the paid mark
+            store.set_invoiced("HTB", "2026-09", None)
+            self.assertEqual(store.paid("HTB"), {})
+            store.set_invoiced("HTB", "2026-09", 3600, 40.0)
+            self.assertEqual(store.mark_all_paid(), 1)
+            self.assertIn("2026-09", store.paid("htb"))

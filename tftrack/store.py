@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS invoiced (
     amount REAL,
     PRIMARY KEY (client, month)
 );
+-- Invoiced months the client has paid.
+CREATE TABLE IF NOT EXISTS paid (
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- YYYY-MM
+    paid_at TEXT NOT NULL,
+    PRIMARY KEY (client, month)
+);
+-- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
+CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
 -- Time the user added by hand (not tracked on the cube).
 CREATE TABLE IF NOT EXISTS manual_entry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +324,42 @@ class Store:
             if seconds is not None:
                 self.db.execute("INSERT INTO invoiced VALUES (?, ?, ?, ?, ?)",
                                 (client, month, datetime.now(timezone.utc).isoformat(), seconds, amount))
+            else:   # no invoice, so nothing to have been paid
+                self.db.execute("DELETE FROM paid WHERE lower(client) = lower(?) AND month = ?", (client, month))
+
+    def paid(self, client: str) -> dict[str, str]:
+        """Invoiced months a client has paid: month -> when it was marked paid."""
+        return {r["month"]: r["paid_at"] for r in
+                self.db.execute("SELECT month, paid_at FROM paid WHERE lower(client) = lower(?)", (client,))}
+
+    def set_paid(self, client: str, month: str, paid: bool = True) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM paid WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            if paid:
+                self.db.execute("INSERT INTO paid VALUES (?, ?, ?)",
+                                (client, month, datetime.now(timezone.utc).isoformat()))
+
+    def mark_all_paid(self) -> int:
+        """Mark every invoiced month as paid (for catching up). Returns how many were newly marked."""
+        with self.db:
+            return self.db.execute(
+                """INSERT INTO paid SELECT i.client, i.month, ? FROM invoiced i
+                   WHERE NOT EXISTS (SELECT 1 FROM paid p WHERE lower(p.client) = lower(i.client) AND p.month = i.month)""",
+                (datetime.now(timezone.utc).isoformat(),)).rowcount
+
+    def dismissed(self) -> set[str]:
+        return {r[0] for r in self.db.execute("SELECT key FROM dismissed")}
+
+    def set_dismissed(self, key: str | None, dismissed: bool = True) -> None:
+        """Hide a prompt, show it again, or (key=None) show every hidden prompt again."""
+        with self.db:
+            if key is None:
+                self.db.execute("DELETE FROM dismissed")
+            elif dismissed:
+                self.db.execute("INSERT OR IGNORE INTO dismissed VALUES (?, ?)",
+                                (key, datetime.now(timezone.utc).isoformat()))
+            else:
+                self.db.execute("DELETE FROM dismissed WHERE key = ?", (key,))
 
     def get_meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()

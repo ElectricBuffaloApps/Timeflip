@@ -172,6 +172,25 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .owed-line .mark { font-size: 12px; padding: 0 4px; }
 @media (max-width: 560px) { .owed-total { text-align: left; } .owed-total b { font-size: 22px; } }
 
+/* ---------- money to collect ---------- */
+.collect { display: grid; gap: 14px; border-top: 3px solid var(--accent); }
+.owed-total.overdue b { color: var(--critical); }
+.owed-total.zero b { color: var(--ink-2); }
+.collect-list { display: grid; gap: 8px; }
+.cprompt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; background: var(--sunk);
+  border-radius: 12px; padding: 11px 14px; border-left: 4px solid var(--bar-soft); }
+.cprompt.critical { border-left-color: var(--critical); }
+.cprompt.warning { border-left-color: var(--accent); }
+.cprompt b.title { font-family: Sora, Inter, sans-serif; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.cprompt .detail { font-size: 12px; color: var(--ink-2); grid-column: 1; }
+.cprompt .side { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.cprompt .worth { font-family: Sora, Inter, sans-serif; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.cprompt button { font-size: 12px; padding: 5px 10px; }
+.cprompt button.hide { border: none; background: none; color: var(--ink-2); font-weight: 500; padding: 5px 4px; }
+.collect-foot { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
+.collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
+@media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
+
 /* ---------- KPI tiles ---------- */
 .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 1020px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -334,6 +353,16 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= DASHBOARD ================= -->
   <div class="board" data-panel="dashboard" role="tabpanel">
+    <section class="tile c12 collect hidden" id="collectTile" aria-label="Money to collect">
+      <div class="owed-head">
+        <div><div class="lbl">Money to collect</div><div class="owed-sub" id="collectSub"></div></div>
+        <div class="owed-total" id="colInvoiceBox"><b id="colInvoice">–</b><span>ready to invoice</span></div>
+        <div class="owed-total" id="colAwaitingBox"><b id="colAwaiting">–</b><span>awaiting payment</span></div>
+        <div class="owed-total overdue" id="colOverdueBox"><b id="colOverdue">–</b><span>overdue</span></div>
+      </div>
+      <div class="collect-list" id="collectList"></div>
+      <div class="collect-foot" id="collectFoot"></div>
+    </section>
     <section class="tile c12 owed hidden" id="owedTile" aria-label="Outstanding">
       <div class="owed-head">
         <div><div class="lbl">Outstanding</div><div class="owed-sub" id="owedSub"></div></div>
@@ -538,6 +567,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
             <option value="monday">Monday</option><option value="sunday">Sunday</option>
             <option value="saturday">Saturday</option>
           </select></div>
+        <div><label class="k" for="termsDays">Clients pay within (days)</label>
+          <input type="number" id="termsDays" min="0" max="365" step="1" style="width:90px"></div>
         <div><label class="check k"><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label></div>
         <div><span class="k">Updates <span class="v" id="updateMsg"></span></span><button id="checkUpdate">Check for updates</button></div>
         <div><span class="k">App <span class="v" id="appPath">not created yet</span></span><button id="revealApp">Show in Finder</button></div>
@@ -668,6 +699,7 @@ function showState(s, redraw = false) {
   $("autoUpdate").checked = s.auto_update;
   showNews(s.whats_new || []);
   $("weekStarts").value = s.week_starts;
+  if (document.activeElement !== $("termsDays")) $("termsDays").value = s.payment_terms_days;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
   if (draw("limits")) renderLimitRows(s.limits);
@@ -1026,6 +1058,82 @@ $("weekRange").onchange = () => {
   loadWeek();
 };
 
+/* ---------- money to collect ---------- */
+function openSheet(client, month) {
+  const hourly = billingFor(client).billing === "hourly";
+  let url = `/invoice?client=${encodeURIComponent(client)}&month=${month}`;
+  if (hourly) {
+    const [y, m] = month.split("-").map(Number);
+    url = `/timesheet?start=${month}-01&end=${iso(new Date(y, m, 0))}&client=${encodeURIComponent(client)}`;
+  }
+  window.open(url, "_blank");
+}
+const COLLECT_SHOWN = 5;
+let collectAll = false;
+async function loadCollect() {
+  let c;
+  try { c = await api("/api/collect"); } catch (_) { return; }
+  const any = c.prompts.length || c.hidden;
+  $("collectTile").classList.toggle("hidden", !any);
+  if (!any) return;
+  for (const [id, v] of [["colInvoice", c.to_invoice], ["colAwaiting", c.awaiting], ["colOverdue", c.overdue]]) {
+    $(id).textContent = gbp(v);
+    $(`${id}Box`).classList.toggle("zero", !v);
+  }
+  const urgent = c.prompts.filter((p) => p.level === "critical").length;
+  $("collectSub").textContent = !c.prompts.length ? "Nothing needs doing" :
+    urgent ? `${urgent} to do now, ${c.prompts.length - urgent} worth a look` : `${c.prompts.length} worth a look`;
+  const act = (label, fn, cls = "") => {
+    const b = el("button", cls ? { class: cls } : {}, label);
+    b.onclick = async () => {
+      b.disabled = true;
+      try { await fn(); } catch (e) { alert(e.message); }
+      b.disabled = false;
+    };
+    return b;
+  };
+  const again = () => { loadCollect(); loadOutstanding(); };
+  const urgentOrFive = Math.max(COLLECT_SHOWN, urgent);   // never tuck away something that needs doing now
+  const visible = collectAll ? c.prompts : c.prompts.slice(0, urgentOrFive);
+  $("collectList").replaceChildren(...visible.map((p) => {
+    const row = el("div", { class: `cprompt ${p.level}` });
+    const side = el("div", { class: "side" });
+    if (p.value != null) side.append(el("span", { class: "worth" }, gbp(p.value)));
+    if (p.action === "invoice") {
+      side.append(act("Open timesheet", () => openSheet(p.client, p.month), "primary"),
+                  act("Mark invoiced", async () => { await api("/api/invoiced", { client: p.client, month: p.month, invoiced: true }); again(); }));
+    } else if (p.action === "paid") {
+      side.append(act("Mark paid", async () => { await api("/api/paid", { client: p.client, month: p.month, paid: true }); again(); },
+                      p.level === "critical" ? "primary" : ""));
+    } else if (p.action === "timesheet") {
+      side.append(act("Open timesheet", () => openSheet(p.client, p.month)));
+    } else if (p.action === "timesheets" || p.action === "settings") {
+      side.append(act(p.action === "settings" ? "Open Settings" : "Add time", () => {
+        history.replaceState(null, "", `#${p.action}`); showTab(p.action); window.scrollTo(0, 0);
+      }));
+    }
+    if (p.dismissable) side.append(act("Hide", async () => { await api("/api/dismiss", { key: p.key }); loadCollect(); }, "hide"));
+    row.append(el("b", { class: "title" }, p.title), side, el("div", { class: "detail" }, p.detail));
+    return row;
+  }));
+  if (!c.prompts.length) $("collectList").replaceChildren(el("div", { class: "collect-clear" }, "✓ All caught up."));
+  const foot = [];
+  if (c.prompts.length > urgentOrFive) {
+    foot.push(act(collectAll ? "Show fewer" : `Show all ${c.prompts.length}`, () => { collectAll = !collectAll; loadCollect(); }, "link"));
+  }
+  const unpaid = c.prompts.filter((p) => p.action === "paid").length;
+  if (unpaid > 2) {
+    foot.push(act(`Mark all ${unpaid} as paid`, async () => {
+      if (!confirm(`Mark all ${unpaid} invoices as paid?`)) return;
+      await api("/api/paid", { all: true }); again();
+    }, "link"));
+  }
+  if (c.hidden) foot.push(act(`Show ${c.hidden} hidden`, async () => { await api("/api/dismiss", { reset: true }); loadCollect(); }, "link"));
+  if (unpaid) foot.push(el("span", {}, `Overdue means more than ${c.terms_days} days after invoicing. Change it in Settings.`));
+  $("collectFoot").replaceChildren(...foot);
+  $("collectFoot").classList.toggle("hidden", !foot.length);
+}
+
 /* ---------- outstanding ---------- */
 async function loadOutstanding() {
   let o;
@@ -1063,7 +1171,7 @@ async function loadOutstanding() {
         const mark = el("button", { class: "link mark" }, "Mark invoiced");
         mark.onclick = async () => {
           mark.disabled = true;
-          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); }
+          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); loadCollect(); }
           catch (_) { mark.disabled = false; }
         };
         l.firstChild.append(" ", mark);
@@ -1157,6 +1265,10 @@ function showNews(notes) {
   $("newsList").replaceChildren(...notes.flatMap((n) => n.changes).map((c) => el("li", {}, c)));
 }
 $("newsOk").onclick = async () => { showState(await api("/api/seen", {})); };
+$("termsDays").onchange = async () => {
+  try { showState(await api("/api/settings", { payment_terms_days: $("termsDays").value })); loadCollect(); }
+  catch (e) { alert(e.message); }
+};
 $("autoUpdate").onchange = async () => { showState(await api("/api/settings", { auto_update: $("autoUpdate").checked })); };
 async function checkForUpdate(manual) {
   if (manual) $("updateMsg").textContent = "Checking…";
@@ -1497,7 +1609,7 @@ $("viewerStop").onclick = async () => { await api("/api/viewer/stop", {}); $("vi
 
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
-  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding();
+  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect();
 }
 (async () => {
   try { showState(await api("/api/state"), true); }
@@ -1506,7 +1618,7 @@ function refreshAll(auto = false) {
   checkForUpdate(false);
   refreshAll();
   loadRemote();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); } catch (_) {} }, 60000);
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); loadCollect(); } catch (_) {} }, 60000);
 })();
 </script>
 </body>
