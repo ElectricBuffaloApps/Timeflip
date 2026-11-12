@@ -872,3 +872,74 @@ class CollectTest(unittest.TestCase):
             store.set_invoiced("HTB", "2026-09", 3600, 40.0)
             self.assertEqual(store.mark_all_paid(), 1)
             self.assertIn("2026-09", store.paid("htb"))
+
+
+class BillingTest(unittest.TestCase):
+    def test_create_number_vat_void_and_pdf(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance, billing, collect
+        at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(5, 9), "duration": 2 * 3600},
+            {"id": 2, "taskId": 1, "startedAt": at(6, 9), "duration": 3600},
+            {"id": 3, "taskId": 2, "startedAt": at(7, 9), "duration": 90 * 60},
+        ], tasks=tasks)
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40},
+                            "FCY": {"billing": "hourly", "rate": 30}}}
+        saved = {}
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: dict(conf)), \
+                mock.patch.object(web.cfg, "save_config", side_effect=lambda c: (conf.clear(), conf.update(c), saved.update(c))), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            today = date(2026, 11, 5)
+            with self.assertRaisesRegex(ValueError, "your business name"):
+                web._create_bill("HTB", "2026-10", today)
+            self.assertEqual(web.bills_overview(today)["missing"],
+                             ["your business name", "your business address", "how clients pay you"])
+            conf["business"] = billing.clean_business({"name": "Me Ltd", "address": "1 Road\nTown", "payment": "Sort 00-00-00",
+                                                       "vat_registered": True, "vat_number": "GB1", "next_number": 7})
+            conf["client_details"] = {"htb": billing.clean_client_details({"name": "HTB Ltd", "terms_days": "14"}),
+                                      "FCY": billing.clean_client_details({"name": "FCY Ltd"})}
+            bill = web._create_bill("HTB", "2026-10", today)
+            self.assertEqual((bill["number"], bill["net"], bill["vat"], bill["total"]), ("INV-0007", 120.0, 24.0, 144.0))
+            self.assertEqual((bill["issued_on"], bill["due_on"]), ("2026-11-05", "2026-11-19"))   # the client's own 14 days
+            self.assertEqual(len(bill["data"]["lines"]), 2)                                        # one per day
+            self.assertEqual(saved["business"]["next_number"], 8)
+            self.assertEqual(store.invoiced("HTB")["2026-10"]["amount"], 120.0)                    # month marked invoiced
+            with self.assertRaisesRegex(ValueError, "already has invoice INV-0007"):
+                web._create_bill("HTB", "2026-10", today)
+            # an hourly client: one line per task, usual terms
+            other = web._create_bill("FCY", "2026-10", today)
+            self.assertEqual((other["number"], other["net"], other["due_on"]), ("INV-0008", 45.0, "2026-12-05"))
+            # the invoice is a fixed copy: later changes to Settings don't touch it
+            conf["business"]["name"] = "Renamed"
+            self.assertEqual(store.bill("INV-0007")["data"]["business"]["name"], "Me Ltd")
+            raw = billing.bill_pdf(store.bill("INV-0007"))
+            self.assertTrue(raw.startswith(b"%PDF-1.4") and raw.rstrip().endswith(b"%%EOF"))
+            self.assertIn("INV-0007", billing.bill_page(store.bill("INV-0007"), None, today))
+            # Money to collect chases it by its own due date and total
+            late = web.money_to_collect(date(2026, 11, 25))
+            chase = next(p for p in late["prompts"] if p["key"] == "unpaid:htb:2026-10")
+            self.assertEqual((chase["level"], chase["value"], chase["number"]), ("critical", 144.0, "INV-0007"))
+            self.assertIn("6 days overdue", chase["title"])
+            o = web.bills_overview(date(2026, 11, 25))
+            self.assertEqual((o["overdue"], o["awaiting"], o["ready"]), (144.0, 54.0, []))
+            # voiding frees the month but never the number
+            store.void_bill("INV-0007")
+            self.assertEqual(store.invoiced("HTB"), {})
+            self.assertIsNone(store.bill_for("HTB", "2026-10"))
+            self.assertEqual(web._create_bill("HTB", "2026-10", today)["number"], "INV-0009")
+            self.assertEqual([b["status"] for b in web.bills_overview(today)["bills"]], ["awaiting", "awaiting", "void"])
+
+    def test_long_invoice_runs_onto_a_second_page(self):
+        from tftrack import billing
+        lines = [{"description": f"Line {i}", "hours": 1.0, "rate": 10.0, "amount": 10.0} for i in range(60)]
+        bill = {"number": "INV-1", "client": "X", "month": "2026-10", "issued_on": "2026-11-01", "due_on": "2026-12-01",
+                "net": 600.0, "vat": 0.0, "total": 600.0,
+                "data": {"lines": lines, "vat_rate": None, "terms_days": 30,
+                         "business": {"name": "Me", "address": "A", "email": "", "phone": "", "company_number": "",
+                                      "vat_number": "", "payment": "Pay me", "footer": "Thanks"},
+                         "client": {"name": "X Ltd", "address": "", "email": "", "reference": "PO1"}}}
+        self.assertIn(b"/Count 2", billing.bill_pdf(bill))

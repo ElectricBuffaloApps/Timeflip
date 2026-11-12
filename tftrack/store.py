@@ -1,6 +1,7 @@
 """Local SQLite copy of TimeFlip tasks and intervals, plus a record of alerts already sent."""
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -68,6 +69,23 @@ CREATE TABLE IF NOT EXISTS paid (
     month TEXT NOT NULL,        -- YYYY-MM
     paid_at TEXT NOT NULL,
     PRIMARY KEY (client, month)
+);
+-- Invoices made in the app. A fixed copy: `data` holds the lines and the business and client details as they
+-- were on the day (JSON). Voided invoices stay, so numbers are never reused.
+CREATE TABLE IF NOT EXISTS bill (
+    number TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL,
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- YYYY-MM
+    issued_on TEXT NOT NULL,    -- YYYY-MM-DD
+    due_on TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    net REAL NOT NULL,
+    vat REAL NOT NULL,
+    total REAL NOT NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    voided_at TEXT
 );
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
@@ -346,6 +364,45 @@ class Store:
                 """INSERT INTO paid SELECT i.client, i.month, ? FROM invoiced i
                    WHERE NOT EXISTS (SELECT 1 FROM paid p WHERE lower(p.client) = lower(i.client) AND p.month = i.month)""",
                 (datetime.now(timezone.utc).isoformat(),)).rowcount
+
+    # ----- invoices made in the app -----
+
+    @staticmethod
+    def _bill(row) -> dict:
+        return {**dict(row), "data": json.loads(row["data"])}
+
+    def add_bill(self, bill: dict) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO bill VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                (bill["number"], bill["seq"], bill["client"], bill["month"], bill["issued_on"], bill["due_on"],
+                 bill["seconds"], bill["net"], bill["vat"], bill["total"], json.dumps(bill["data"]),
+                 datetime.now(timezone.utc).isoformat()))
+
+    def bill(self, number: str) -> dict | None:
+        row = self.db.execute("SELECT * FROM bill WHERE number = ?", (number,)).fetchone()
+        return self._bill(row) if row else None
+
+    def bills(self) -> list[dict]:
+        """Every invoice, newest first (voided ones included)."""
+        return [self._bill(r) for r in self.db.execute("SELECT * FROM bill ORDER BY seq DESC, created_at DESC")]
+
+    def bill_for(self, client: str, month: str) -> dict | None:
+        """The live (not voided) invoice for a client's month, if there is one."""
+        row = self.db.execute("SELECT * FROM bill WHERE lower(client) = lower(?) AND month = ? AND voided_at IS NULL",
+                              (client, month)).fetchone()
+        return self._bill(row) if row else None
+
+    def void_bill(self, number: str) -> dict | None:
+        """Void an invoice and put its month back to not invoiced. Returns the invoice, or None if there's no such one."""
+        bill = self.bill(number)
+        if not bill or bill["voided_at"]:
+            return bill
+        with self.db:
+            self.db.execute("UPDATE bill SET voided_at = ? WHERE number = ?",
+                            (datetime.now(timezone.utc).isoformat(), number))
+        self.set_invoiced(bill["client"], bill["month"], None)
+        return bill
 
     def dismissed(self) -> set[str]:
         return {r[0] for r in self.db.execute("SELECT key FROM dismissed")}

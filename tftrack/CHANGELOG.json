@@ -1,5 +1,16 @@
 [
   {
+    "version": 30,
+    "changes": [
+      "Invoices made in the app: a new Invoices tab lists every finished month ready to invoice. Create invoice makes a numbered invoice with your details, the client's details, VAT if you're registered, the due date and how to pay. Save it as a PDF or print it.",
+      "First, fill in Settings: 'Your business' (name, address, how clients pay you, VAT, and the next invoice number so it carries on from your old ones) and 'Who each invoice goes to' (each client's name, address, email and payment terms).",
+      "Create all invoices: one button makes every invoice that's ready, then offers them in one ZIP with the matching timesheet PDFs.",
+      "Each invoice page has Email it (a ready-written email to the client: attach the saved PDF), Save timesheet PDF, Mark as paid and Void. An invoice is a fixed copy and never changes. Void one that's wrong and create it again: the number isn't reused.",
+      "Creating an invoice marks the month as invoiced. Money to collect then chases it by its own due date and total, including VAT.",
+      "Monthly timesheets have a Create invoice button at the top. Mark as invoiced and the Copy buttons still work if you invoice somewhere else."
+    ]
+  },
+  {
     "version": 29,
     "changes": [
       "Money to collect: a new panel at the top of the Dashboard. It lists what to do to get paid, most urgent first, with what each item is worth: months to invoice, invoices to chase, and things worth a second look.",

@@ -13,10 +13,10 @@ from datetime import datetime, timezone
 from .store import MANUAL_ID_OFFSET
 
 FORMAT = "timeflip-tracker-changes/1"
-_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed")
+_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed", "bill")
 # Settings worth carrying over; the TimeFlip account, update and viewer settings stay with each Mac.
 _SETTINGS = ("clients", "limits", "targets", "monthly_income", "ignored_tasks", "smooth_weeks", "week_starts",
-             "payment_terms_days")
+             "payment_terms_days", "business", "client_details")
 
 
 def export(store, conf: dict) -> dict:
@@ -106,6 +106,19 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
                             (p["client"], p["month"], p["paid_at"])).rowcount
         if n:
             report.append(f"{n} month{'s' * (n != 1)} marked as paid")
+        n = 0
+        for b in t.get("bill", []):
+            if db.execute("SELECT 1 FROM bill WHERE number = ?", (b["number"],)).fetchone():
+                mine = db.execute("SELECT client, month, total FROM bill WHERE number = ?", (b["number"],)).fetchone()
+                if (mine["client"], mine["month"], mine["total"]) != (b["client"], b["month"], b["total"]):
+                    kept.append(f"invoice {b['number']} is a different invoice on each Mac")
+                continue
+            db.execute("INSERT INTO bill VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       tuple(b[k] for k in ("number", "seq", "client", "month", "issued_on", "due_on", "seconds",
+                                            "net", "vat", "total", "data", "created_at", "voided_at")))
+            n += 1
+        if n:
+            report.append(f"{n} invoice{'s' * (n != 1)}")
         for d in t.get("dismissed", []):
             db.execute("INSERT OR IGNORE INTO dismissed VALUES (?, ?)", (d["key"], d["dismissed_at"]))
 
@@ -148,6 +161,26 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
                 merged.append(v)
                 n += 1
         conf[key] = merged
+    if s.get("business") and not (conf.get("business") or {}).get("name"):
+        conf["business"] = s["business"]
+        n += 1
+    elif s.get("business"):
+        mine = dict(conf["business"])
+        theirs = dict(s["business"])
+        # invoice numbers must never go backwards
+        mine["next_number"] = max(int(mine.get("next_number") or 1), int(theirs.get("next_number") or 1))
+        if {k: v for k, v in mine.items() if k != "next_number"} != {k: v for k, v in theirs.items() if k != "next_number"}:
+            kept.append("business details differ")
+        conf["business"] = mine
+    details = dict(conf.get("client_details") or {})
+    for name, d in (s.get("client_details") or {}).items():
+        mine = next((k for k in details if k.lower() == name.lower()), None)
+        if mine is None:
+            details[name] = d
+            n += 1
+        elif details[mine] != d:
+            kept.append(f"billing details for {name} differ")
+    conf["client_details"] = details
     if not conf.get("targets") and s.get("targets"):
         conf["targets"] = s["targets"]
         n += 1

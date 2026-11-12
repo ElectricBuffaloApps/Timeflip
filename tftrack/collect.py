@@ -62,10 +62,11 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
     prompts: list[dict] = []
     terms = terms_days(conf)
 
-    def add(key, kind, level, title, detail, value=None, client=None, month=None, action=None, dismissable=True):
+    def add(key, kind, level, title, detail, value=None, client=None, month=None, action=None, dismissable=True,
+            number=None):
         prompts.append({"key": key, "kind": kind, "level": level, "title": title, "detail": detail,
                         "value": round(value, 2) if value else None, "client": client, "month": month,
-                        "action": action, "dismissable": dismissable})
+                        "action": action, "dismissable": dismissable, "number": number})
 
     # 1. Finished months not yet invoiced: the quickest money.
     to_invoice = 0.0
@@ -90,22 +91,28 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
         for month, inv in sorted(store.invoiced(client).items()):
             label = _month_label(month, today)
             if month not in paid:
-                sent = datetime.fromisoformat(inv["marked_at"]).astimezone().date()
-                due = sent + timedelta(days=terms)
-                late = (today - due).days
-                amount = inv["amount"] or 0
-                if late > 0:
-                    overdue += amount
-                    add(f"unpaid:{client.lower()}:{month}", "unpaid", "critical",
-                        f"Chase {client}: {label} is {_days(late)} overdue",
-                        f"Invoiced {sent:%d/%m/%Y}, due {due:%d/%m/%Y} ({terms}-day terms).",
-                        inv["amount"], client, month, "paid", dismissable=False)
+                bill = store.bill_for(client, month)   # an invoice made in the app carries its own dates and total
+                if bill:
+                    sent, due = date.fromisoformat(bill["issued_on"]), date.fromisoformat(bill["due_on"])
+                    owed_amount, number, days = bill["total"], bill["number"], (due - sent).days
                 else:
-                    awaiting += amount
+                    sent = datetime.fromisoformat(inv["marked_at"]).astimezone().date()
+                    due = sent + timedelta(days=terms)
+                    owed_amount, number, days = inv["amount"], None, terms
+                which = f"invoice {number} ({label})" if number else label
+                late = (today - due).days
+                if late > 0:
+                    overdue += owed_amount or 0
+                    add(f"unpaid:{client.lower()}:{month}", "unpaid", "critical",
+                        f"Chase {client}: {which} is {_days(late)} overdue",
+                        f"Invoiced {sent:%d/%m/%Y}, due {due:%d/%m/%Y} ({days}-day terms).",
+                        owed_amount, client, month, "paid", dismissable=False, number=number)
+                else:
+                    awaiting += owed_amount or 0
                     add(f"unpaid:{client.lower()}:{month}", "awaiting", "info",
-                        f"Waiting on {client} for {label}",
+                        f"Waiting on {client} for {which}",
                         f"Invoiced {sent:%d/%m/%Y}, due {due:%d/%m/%Y}" + (" (today)." if late == 0 else "."),
-                        inv["amount"], client, month, "paid", dismissable=False)
+                        owed_amount, client, month, "paid", dismissable=False, number=number)
             if month >= earliest:
                 secs, amount = month_due(client, month)
                 diff = secs - inv["seconds"]

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import html
+import io
 import socket
 import json
+import zipfile
 import subprocess
 import threading
 from datetime import date, datetime, timedelta
@@ -12,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, collect, merge, pdf, remote, service, updater
+from . import allowance, billing, collect, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -60,6 +62,8 @@ def state() -> dict:
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
         "week_starts": conf.get("week_starts", "monday"),
         "payment_terms_days": collect.terms_days(conf),
+        "business": billing.business(conf),
+        "client_details": conf.get("client_details", {}),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
         "tasks": sorted({t["name"] for t in tasks}),
@@ -187,6 +191,18 @@ for (const b of document.querySelectorAll("button.invoiced")) {
     b.disabled = true;
     try { await post("/api/invoiced", {client: b.dataset.client, month: b.dataset.month, invoiced: !!b.dataset.invoiced}); location.reload(); }
     catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
+for (const b of document.querySelectorAll("button.mkbill")) {
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await fetch("/api/bill/create", {method: "POST", headers: {"Content-Type": "application/json", "X-TFTrack": "1"},
+                                                 body: JSON.stringify({client: b.dataset.client, month: b.dataset.month})});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Couldn't create the invoice.");
+      location.href = "/bill?number=" + encodeURIComponent(data.numbers[0]);
+    } catch (e) { alert(e.message); b.disabled = false; }
   });
 }
 for (const b of document.querySelectorAll("button.paid")) {
@@ -427,7 +443,8 @@ def _invoiced_status(inv: dict) -> str:
     data = f'data-client="{esc(inv["client"])}" data-month="{inv["month"]}"'
     done = inv.get("invoiced")
     if not done:
-        return f'<button class="secondary invoiced" {data} data-invoiced="1">Mark as invoiced</button>'
+        return (f'<button class="mkbill" {data}>Create invoice</button>'
+                f'<button class="secondary invoiced" {data} data-invoiced="1">Mark as invoiced</button>')
     when = datetime.fromisoformat(done["marked_at"]).astimezone()
     amount = f", £{done['amount']:,.2f}" if done["amount"] is not None else ""
     changed = ""
@@ -439,8 +456,11 @@ def _invoiced_status(inv: dict) -> str:
                 f'<button class="secondary paid" {data} data-paid="">Not paid</button>')
     else:
         paid = f'<button class="secondary paid" {data} data-paid="1">Mark as paid</button>'
+    bill = inv.get("bill")
+    undo = (f'<a class="btn" href="/bill?number={quote(bill["number"])}">Invoice {esc(bill["number"])}</a>' if bill else
+            f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>')
     return (f'<span class="done">✓ Invoiced {when:%-d %b %Y} ({done["seconds"] / 3600:.2f} h{amount}){changed}</span>'
-            f'<button class="secondary invoiced" {data} data-invoiced="">Undo</button>{paid}')
+            f'{undo}{paid}')
 
 
 def _carry_box(inv: dict, c: dict) -> str:
@@ -583,6 +603,33 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
+            if url.path == "/api/bills":
+                return self._send(200, bills_overview(date.today()))
+            if url.path in ("/bill", "/bill.pdf"):
+                store = service.open_store()
+                bill = store.bill(q.get("number") or "")
+                if not bill:
+                    return self._send(404, "No such invoice.", "text/plain; charset=utf-8")
+                if url.path == "/bill.pdf":
+                    return self._send(200, billing.bill_pdf(bill), "application/pdf",
+                                      {"Content-Disposition": f'attachment; filename="{billing.file_name(bill)}"'})
+                paid_at = store.paid(bill["client"]).get(bill["month"])
+                return self._send(200, billing.bill_page(bill, paid_at, date.today()), "text/html; charset=utf-8")
+            if url.path == "/sheet.pdf":
+                raw, name = _sheet_pdf(q.get("client") or "", q.get("month") or "")
+                return self._send(200, raw, "application/pdf", {"Content-Disposition": f'attachment; filename="{name}"'})
+            if url.path == "/bills.zip":
+                store = service.open_store()
+                out = io.BytesIO()
+                with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+                    for number in (q.get("numbers") or "").split(","):
+                        bill = store.bill(number)
+                        if bill and not bill["voided_at"]:
+                            z.writestr(billing.file_name(bill), billing.bill_pdf(bill))
+                            raw, name = _sheet_pdf(bill["client"], bill["month"])
+                            z.writestr(name, raw)
+                return self._send(200, out.getvalue(), "application/zip",
+                                  {"Content-Disposition": f'attachment; filename="Invoices-{date.today()}.zip"'})
             if url.path == "/api/collect":
                 return self._send(200, money_to_collect(date.today()))
             if url.path == "/api/allowances":
@@ -776,7 +823,43 @@ class Handler(BaseHTTPRequestHandler):
                         secs, amount, _ = _month_due(store, cfg.load_config(), client, month)
                         store.set_invoiced(client, month, secs, amount)
                     else:
+                        bill = store.bill_for(client, month)
+                        if bill:
+                            raise ValueError(f"This month has invoice {bill['number']}. Void that invoice instead.")
                         store.set_invoiced(client, month, None)
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/business":
+                    conf = cfg.load_config()
+                    conf["business"] = billing.clean_business(body)
+                    cfg.save_config(conf)
+                elif self.path == "/api/client-details":
+                    conf = cfg.load_config()
+                    conf["client_details"] = {
+                        str(name).strip(): billing.clean_client_details(d or {})
+                        for name, d in (body.get("details") or {}).items() if str(name).strip()
+                    }
+                    cfg.save_config(conf)
+                elif self.path == "/api/bill/create":
+                    today = date.today()
+                    if body.get("all"):
+                        wanted = [(r["client"], r["month"]) for r in bills_overview(today)["ready"]]
+                    else:
+                        client = str(body.get("client") or "").strip()
+                        y, m = (int(x) for x in str(body.get("month") or "").split("-"))
+                        date(y, m, 1)
+                        wanted = [(client, f"{y}-{m:02d}")]
+                    made, errors = [], []
+                    for client, month in wanted:
+                        try:
+                            made.append(_create_bill(client, month, today)["number"])
+                        except ValueError as e:
+                            if not body.get("all"):
+                                raise
+                            errors.append(str(e))
+                    return self._send(200, {"ok": True, "numbers": made, "errors": errors})
+                elif self.path == "/api/bill/void":
+                    if not service.open_store().void_bill(str(body.get("number") or "")):
+                        raise ValueError("No such invoice.")
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/paid":
                     store = service.open_store()
@@ -924,6 +1007,7 @@ def _invoice(q: dict) -> dict:
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
     inv["paid"] = service.open_store().paid(client).get(inv["month"])
+    inv["bill"] = service.open_store().bill_for(client, inv["month"])
     return inv
 
 
@@ -984,6 +1068,80 @@ def outstanding(today: date) -> dict:
     total = lambda key: round(sum(c[key] or 0 for c in out), 2)
     return {"month": month, "clients": out, "due_value": total("due_value"), "carried_value": total("carried_value"),
             "missing_rate": [c["client"] for c in out if not c["rate"]]}
+
+
+def _month_dates(month: str) -> tuple[date, date]:
+    y, m = (int(x) for x in month.split("-"))
+    return date(y, m, 1), date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+
+
+def _bill_lines(store, conf: dict, client: str, month: str) -> tuple[list[dict], int]:
+    """The lines an invoice for this client's month would carry, and the time they cover."""
+    c = _client_settings(conf, client)
+    if c.get("notional") or c.get("billing") == "monthly":
+        raise ValueError(f"{client} isn't invoiced by the hour.")
+    rate = c.get("rate")
+    if c.get("billing") in ("day", "week"):
+        inv = _invoice({"client": client, "month": month})
+        return invoice_lines(inv, rate, bool(inv.get("smooth"))), inv["total_billed_s"]
+    first, last = _month_dates(month)
+    by_task: dict[str, int] = {}
+    for r in timesheet_rows(store, first, last, client):
+        if not r["excluded"]:
+            by_task[r["task"]] = by_task.get(r["task"], 0) + r["seconds"]
+    lines = []
+    for task, secs in sorted(by_task.items(), key=lambda kv: kv[0].lower()):
+        hours = round(secs / 3600, 2)
+        lines.append({"description": f"{client} – {task}, {billing.month_title(month)}", "hours": hours, "rate": rate,
+                      "amount": round(hours * rate, 2) if rate else None})
+    return lines, sum(by_task.values())
+
+
+def _create_bill(client: str, month: str, today: date) -> dict:
+    conf = cfg.load_config()
+    store = service.open_store()
+    if not client:
+        raise ValueError("Choose a client.")
+    lines, seconds = _bill_lines(store, conf, client, month)
+    bill, conf = billing.create(store, conf, client, month, lines, seconds, today, collect.terms_days(conf))
+    cfg.save_config(conf)
+    return bill
+
+
+def _sheet_pdf(client: str, month: str) -> tuple[bytes, str]:
+    """The timesheet that backs up an invoice, as a PDF."""
+    c = _client_settings(cfg.load_config(), client)
+    name = f"Timesheet {_file_name(client)} {billing.month_title(month)}.pdf"
+    if c.get("billing") in ("day", "week"):
+        return pdf.invoice_pdf(_invoice({"client": client, "month": month})), name
+    first, last = _month_dates(month)
+    return pdf.timesheet_pdf(timesheet_rows(service.open_store(), first, last, client), first, last, client), name
+
+
+def bills_overview(today: date) -> dict:
+    """For the Invoices tab: finished months ready to invoice, every invoice made, and what's still to fill in."""
+    conf = cfg.load_config()
+    store = service.open_store()
+    ready = []
+    for c in outstanding(today)["clients"]:
+        for mo in c["months"]:
+            if not mo["current"]:
+                need = billing.missing(conf, c["client"]) + ([] if c["rate"] else [f"an hourly rate for {c['client']}"])
+                ready.append({"client": c["client"], "month": mo["month"], "label": billing.month_title(mo["month"]),
+                              "seconds": mo["seconds"], "value": mo["value"], "missing": need})
+    paid = {}
+    bills = []
+    for b in store.bills():
+        if b["client"].lower() not in paid:
+            paid[b["client"].lower()] = store.paid(b["client"])
+        paid_at = None if b["voided_at"] else paid[b["client"].lower()].get(b["month"])
+        bills.append({**billing.summary(b, paid_at, today), "label": billing.month_title(b["month"]), "paid_at": paid_at})
+    live = [b for b in bills if b["status"] != "void"]
+    return {"ready": ready, "bills": bills, "missing": billing.missing(conf),
+            "vat_registered": billing.business(conf)["vat_registered"],
+            "awaiting": round(sum(b["total"] for b in live if b["status"] == "awaiting"), 2),
+            "overdue": round(sum(b["total"] for b in live if b["status"] == "overdue"), 2),
+            "paid": round(sum(b["total"] for b in live if b["status"] == "paid"), 2)}
 
 
 def money_to_collect(today: date) -> dict:

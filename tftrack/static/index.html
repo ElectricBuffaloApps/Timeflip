@@ -103,7 +103,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 64px; }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 
 /* ---------- controls ---------- */
-button, select, input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 9px; padding: 7px 11px; }
+button, select, input, textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 9px; padding: 7px 11px; }
 button { cursor: pointer; font-weight: 600; }
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -190,6 +190,24 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .collect-foot { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
 .collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
 @media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
+
+/* ---------- invoices ---------- */
+textarea { width: 100%; resize: vertical; line-height: 1.45; }
+.formgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.formgrid .wide { grid-column: 1 / -1; }
+.formgrid .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 700px) { .formgrid { grid-template-columns: 1fr; } }
+.field .hint { font-weight: 400; }
+.setup { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; border-left: 4px solid var(--accent); }
+table.bills td, table.bills th { padding: 8px 6px; white-space: nowrap; }
+table.bills td { border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+table.bills .n { text-align: right; }
+table.bills tr.void td { color: var(--ink-2); text-decoration: line-through; }
+table.bills tr.void td:last-child, table.bills tr.void td.st { text-decoration: none; }
+table.bills a { color: var(--accent-deep); font-weight: 600; text-decoration: none; margin-right: 10px; }
+table.bills button { font-size: 12px; padding: 4px 9px; }
+table.edit textarea { min-width: 180px; }
+.empty { color: var(--ink-2); font-size: 13px; }
 
 /* ---------- KPI tiles ---------- */
 .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -331,6 +349,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
       <button role="tab" data-tab="reports" aria-selected="false">Reports</button>
       <button role="tab" data-tab="timesheets" aria-selected="false">Timesheets</button>
+      <button role="tab" data-tab="invoices" aria-selected="false">Invoices</button>
       <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
     </nav>
     <div class="sync">
@@ -477,7 +496,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <section class="tile c7">
       <div class="tile-head"><h2>On the timesheet</h2></div>
       <ol class="steps">
-        <li><span><b>Invoice lines</b> at the top: one line per day or week, with <b>Copy</b> buttons for your Revolut Business invoice. They don't print.</span></li>
+        <li><span><b>Create invoice</b> at the top makes a numbered invoice from the sheet (set up your details in Settings first). Or use <b>Invoice lines</b>, with <b>Copy</b> buttons, to paste into another invoicing app.</span></li>
         <li><span><b>Edit</b> an entry to change its date, times or task. It's marked “adjusted” with the original time, also on the printed sheet.</span></li>
         <li><span><b>Exclude</b> anything you won't charge for. It stays on the sheet, crossed out, and isn't counted.</span></li>
         <li><span><b>+ Add entry</b> for time you didn't track. Added entries are marked “added”.</span></li>
@@ -486,8 +505,66 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     </section>
   </div>
 
+  <!-- ================= INVOICES ================= -->
+  <div class="board hidden" data-panel="invoices" role="tabpanel">
+    <div class="callout setup c12 hidden" id="billSetup">
+      <span id="billSetupText"></span><button class="primary" data-goto="settings">Open Settings</button>
+    </div>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Ready to invoice</h2>
+        <div class="row"><span class="meta" id="billReadyMeta"></span><button class="primary hidden" id="billAll">Create all</button></div></div>
+      <div class="collect-list" id="billReady"></div>
+      <div class="callout hidden" id="billMade" style="margin-top:12px"></div>
+    </section>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Invoices</h2><span class="meta" id="billMeta"></span></div>
+      <div class="tablewrap">
+        <table class="edit bills">
+          <thead><tr><th>Number</th><th>Client</th><th>For</th><th>Sent</th><th>Due</th><th class="n">Total</th><th>Status</th><th></th></tr></thead>
+          <tbody id="billRows"></tbody>
+        </table>
+      </div>
+      <p class="empty hidden" id="billNone">No invoices yet. Create one above, or from the top of any monthly timesheet.</p>
+    </section>
+  </div>
+
   <!-- ================= SETTINGS ================= -->
   <div class="board hidden" data-panel="settings" role="tabpanel">
+    <section class="tile c12" id="businessTile">
+      <div class="tile-head"><h2>Your business</h2><span class="meta">Shown on every invoice you create</span></div>
+      <div class="form formgrid">
+        <label class="field">Business name<input id="bName" autocomplete="organization"></label>
+        <label class="field">Email<input id="bEmail" type="email"></label>
+        <label class="field wide">Address<textarea id="bAddress" rows="3"></textarea></label>
+        <label class="field">Phone <span class="hint">(optional)</span><input id="bPhone"></label>
+        <label class="field">Company number <span class="hint">(limited companies only)</span><input id="bCompany"></label>
+        <label class="field wide">How clients pay you <span class="hint">(printed on the invoice: account name, sort code, account number)</span>
+          <textarea id="bPayment" rows="3"></textarea></label>
+        <label class="field wide">Note at the bottom <span class="hint">(optional, e.g. “Thank you for your business”)</span>
+          <textarea id="bFooter" rows="2"></textarea></label>
+        <div class="wide"><label class="check"><input type="checkbox" id="bVat"> I'm VAT registered (adds VAT to every invoice)</label></div>
+        <label class="field vatonly">VAT number<input id="bVatNumber"></label>
+        <label class="field vatonly">VAT rate %<input id="bVatRate" type="number" min="0" max="100" step="0.5"></label>
+        <div class="wide trio">
+          <label class="field">Invoice numbers start with<input id="bPrefix"></label>
+          <label class="field">Digits<input id="bDigits" type="number" min="1" max="10" step="1"></label>
+          <label class="field">Next number<input id="bNext" type="number" min="1" step="1"></label>
+        </div>
+      </div>
+      <div class="actions"><button class="primary" id="saveBusiness">Save business details</button>
+        <span class="msg" id="businessMsg"></span><span class="meta" id="bPreview"></span></div>
+    </section>
+    <section class="tile c12">
+      <div class="tile-head"><h2>Who each invoice goes to</h2><span class="meta">Paying clients only</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Client</th><th>Name on the invoice</th><th>Address</th><th>Email</th><th>Pays within (days)</th><th>Reference / PO</th></tr></thead>
+          <tbody id="detailRows"></tbody>
+        </table>
+      </div>
+      <div class="actions"><button class="primary" id="saveDetails">Save client details</button><span class="msg" id="detailMsg"></span></div>
+      <p class="note">Leave <b>Pays within</b> empty to use your usual terms (App &amp; updates, below).</p>
+    </section>
     <section class="tile c12">
       <div class="tile-head"><h2>How each client is invoiced</h2><span class="meta">Clients are the tags you give tasks in the TimeFlip app</span></div>
       <div class="tablewrap">
@@ -667,12 +744,13 @@ async function api(path, body) {
 }
 
 /* ---------- tabs ---------- */
-const TABS = ["dashboard", "reports", "timesheets", "settings"];
+const TABS = ["dashboard", "reports", "timesheets", "invoices", "settings"];
 function showTab(name) {
   if (!TABS.includes(name)) name = "dashboard";
   for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
   for (const p of document.querySelectorAll("[data-panel]")) p.classList.toggle("hidden", p.dataset.panel !== name);
   if (name === "reports") loadReport();
+  if (name === "invoices") loadBills();
 }
 for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.tab}`); showTab(b.dataset.tab); };
 for (const b of document.querySelectorAll("[data-goto]")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.goto}`); showTab(b.dataset.goto); window.scrollTo(0, 0); };
@@ -704,6 +782,8 @@ function showState(s, redraw = false) {
   renderMeters(s.status);
   if (draw("limits")) renderLimitRows(s.limits);
   if (draw("clients")) renderClientRows(s);
+  if (draw("business")) renderBusiness(s);
+  if (draw("details") || draw("clients")) renderDetailRows(s);
   if (draw("ignored")) renderIgnored(s);
   if (draw("targets")) renderTargetSettings(s);
   const cur = $("tsClient").value;
@@ -1100,9 +1180,11 @@ async function loadCollect() {
     const side = el("div", { class: "side" });
     if (p.value != null) side.append(el("span", { class: "worth" }, gbp(p.value)));
     if (p.action === "invoice") {
-      side.append(act("Open timesheet", () => openSheet(p.client, p.month), "primary"),
+      side.append(act("Create invoice", () => createBill(p.client, p.month), "primary"),
+                  act("Open timesheet", () => openSheet(p.client, p.month)),
                   act("Mark invoiced", async () => { await api("/api/invoiced", { client: p.client, month: p.month, invoiced: true }); again(); }));
     } else if (p.action === "paid") {
+      if (p.number) side.append(act("Open invoice", () => window.open(`/bill?number=${encodeURIComponent(p.number)}`, "_blank")));
       side.append(act("Mark paid", async () => { await api("/api/paid", { client: p.client, month: p.month, paid: true }); again(); },
                       p.level === "critical" ? "primary" : ""));
     } else if (p.action === "timesheet") {
@@ -1133,6 +1215,133 @@ async function loadCollect() {
   $("collectFoot").replaceChildren(...foot);
   $("collectFoot").classList.toggle("hidden", !foot.length);
 }
+
+/* ---------- invoices ---------- */
+const ukDate = (isoDay) => isoDay.slice(0, 10).split("-").reverse().join("/");
+async function createBill(client, month) {
+  const w = window.open("", "_blank");   // opened before the request, or the browser blocks it as a pop-up
+  try {
+    const r = await api("/api/bill/create", { client, month });
+    const url = `/bill?number=${encodeURIComponent(r.numbers[0])}`;
+    if (w) w.location = url; else location.href = url;
+  } catch (e) { if (w) w.close(); throw e; }
+  loadBills(); loadCollect(); loadOutstanding();
+}
+async function loadBills() {
+  let b;
+  try { b = await api("/api/bills"); } catch (_) { return; }
+  $("billSetup").classList.toggle("hidden", !b.missing.length);
+  $("billSetupText").textContent = `Before your first invoice, add ${b.missing.join(", ")} in Settings.`;
+  const can = b.ready.filter((r) => !r.missing.length);
+  $("billReadyMeta").textContent = b.ready.length
+    ? `${b.ready.length} finished month${b.ready.length === 1 ? "" : "s"} · ${gbp(b.ready.reduce((t, r) => t + (r.value || 0), 0))}` : "";
+  $("billAll").classList.toggle("hidden", can.length < 2);
+  $("billAll").textContent = `Create all ${can.length} invoices`;
+  $("billReady").replaceChildren(...b.ready.map((r) => {
+    const row = el("div", { class: `cprompt ${r.missing.length ? "" : "warning"}` });
+    const side = el("div", { class: "side" });
+    side.append(el("span", { class: "worth" }, r.value == null ? "no rate" : gbp(r.value)));
+    const make = el("button", { class: "primary" }, "Create invoice");
+    make.disabled = !!r.missing.length;
+    make.onclick = async () => {
+      make.disabled = true;
+      try { await createBill(r.client, r.month); } catch (e) { alert(e.message); make.disabled = false; }
+    };
+    const sheet = el("button", {}, "Timesheet"); sheet.onclick = () => openSheet(r.client, r.month);
+    side.append(make, sheet);
+    row.append(el("b", { class: "title" }, `${r.client}: ${r.label}`), side,
+               el("div", { class: "detail" }, r.missing.length ? `${hm(r.seconds)}. Still needed: ${r.missing.join(", ")}.` : `${hm(r.seconds)} to invoice.`));
+    return row;
+  }));
+  if (!b.ready.length) $("billReady").replaceChildren(el("div", { class: "collect-clear" }, "✓ Every finished month has been invoiced."));
+  const live = b.bills.filter((x) => x.status !== "void");
+  $("billMeta").textContent = live.length ? `Awaiting ${gbp(b.awaiting)} · Overdue ${gbp(b.overdue)} · Paid ${gbp(b.paid)}` : "";
+  $("billNone").classList.toggle("hidden", !!b.bills.length);
+  const STATUS = { paid: ["good", "Paid"], awaiting: ["warning", "Awaiting payment"], overdue: ["critical", "Overdue"], void: ["", "Void"] };
+  $("billRows").replaceChildren(...b.bills.map((x) => {
+    const tr = el("tr", x.status === "void" ? { class: "void" } : {});
+    const q = `number=${encodeURIComponent(x.number)}`;
+    const num = el("td"); num.append(el("a", { href: `/bill?${q}`, target: "_blank" }, x.number));
+    const st = el("td", { class: "st" });
+    st.append(chip(STATUS[x.status][0], x.status === "overdue" ? `${x.days_overdue} day${x.days_overdue === 1 ? "" : "s"} overdue` : STATUS[x.status][1]));
+    const acts = el("td");
+    if (x.status !== "void") {
+      acts.append(el("a", { href: `/bill.pdf?${q}` }, "PDF"));
+      const pay = el("button", {}, x.status === "paid" ? "Not paid" : "Mark paid");
+      pay.onclick = async () => {
+        pay.disabled = true;
+        try { await api("/api/paid", { client: x.client, month: x.month, paid: x.status !== "paid" }); loadBills(); loadCollect(); }
+        catch (e) { alert(e.message); pay.disabled = false; }
+      };
+      acts.append(pay);
+    }
+    tr.append(num, el("td", {}, x.client), el("td", {}, x.label), el("td", {}, ukDate(x.issued_on)), el("td", {}, ukDate(x.due_on)),
+              el("td", { class: "n" }, gbp(x.total)), st, acts);
+    return tr;
+  }));
+}
+$("billAll").onclick = async () => {
+  $("billAll").disabled = true;
+  try {
+    const r = await api("/api/bill/create", { all: true });
+    const box = $("billMade");
+    box.classList.remove("hidden");
+    box.replaceChildren(el("b", {}, `Created ${r.numbers.length} invoice${r.numbers.length === 1 ? "" : "s"}. `));
+    if (r.numbers.length) box.append(el("a", { href: `/bills.zip?numbers=${encodeURIComponent(r.numbers.join(","))}` }, "Download them all with their timesheets (ZIP)"));
+    for (const e of r.errors) box.append(el("div", {}, e));
+  } catch (e) { alert(e.message); }
+  $("billAll").disabled = false;
+  loadBills(); loadCollect(); loadOutstanding();
+};
+
+function renderBusiness(s) {
+  const b = s.business;
+  $("bName").value = b.name; $("bEmail").value = b.email; $("bAddress").value = b.address; $("bPhone").value = b.phone;
+  $("bCompany").value = b.company_number; $("bPayment").value = b.payment; $("bFooter").value = b.footer;
+  $("bVat").checked = b.vat_registered; $("bVatNumber").value = b.vat_number; $("bVatRate").value = b.vat_rate;
+  $("bPrefix").value = b.prefix; $("bDigits").value = b.digits; $("bNext").value = b.next_number;
+  businessPreview();
+}
+function businessPreview() {
+  for (const f of document.querySelectorAll(".vatonly")) f.classList.toggle("hidden", !$("bVat").checked);
+  const n = String(Math.max(1, Number($("bNext").value) || 1)).padStart(Math.min(10, Math.max(1, Number($("bDigits").value) || 4)), "0");
+  $("bPreview").textContent = `Next invoice: ${$("bPrefix").value}${n}`;
+}
+$("businessTile").addEventListener("input", () => { businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details."; });
+$("saveBusiness").onclick = async () => {
+  const body = { name: $("bName").value, email: $("bEmail").value, address: $("bAddress").value, phone: $("bPhone").value,
+                 company_number: $("bCompany").value, payment: $("bPayment").value, footer: $("bFooter").value,
+                 vat_registered: $("bVat").checked, vat_number: $("bVatNumber").value, vat_rate: $("bVatRate").value,
+                 prefix: $("bPrefix").value, digits: $("bDigits").value, next_number: $("bNext").value };
+  try { showState(await api("/api/business", body), "business"); $("businessMsg").textContent = "Saved."; loadCollect(); }
+  catch (e) { $("businessMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("businessMsg").textContent === "Saved.") $("businessMsg").textContent = ""; }, 4000);
+};
+function renderDetailRows(s) {
+  const paying = s.clients.filter((c) => { const b = billingFor(c); return !b.notional && b.billing !== "monthly"; });
+  const saved = (c) => (Object.entries(s.client_details || {}).find(([k]) => k.toLowerCase() === c.toLowerCase()) || [null, {}])[1];
+  $("detailRows").replaceChildren(...paying.map((c) => {
+    const d = saved(c);
+    const tr = el("tr");
+    const name = el("input", { "aria-label": `Name on ${c}'s invoice`, placeholder: "e.g. Acme Ltd" }); name.value = d.name || "";
+    const addr = el("textarea", { rows: "2", "aria-label": `${c}'s address` }); addr.value = d.address || "";
+    const mail = el("input", { type: "email", "aria-label": `${c}'s email` }); mail.value = d.email || "";
+    const days = el("input", { type: "number", min: "0", max: "365", step: "1", style: "width:80px", placeholder: String(s.payment_terms_days), "aria-label": `Days ${c} has to pay` });
+    days.value = d.terms_days ?? "";
+    const ref = el("input", { "aria-label": `${c}'s reference or PO` }); ref.value = d.reference || "";
+    const cell = (x) => { const td = el("td"); td.append(x); return td; };
+    tr.append(el("td", {}, c), cell(name), cell(addr), cell(mail), cell(days), cell(ref));
+    tr.read = () => [c, { name: name.value, address: addr.value, email: mail.value, terms_days: days.value, reference: ref.value }];
+    return tr;
+  }));
+}
+$("detailRows").addEventListener("input", () => { $("detailMsg").textContent = "Unsaved changes: click Save client details."; });
+$("saveDetails").onclick = async () => {
+  const details = Object.fromEntries([...$("detailRows").children].map((tr) => tr.read()));
+  try { showState(await api("/api/client-details", { details }), "details"); $("detailMsg").textContent = "Saved."; }
+  catch (e) { $("detailMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("detailMsg").textContent === "Saved.") $("detailMsg").textContent = ""; }, 4000);
+};
 
 /* ---------- outstanding ---------- */
 async function loadOutstanding() {
