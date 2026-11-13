@@ -191,6 +191,24 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
 @media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
 
+/* ---------- settings: sections that fold away ---------- */
+[data-panel="settings"] > .c6 { grid-column: span 12; }
+[data-panel="settings"] { gap: 10px; }
+.setgroup { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 4px 0; }
+.setgroup:first-child { margin-top: 0; }
+.stack > .setgroup { grid-column: auto; }
+.fold > .tile-head { cursor: pointer; margin: -18px -20px; padding: 18px 20px; border-radius: var(--r); align-items: center; flex-wrap: nowrap; gap: 12px; user-select: none; }
+.fold > .tile-head:hover h2 { color: var(--accent-deep); }
+.fold > .tile-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fold > .tile-head h2 { flex: none; }
+.fold > .tile-head .meta { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold > .tile-head .chev { flex: none; width: 10px; height: 10px; border-right: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2); transform: rotate(45deg); transition: transform .15s ease; margin: -4px 4px 0 2px; }
+.fold.shut > .tile-head .chev { transform: rotate(-45deg); margin-top: 0; }
+.fold:not(.shut) > .tile-head { margin-bottom: 0; }
+.fold.shut > :not(.tile-head) { display: none; }
+.fold .unsaved-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 700px) { .fold > .tile-head { flex-wrap: wrap; } .fold > .tile-head .meta { flex-basis: 100%; order: 3; text-align: left; white-space: normal; } .fold > .tile-head h2 { flex: 1; } }
+
 /* ---------- areas ---------- */
 .areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
 @media (max-width: 560px) { .areas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
@@ -505,7 +523,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     </section>
 
     <section class="tile c4 stretch">
-      <div class="tile-head"><h2>Targets &amp; limits</h2><button class="link" data-goto="settings">Change</button></div>
+      <div class="tile-head"><h2>Targets &amp; limits</h2><button class="link" data-goto="settings" data-open="editLimits,setTargets">Change</button></div>
       <div id="allowWrap" class="hidden"><div class="lbl group-lbl">Allowances</div><div class="mlist" id="allowances"></div></div>
       <div id="timeTargetsWrap"><div class="lbl group-lbl">Time targets</div><div class="mlist" id="timeTargets"></div></div>
       <div class="lbl group-lbl">Limits <span style="text-transform:none;letter-spacing:0;font-weight:400">· alerts at <span id="levels">80% and 100%</span></span></div>
@@ -655,7 +673,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
   <!-- ================= INVOICES ================= -->
   <div class="board hidden" data-panel="invoices" role="tabpanel">
     <div class="callout setup c12 hidden" id="billSetup">
-      <span id="billSetupText"></span><button class="primary" data-goto="settings">Open Settings</button>
+      <span id="billSetupText"></span><button class="primary" data-goto="settings" data-open="businessTile,setDetails">Open Settings</button>
     </div>
     <section class="tile c12">
       <div class="tile-head"><h2>Ready to invoice</h2>
@@ -691,7 +709,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= SETTINGS ================= -->
   <div class="board hidden" data-panel="settings" role="tabpanel">
-    <section class="tile c12">
+    <div class="setgroup c12"><span class="lbl">Dashboard</span> <button class="link" id="foldAll">Open all</button></div>
+    <section class="tile c12" id="setCards">
       <div class="tile-head"><h2>Dashboard cards</h2><span class="meta">The areas shown at the top of the Dashboard. Each opens its own page.</span></div>
       <div class="tablewrap">
         <table class="edit">
@@ -702,6 +721,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="actions"><button id="areaAdd">+ Add a card</button><button class="primary" id="saveAreas">Save cards</button><span class="msg" id="areaMsg"></span></div>
       <p class="note"><b>Hours a week</b> is what you mean to do for that client each week. Cards turn red when you're behind, so you know what to do first. It's the same figure as the client's weekly time target, below.</p>
     </section>
+    <div class="setgroup c12"><span class="lbl">Invoicing</span></div>
     <section class="tile c12" id="businessTile">
       <div class="tile-head"><h2>Your businesses</h2><span class="meta">Each has its own details and invoice numbers</span></div>
       <div class="row bizbar"><select id="bPick" aria-label="Business to edit"></select>
@@ -741,7 +761,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="actions"><button class="primary" id="saveBusiness">Save business details</button>
         <button id="bTest">Send a test email</button><span class="msg" id="businessMsg"></span><span class="meta" id="bPreview"></span></div>
     </section>
-    <section class="tile c12">
+    <section class="tile c12" id="setDetails">
       <div class="tile-head"><h2>Who each invoice goes to</h2><span class="meta">Paying clients only</span></div>
       <div class="tablewrap">
         <table class="edit">
@@ -752,7 +772,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="actions"><button class="primary" id="saveDetails">Save client details</button><span class="msg" id="detailMsg"></span></div>
       <p class="note">Leave <b>Pays within</b> empty to use your usual terms (App &amp; updates, below).</p>
     </section>
-    <section class="tile c12">
+    <section class="tile c12" id="setClients">
       <div class="tile-head"><h2>How each client is invoiced</h2><span class="meta">Clients are the tags you give tasks in the TimeFlip app</span></div>
       <div class="tablewrap">
         <table class="edit">
@@ -766,6 +786,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
       <p class="note"><b>Own business</b> (e.g. FYPTD): an imagined rate, shown as <b>value</b>, kept apart from money earned and never on timesheets. “By the week” covers every week whose Monday is in the month.</p>
     </section>
+
+    <div class="setgroup c12"><span class="lbl">Time and targets</span></div>
 
     <section class="tile c12" id="editLimits">
       <div class="tile-head"><h2>Limits</h2><span class="meta">Mac notification at each alert level</span></div>
@@ -786,8 +808,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
 
     <div class="c6 stack">
-    <section class="tile">
-      <div class="tile-head"><h2>Targets</h2></div>
+    <section class="tile" id="setTargets">
+      <div class="tile-head"><h2>Targets</h2><span class="meta">Income and hours to aim for</span></div>
       <div class="lbl group-lbl">Income (real money only)</div>
       <div class="fields">
         <label>Per day £<input type="number" min="0" step="1" id="tDay"></label>
@@ -813,8 +835,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
 
     <div class="c6 stack">
-    <section class="tile">
-      <div class="tile-head"><h2>Tasks not counted</h2></div>
+    <section class="tile" id="setIgnored">
+      <div class="tile-head"><h2>Tasks not counted</h2><span class="meta">Breaks, timers and “off” sides left out of every figure</span></div>
       <p class="sub" style="margin:0 0 12px">Breaks, timers or “off”: left out of every figure.</p>
       <div class="ignored-grid" id="ignoredList"></div>
       <div class="actions">
@@ -823,7 +845,9 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
     </section>
 
-    <section class="tile">
+    <div class="setgroup c12"><span class="lbl">This app</span></div>
+
+    <section class="tile" id="setApp">
       <div class="tile-head"><h2>App &amp; updates</h2><span class="meta">Version <b id="version">–</b></span></div>
       <div class="kv">
         <div><label class="k" for="weekStarts">Weeks start on</label>
@@ -945,7 +969,46 @@ function showTab(name) {
   if (name === "invoices") loadBills();
 }
 for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.tab}`); showTab(b.dataset.tab); };
-for (const b of document.querySelectorAll("[data-goto]")) b.onclick = () => { history.replaceState(null, "", `#${b.dataset.goto}`); showTab(b.dataset.goto); window.scrollTo(0, 0); };
+for (const b of document.querySelectorAll("[data-goto]")) b.onclick = () => {
+  history.replaceState(null, "", `#${b.dataset.goto}`); showTab(b.dataset.goto); window.scrollTo(0, 0);
+  if (b.dataset.open) openSections(b.dataset.open.split(","));
+};
+
+/* ---------- settings: sections that fold away ---------- */
+const FOLDS = [...document.querySelectorAll('[data-panel="settings"] section.tile')];
+function foldSaved() { try { return JSON.parse(localStorage.getItem("settingsOpen") || "[]"); } catch (_) { return []; } }
+function setFold(sec, open, remember = true) {
+  sec.classList.toggle("shut", !open);
+  sec.querySelector(".tile-head").setAttribute("aria-expanded", String(open));
+  if (remember) { try { localStorage.setItem("settingsOpen", JSON.stringify(FOLDS.filter((x) => !x.classList.contains("shut")).map((x) => x.id))); } catch (_) {} }
+  $("foldAll").textContent = FOLDS.every((x) => !x.classList.contains("shut")) ? "Close all" : "Open all";
+}
+function openSections(ids) {
+  const found = ids.map((id) => $(id)).filter(Boolean);
+  for (const sec of found) setFold(sec, true);
+  if (found[0]) found[0].scrollIntoView({ block: "start" });
+}
+for (const sec of FOLDS) {
+  const head = sec.querySelector(".tile-head");
+  sec.classList.add("fold");
+  head.append(el("span", { class: "chev", "aria-hidden": "true" }));
+  head.setAttribute("role", "button"); head.setAttribute("tabindex", "0");
+  head.setAttribute("aria-label", `${head.querySelector("h2").textContent}: show or hide`);
+  const flip = () => setFold(sec, sec.classList.contains("shut"));
+  head.addEventListener("click", flip);
+  head.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); flip(); } });
+}
+{ const open = foldSaved(); for (const sec of FOLDS) setFold(sec, open.includes(sec.id), false); }
+$("foldAll").onclick = () => { const open = FOLDS.some((x) => x.classList.contains("shut")); for (const sec of FOLDS) setFold(sec, open, false); setFold(FOLDS[0], open); };
+// a dot on a closed section's heading while it has changes you haven't saved
+new MutationObserver(() => {
+  for (const sec of FOLDS) {
+    const unsaved = [...sec.querySelectorAll(".msg")].some((m) => /^(Unsaved|Fill)/.test(m.textContent));
+    const dot = sec.querySelector(".tile-head .unsaved-dot");
+    if (unsaved && !dot) sec.querySelector(".tile-head h2").after(el("span", { class: "unsaved-dot", title: "Changes not saved yet" }));
+    if (!unsaved && dot) dot.remove();
+  }
+}).observe(document.querySelector('[data-panel="settings"]'), { subtree: true, childList: true, characterData: true });
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 /* ---------- state & limits ---------- */
@@ -991,7 +1054,7 @@ function renderMeters(status) {
   if (!status.length) {
     const e = el("div", { class: "empty" }, "No limits yet. ");
     const b = el("button", { class: "link" }, "Add one in Settings");
-    b.onclick = () => { history.replaceState(null, "", "#settings"); showTab("settings"); };
+    b.onclick = () => { history.replaceState(null, "", "#settings"); showTab("settings"); openSections(["editLimits"]); };
     e.append(b);
     box.replaceChildren(e);
     return;
@@ -1382,6 +1445,7 @@ async function loadCollect() {
     } else if (p.action === "timesheets" || p.action === "settings") {
       side.append(act(p.action === "settings" ? "Open Settings" : "Add time", () => {
         history.replaceState(null, "", `#${p.action}`); showTab(p.action); window.scrollTo(0, 0);
+        if (p.action === "settings") openSections(["setClients"]);
       }));
     }
     if (p.dismissable) side.append(act("Hide", async () => { await api("/api/dismiss", { key: p.key }); loadCollect(); }, "hide"));

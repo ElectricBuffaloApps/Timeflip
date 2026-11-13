@@ -1,5 +1,14 @@
 [
   {
+    "version": 35,
+    "changes": [
+      "Tidier Settings: every section now folds away, so the page opens as a short list. Click a heading to open it, and it stays open next time. 'Open all' at the top shows everything at once.",
+      "Sections are grouped: Dashboard, Invoicing, Time and targets, and This app.",
+      "An orange dot on a closed section's heading means it has changes you haven't saved.",
+      "Links into Settings from other pages open the right section for you."
+    ]
+  },
+  {
     "version": 34,
     "changes": [
       "Area cards: the top of the Dashboard now has a card for each of your main clients, showing hours this week and this month. Choose which clients have a card, and what each is called, in Settings → Dashboard cards.",
