@@ -1,5 +1,15 @@
 [
   {
+    "version": 33,
+    "changes": [
+      "Area cards: the top of the Dashboard now has a card for each of your main clients, showing hours this week and this month. Choose which clients have a card, and what each is called, in Settings → Dashboard cards.",
+      "Area pages: click a card for a page about that client. It shows this week, this month and last week, and a chart of hours you can switch between by day (28 days), by week (12 weeks) and by month (12 months), split by task.",
+      "Hours in lieu: each area has a bank of hours you type in. Add banked hours to a day or a week and they become real time: they count in your totals and go on that client's timesheet and invoice, marked as added. Delete the added entry on the timesheet and the hours go back in the bank.",
+      "For a client with a monthly allowance, the hours-in-lieu figure also includes carried-over time. You still add carried-over time from the timesheet.",
+      "Money to collect reminds you about banked hours on paying clients that haven't been used."
+    ]
+  },
+  {
     "version": 32,
     "changes": [
       "Email invoices from the app: Email it on an invoice (or Email in the Invoices list) attaches the invoice PDF and the timesheet PDF, addresses it to the client and writes the message for you.",

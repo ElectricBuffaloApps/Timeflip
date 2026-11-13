@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, billing, collect, insights, mailer, merge, pdf, remote, service, updater
+from . import allowance, areas, billing, collect, insights, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -63,6 +63,7 @@ def state() -> dict:
         "week_starts": conf.get("week_starts", "monday"),
         "payment_terms_days": collect.terms_days(conf),
         "businesses": billing.businesses(conf),
+        "areas": areas.configured(conf, store),
         "client_details": conf.get("client_details", {}),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
@@ -603,6 +604,15 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
+            if url.path == "/api/areas":
+                return self._send(200, {"areas": areas.cards(service.open_store(), cfg.load_config(), date.today())})
+            if url.path == "/api/area":
+                try:
+                    client = q.get("client") or ""
+                    return self._send(200, areas.detail(service.open_store(), cfg.load_config(), client, date.today(),
+                                                        _carried(client, date.today())))
+                except ValueError as e:
+                    return self._send(404, {"error": str(e)})
             if url.path == "/api/insights":
                 return self._send(200, insights.build(service.open_store(), cfg.load_config(), date.today()))
             if url.path == "/api/bills":
@@ -895,6 +905,35 @@ class Handler(BaseHTTPRequestHandler):
                             errors.append(str(e))
                     return self._send(200, {"ok": True, "ids": [b["id"] for b in made],
                                             "numbers": [b["number"] for b in made], "errors": errors})
+                elif self.path == "/api/areas":
+                    conf = cfg.load_config()
+                    known = sorted({t["tag"] for t in service.open_store().tasks() if t["tag"]})
+                    conf["areas"] = areas.clean(body.get("areas"), known)
+                    cfg.save_config(conf)
+                elif self.path == "/api/lieu/bank":
+                    client = str(body.get("client") or "").strip()
+                    try:
+                        seconds = round(float(body.get("hours")) * 3600)
+                    except (TypeError, ValueError):
+                        raise ValueError("Enter a number of hours.")
+                    store = service.open_store()
+                    if not client or not seconds:
+                        raise ValueError("Enter a number of hours.")
+                    if store.lieu_balance(client) + seconds < 0:
+                        raise ValueError("You can't take out more than is in the bank.")
+                    note = str(body.get("note") or "").strip()[:200] or ("Added by hand" if seconds > 0 else "Taken out by hand")
+                    store.add_lieu(client, seconds, note)
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/lieu/use":
+                    client = str(body.get("client") or "").strip()
+                    try:
+                        seconds = round(float(body.get("hours")) * 3600)
+                        when = date.fromisoformat(str(body.get("date") or ""))
+                    except (TypeError, ValueError):
+                        raise ValueError("Enter the hours and choose a date.")
+                    areas.use_lieu(service.open_store(), cfg.load_config(), client, int(body.get("task_id") or 0),
+                                   "week" if body.get("mode") == "week" else "day", when, seconds)
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/extra/add":
                     client = str(body.get("client") or "").strip()
                     y, m = (int(x) for x in str(body.get("month") or "").split("-"))
@@ -1149,6 +1188,19 @@ def outstanding(today: date) -> dict:
     total = lambda key: round(sum(c[key] or 0 for c in out), 2)
     return {"month": month, "clients": out, "due_value": total("due_value"), "carried_value": total("carried_value"),
             "missing_rate": [c["client"] for c in out if not c["rate"]]}
+
+
+def _carried(client: str, today: date) -> int:
+    """Carried-over time not yet charged for a client with a monthly allowance (rolled-over entries and what's left
+    of the balance). Nothing for other clients."""
+    try:
+        c = _client_settings(cfg.load_config(), client)
+        if c.get("billing") not in ("day", "week") or c.get("notional"):
+            return 0
+        inv = _invoice({"client": client, "month": f"{today:%Y-%m}"})
+        return inv["rolled_s"] + (inv["carry"]["remaining_s"] if inv.get("carry") else 0)
+    except (ValueError, KeyError):
+        return 0
 
 
 def _month_dates(month: str) -> tuple[date, date]:

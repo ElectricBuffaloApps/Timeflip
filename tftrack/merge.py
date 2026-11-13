@@ -13,10 +13,10 @@ from datetime import datetime, timezone
 from .store import MANUAL_ID_OFFSET
 
 FORMAT = "timeflip-tracker-changes/1"
-_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed", "bill", "extra")
+_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed", "bill", "extra", "lieu")
 # Settings worth carrying over; the TimeFlip account, update and viewer settings stay with each Mac.
 _SETTINGS = ("clients", "limits", "targets", "monthly_income", "ignored_tasks", "smooth_weeks", "week_starts",
-             "payment_terms_days", "businesses", "client_details")
+             "payment_terms_days", "businesses", "client_details", "areas")
 
 
 def export(store, conf: dict) -> dict:
@@ -135,6 +135,16 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
                 n += 1
         if n:
             report.append(f"{n} invoice extra{'s' * (n != 1)}")
+        n = 0
+        for l in t.get("lieu", []):
+            if not db.execute("SELECT 1 FROM lieu WHERE client = ? AND seconds = ? AND created_at = ?",
+                              (l["client"], l["seconds"], l["created_at"])).fetchone():
+                db.execute("INSERT INTO lieu (client, seconds, note, created_at, entry_id) VALUES (?,?,?,?,?)",
+                           (l["client"], l["seconds"], l["note"], l["created_at"],
+                            entry(l["entry_id"]) if l["entry_id"] is not None else None))
+                n += 1
+        if n:
+            report.append(f"{n} change{'s' * (n != 1)} to hours in lieu")
         for d in t.get("dismissed", []):
             db.execute("INSERT OR IGNORE INTO dismissed VALUES (?, ?)", (d["key"], d["dismissed_at"]))
 
@@ -206,6 +216,9 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
         elif details[mine] != d:
             kept.append(f"billing details for {name} differ")
     conf["client_details"] = details
+    if conf.get("areas") is None and s.get("areas") is not None:
+        conf["areas"] = s["areas"]
+        n += 1
     if not conf.get("targets") and s.get("targets"):
         conf["targets"] = s["targets"]
         n += 1

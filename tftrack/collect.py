@@ -138,6 +138,15 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
                 "Add it to a timesheet with spare room, or it never gets billed.",
                 c["carried_value"], c["client"], owed["month"], "timesheet")
 
+    for client in clients:
+        banked = store.lieu_balance(client)
+        cc = next((c for n, c in (conf.get("clients") or {}).items() if n.lower() == client.lower()), {})
+        if banked > 0 and not cc.get("notional") and cc.get("billing") != "monthly":
+            add(f"lieu:{client.lower()}:{banked}", "lieu", "info",
+                f"{client}: {_hm(banked)} in lieu, not yet used",
+                "Add them to a day or week on the area's page and they go on the invoice.",
+                banked / 3600 * cc["rate"] if cc.get("rate") else None, client, action="area")
+
     # 4. Time left off invoices that haven't gone out yet.
     rates = {name.lower(): c.get("rate") for name, c in (conf.get("clients") or {}).items()}
     for c in owed["clients"]:

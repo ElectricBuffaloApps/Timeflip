@@ -191,6 +191,38 @@ input[type=file] { font-size: 12px; max-width: 100%; }
 .collect-clear { font-size: 13px; color: var(--good); font-weight: 600; }
 @media (max-width: 700px) { .cprompt { grid-template-columns: 1fr; } .cprompt .side { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 4px; order: 3; } }
 
+/* ---------- areas ---------- */
+.areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+@media (max-width: 560px) { .areas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+a.acard { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; text-decoration: none; color: var(--ink); border-top: 3px solid var(--accent);
+  transition: transform .12s ease, box-shadow .12s ease; }
+a.acard:hover, a.acard:focus-visible { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(17,24,39,.08), 0 10px 24px rgba(17,24,39,.12); outline: none; }
+.acard .name { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-family: Sora, Inter, sans-serif; font-weight: 700; font-size: 15px; }
+.acard .name span { color: var(--accent-deep); font-size: 13px; }
+.acard .figs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.acard .figs b { display: block; font-family: Sora, Inter, sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acard .figs span { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+@media (max-width: 560px) { a.acard { padding: 12px 14px; } .acard .figs b { font-size: 17px; }
+  .acard .figs span { font-size: 10px; letter-spacing: .03em; white-space: nowrap; } .acard .name span { display: none; } }
+.area-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.area-head h2 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+.area-head .meta { font-size: 12px; color: var(--ink-2); margin-right: auto; }
+.toggle { display: inline-flex; padding: 3px; gap: 2px; background: var(--sunk); border-radius: 10px; }
+.toggle button { border: 0; background: transparent; padding: 5px 12px; border-radius: 8px; font-size: 12px; color: var(--ink-2); }
+.toggle button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.ins-chart.dense { gap: 3px; } .ins-chart.dense .val { display: none; } .ins-chart.dense .day { font-size: 9px; letter-spacing: 0; }
+.ins-chart .col.wkstart .day { color: var(--ink); }
+.lieu-fig { font-family: Sora, Inter, sans-serif; font-size: 34px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.lieu-sub { font-size: 12px; color: var(--ink-2); margin: 4px 0 14px; }
+.lieu-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; align-items: end; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); }
+.lieu-form .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.lieu-form input, .lieu-form select { width: 100%; }
+.lieu-form .wide { grid-column: 1 / -1; }
+.lieu-form h3 { grid-column: 1 / -1; font-size: 13px; margin: 0; }
+.lieu-log { display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-2); }
+.lieu-log div { display: flex; justify-content: space-between; gap: 10px; }
+.lieu-log b { font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+
 /* ---------- insights ---------- */
 .kpis.ins-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .kpis.ins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -412,6 +444,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= DASHBOARD ================= -->
   <div class="board" data-panel="dashboard" role="tabpanel">
+    <div class="areas c12 hidden" id="areaCards" aria-label="Your areas"></div>
     <section class="tile c12 collect hidden" id="collectTile" aria-label="Money to collect">
       <div class="owed-head">
         <div><div class="lbl">Money to collect</div><div class="owed-sub" id="collectSub"></div></div>
@@ -565,6 +598,48 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     </section>
   </div>
 
+  <!-- ================= ONE AREA ================= -->
+  <div class="board hidden" data-panel="area" role="tabpanel">
+    <div class="area-head c12">
+      <button data-goto="dashboard">← Dashboard</button>
+      <h2 id="arTitle">–</h2><span class="meta" id="arSub"></span>
+      <button id="arSheet">Open this month's timesheet</button>
+    </div>
+    <div class="kpis ins-kpis c12" id="arKpis"></div>
+    <section class="tile c8">
+      <div class="tile-head"><h2>Hours</h2>
+        <div class="toggle" role="group" aria-label="Chart by">
+          <button data-armode="day" aria-pressed="false">By day</button>
+          <button data-armode="week" aria-pressed="true">By week</button>
+          <button data-armode="month" aria-pressed="false">By month</button>
+        </div></div>
+      <div class="chart-wrap"><div class="week ins-chart" id="arChart"></div><div class="tip hidden" id="arTip"></div></div>
+      <div class="legend" id="arLegend"></div>
+      <p class="note" id="arChartNote"></p>
+    </section>
+    <section class="tile c4">
+      <div class="tile-head"><h2>Hours in lieu</h2></div>
+      <div class="lieu-fig" id="arLieu">–</div>
+      <div class="lieu-sub" id="arLieuSub"></div>
+      <div class="lieu-form">
+        <h3>Add banked hours to a day or week</h3>
+        <label class="field">Add to<select id="luMode"><option value="day">A day</option><option value="week">A week</option></select></label>
+        <label class="field"><span id="luDateLabel">Day</span><input type="date" id="luDate"></label>
+        <label class="field">Task<select id="luTask"></select></label>
+        <label class="field">Hours<input type="number" id="luHours" min="0.25" step="0.25"></label>
+        <div class="wide"><button class="primary" id="luUse">Add to that day</button></div>
+      </div>
+      <div class="lieu-form">
+        <h3>Change the bank</h3>
+        <label class="field">Hours <span class="hint">(minus to take out)</span><input type="number" id="lbHours" step="0.25"></label>
+        <label class="field">Note <span class="hint">(optional)</span><input id="lbNote"></label>
+        <div class="wide"><button id="lbAdd">Put in the bank</button></div>
+      </div>
+      <p class="msg" id="arLieuMsg"></p>
+      <div class="lieu-log" id="arLieuLog"></div>
+    </section>
+  </div>
+
   <!-- ================= INVOICES ================= -->
   <div class="board hidden" data-panel="invoices" role="tabpanel">
     <div class="callout setup c12 hidden" id="billSetup">
@@ -604,6 +679,16 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 
   <!-- ================= SETTINGS ================= -->
   <div class="board hidden" data-panel="settings" role="tabpanel">
+    <section class="tile c12">
+      <div class="tile-head"><h2>Dashboard cards</h2><span class="meta">The areas shown at the top of the Dashboard. Each opens its own page.</span></div>
+      <div class="tablewrap">
+        <table class="edit">
+          <thead><tr><th>Client</th><th>Name on the card</th><th></th></tr></thead>
+          <tbody id="areaRows"></tbody>
+        </table>
+      </div>
+      <div class="actions"><button id="areaAdd">+ Add a card</button><button class="primary" id="saveAreas">Save cards</button><span class="msg" id="areaMsg"></span></div>
+    </section>
     <section class="tile c12" id="businessTile">
       <div class="tile-head"><h2>Your businesses</h2><span class="meta">Each has its own details and invoice numbers</span></div>
       <div class="row bizbar"><select id="bPick" aria-label="Business to edit"></select>
@@ -834,10 +919,15 @@ async function api(path, body) {
 
 /* ---------- tabs ---------- */
 const TABS = ["dashboard", "reports", "timesheets", "invoices", "settings"];
+let areaOpen = null;   // the client whose page is showing
 function showTab(name) {
-  if (!TABS.includes(name)) name = "dashboard";
-  for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  areaOpen = null;
+  if (name.startsWith("area=")) { areaOpen = decodeURIComponent(name.slice(5)); name = "area"; }
+  else if (!TABS.includes(name)) name = "dashboard";
+  const tab = name === "area" ? "dashboard" : name;
+  for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   for (const p of document.querySelectorAll("[data-panel]")) p.classList.toggle("hidden", p.dataset.panel !== name);
+  if (name === "area") { loadArea(); window.scrollTo(0, 0); }
   if (name === "reports") { loadReport(); loadInsights(); }
   if (name === "invoices") loadBills();
 }
@@ -872,6 +962,7 @@ function showState(s, redraw = false) {
   if (draw("limits")) renderLimitRows(s.limits);
   if (draw("clients")) renderClientRows(s);
   if (draw("business")) renderBusiness(s);
+  if (draw("areas")) renderAreaRows(s);
   if (draw("details") || draw("clients")) renderDetailRows(s);
   if (draw("ignored")) renderIgnored(s);
   if (draw("targets")) renderTargetSettings(s);
@@ -1278,6 +1369,8 @@ async function loadCollect() {
                       p.level === "critical" ? "primary" : ""));
     } else if (p.action === "timesheet") {
       side.append(act("Open timesheet", () => openSheet(p.client, p.month)));
+    } else if (p.action === "area") {
+      side.append(act("Open area", () => { location.hash = `area=${encodeURIComponent(p.client)}`; }));
     } else if (p.action === "timesheets" || p.action === "settings") {
       side.append(act(p.action === "settings" ? "Open Settings" : "Add time", () => {
         history.replaceState(null, "", `#${p.action}`); showTab(p.action); window.scrollTo(0, 0);
@@ -1304,6 +1397,170 @@ async function loadCollect() {
   $("collectFoot").replaceChildren(...foot);
   $("collectFoot").classList.toggle("hidden", !foot.length);
 }
+
+/* ---------- areas ---------- */
+async function loadAreas() {
+  let r;
+  try { r = await api("/api/areas"); } catch (_) { return; }
+  $("areaCards").classList.toggle("hidden", !r.areas.length);
+  $("areaCards").replaceChildren(...r.areas.map((a) => {
+    const card = el("a", { class: "tile acard", href: `#area=${encodeURIComponent(a.client)}`,
+                           "aria-label": `${a.label}: ${hm(a.week_seconds)} this week, ${hm(a.month_seconds)} this month. Open its page.` });
+    const name = el("div", { class: "name" }, a.label); name.append(el("span", {}, "Open →"));
+    const figs = el("div", { class: "figs" });
+    for (const [secs, label] of [[a.week_seconds, "This week"], [a.month_seconds, "This month"]]) {
+      const d = el("div"); d.append(el("b", {}, hm(secs)), el("span", {}, label)); figs.append(d);
+    }
+    card.append(name, figs);
+    if (a.lieu_seconds > 0) { const foot = el("div"); foot.append(chip("tag", `${hm(a.lieu_seconds)} in lieu`)); card.append(foot); }
+    return card;
+  }));
+}
+let areaMode = "week", areaData = null;
+try { areaMode = localStorage.getItem("areaMode") || "week"; } catch (_) {}
+async function loadArea(auto = false) {
+  if (!areaOpen) return;
+  let d;
+  try { d = await api(`/api/area?client=${encodeURIComponent(areaOpen)}`); }
+  catch (e) { $("arTitle").textContent = areaOpen; $("arSub").textContent = e.message; return; }
+  areaData = d;
+  $("arTitle").textContent = d.label;
+  $("arSub").textContent = d.label === d.client ? "" : `Client tag: ${d.client}`;
+  const tile = (label, fig, foot) => {
+    const t = el("section", { class: "tile kpi" });
+    t.append(el("div", { class: "lbl" }, label), el("div", { class: "fig" }, fig), el("div", { class: "foot" }, foot));
+    return t;
+  };
+  const worth = (secs) => (d.rate ? `${gbp((secs / 3600) * d.rate)} at ${gbp(d.rate)} an hour` : "");
+  const wk = d.series.week, mo = d.series.month;
+  const lastWk = wk.length > 1 ? wk[wk.length - 2].seconds : 0, lastMo = mo.length > 1 ? mo[mo.length - 2].seconds : 0;
+  $("arKpis").replaceChildren(
+    tile("This week", hm(d.week_seconds), worth(d.week_seconds) || `Last week ${hm(lastWk)}`),
+    tile("This month", hm(d.month_seconds), worth(d.month_seconds) || `Last month ${hm(lastMo)}`),
+    tile("Last week", hm(lastWk), `Last month ${hm(lastMo)}`),
+    tile("Hours in lieu", hm(d.lieu.total_seconds), d.lieu.total_seconds && d.rate ? `Worth ${gbp((d.lieu.total_seconds / 3600) * d.rate)}` : "Banked, not yet used"));
+  drawAreaChart();
+  // hours in lieu
+  $("arLieu").textContent = hm(d.lieu.total_seconds);
+  $("arLieuSub").textContent = d.lieu.carried_seconds
+    ? `${hm(d.lieu.bank_seconds)} banked by you · ${hm(d.lieu.carried_seconds)} carried over on timesheets (add those from the timesheet)`
+    : "Hours you've banked. Add them to a day or week and they count as time worked, and go on the invoice.";
+  if (!auto) {
+    $("luTask").replaceChildren(...d.tasks.map((t) => el("option", { value: String(t.id) }, t.name)));
+    $("luDate").value = d.today; $("luHours").value = ""; $("lbHours").value = ""; $("lbNote").value = ""; $("arLieuMsg").textContent = "";
+  }
+  $("luUse").disabled = d.lieu.bank_seconds <= 0;
+  $("luHours").max = String(d.lieu.bank_seconds / 3600);
+  $("luHours").placeholder = d.lieu.bank_seconds > 0 ? `up to ${+(d.lieu.bank_seconds / 3600).toFixed(2)}` : "bank is empty";
+  $("arLieuLog").replaceChildren(...d.lieu.log.map((l) => {
+    const row = el("div");
+    row.append(el("span", {}, `${ukDate(l.created_at)} · ${l.note}`), el("b", {}, `${l.seconds > 0 ? "+" : "−"}${hm(Math.abs(l.seconds))}`));
+    return row;
+  }));
+}
+function drawAreaChart() {
+  const d = areaData; if (!d) return;
+  for (const b of document.querySelectorAll("[data-armode]")) b.setAttribute("aria-pressed", String(b.dataset.armode === areaMode));
+  const buckets = d.series[areaMode];
+  const colour = (task) => { const i = d.task_order.indexOf(task); return i >= 0 && i < SLOTS - 1 ? `var(--s${i + 1})` : "var(--other)"; };
+  const max = Math.max(3600, ...buckets.map((b) => b.seconds));
+  const chart = $("arChart"), tip = $("arTip");
+  chart.style.setProperty("--cols", buckets.length);
+  chart.classList.toggle("dense", areaMode === "day");
+  const used = new Set();
+  chart.replaceChildren(...buckets.map((b, i) => {
+    const last = i === buckets.length - 1;
+    const weekStart = areaMode === "day" && new Date(`${b.key}T12:00:00`).getDay() === new Date(`${d.week_starts}T12:00:00`).getDay();
+    const col = el("div", { class: `col${last ? " today" : ""}${weekStart ? " wkstart" : ""}`, tabindex: "0", "aria-label": `${b.name}: ${hm(b.seconds)}` });
+    const bar = el("div", { class: "bar" });
+    bar.style.height = `${Math.max(1, (100 * b.seconds) / max) * 0.78}%`;
+    const parts = Object.entries(b.tasks).sort((x, y) => d.task_order.indexOf(x[0]) - d.task_order.indexOf(y[0]));
+    for (const [task, secs] of parts) {
+      used.add(task);
+      const seg = el("i"); seg.style.background = colour(task); seg.style.flex = `${secs} 0 0`; bar.append(seg);
+    }
+    col.append(el("div", { class: "val" }, b.seconds ? hShort(b.seconds) : "–"), bar, el("div", { class: "day" }, b.label));
+    const show = () => {
+      tip.replaceChildren(el("b", {}, b.name), el("div", {}, b.seconds ? hm(b.seconds) : "Nothing tracked"));
+      for (const [task, secs] of parts) {
+        const row = el("div"); const key = el("span", { class: "k" }); key.style.background = colour(task);
+        row.append(key, `${task}: ${hm(secs)}`); tip.append(row);
+      }
+      tip.classList.remove("hidden");
+      const box = chart.getBoundingClientRect(), cb = col.getBoundingClientRect();
+      tip.style.left = `${Math.min(Math.max(0, cb.left - box.left + cb.width / 2 - tip.offsetWidth / 2), box.width - tip.offsetWidth)}px`;
+      tip.style.top = "0px";
+    };
+    col.onmouseenter = show; col.onfocus = show;
+    col.onmouseleave = col.onblur = () => tip.classList.add("hidden");
+    return col;
+  }));
+  const shown = d.task_order.filter((t) => used.has(t));
+  $("arLegend").replaceChildren(...(shown.length > 1 ? shown.map((t) => {
+    const item = el("span"); const sw = el("i"); sw.style.background = colour(t); item.append(sw, t); return item;
+  }) : []));
+  const total = buckets.reduce((t, b) => t + b.seconds, 0);
+  $("arChartNote").textContent = { day: "Last 28 days", week: "Last 12 weeks", month: "Last 12 months" }[areaMode] +
+    `: ${hm(total)} in all, ${hm(total / buckets.length)} on average per ${areaMode}.`;
+}
+for (const b of document.querySelectorAll("[data-armode]")) b.onclick = () => {
+  areaMode = b.dataset.armode;
+  try { localStorage.setItem("areaMode", areaMode); } catch (_) {}
+  drawAreaChart();
+};
+$("arSheet").onclick = () => { if (areaData) openSheet(areaData.client, areaData.today.slice(0, 7)); };
+$("luMode").onchange = () => {
+  const week = $("luMode").value === "week";
+  $("luDateLabel").textContent = week ? "Any day in that week" : "Day";
+  $("luUse").textContent = week ? "Add to that week" : "Add to that day";
+};
+const areaChanged = () => { loadArea(true); loadAreas(); loadToday(); loadWeek(); loadTargets(); loadOutstanding(); loadCollect(); };
+$("luUse").onclick = async () => {
+  try {
+    await api("/api/lieu/use", { client: areaData.client, task_id: Number($("luTask").value), mode: $("luMode").value,
+                                 date: $("luDate").value, hours: $("luHours").value });
+    $("arLieuMsg").textContent = `Added ${$("luHours").value}h. It's on the timesheet as an added entry: delete it there to put the hours back.`;
+    $("luHours").value = ""; areaChanged();
+  } catch (e) { $("arLieuMsg").textContent = e.message; }
+};
+$("lbAdd").onclick = async () => {
+  try {
+    await api("/api/lieu/bank", { client: areaData.client, hours: $("lbHours").value, note: $("lbNote").value });
+    $("arLieuMsg").textContent = "Bank updated."; $("lbHours").value = ""; $("lbNote").value = ""; areaChanged();
+  } catch (e) { $("arLieuMsg").textContent = e.message; }
+};
+$("lbHours").oninput = () => { $("lbAdd").textContent = Number($("lbHours").value) < 0 ? "Take out of the bank" : "Put in the bank"; };
+
+/* dashboard cards (Settings) */
+function areaRow(s, a) {
+  const tr = el("tr");
+  const pick = el("select", { class: "name", "aria-label": "Client" });
+  pick.append(...s.clients.map((c) => el("option", { value: c }, c)));
+  if (a.client) pick.value = a.client;
+  const label = el("input", { "aria-label": "Name on the card", placeholder: "Same as the client" }); label.value = a.label || "";
+  const gone = el("button", { class: "link" }, "Remove");
+  gone.onclick = () => { tr.remove(); $("areaMsg").textContent = "Unsaved changes: click Save cards."; };
+  const cell = (x) => { const td = el("td"); td.append(x); return td; };
+  tr.append(cell(pick), cell(label), cell(gone));
+  tr.read = () => ({ client: pick.value, label: label.value });
+  return tr;
+}
+function renderAreaRows(s) { $("areaRows").replaceChildren(...s.areas.map((a) => areaRow(s, a))); }
+$("areaAdd").onclick = () => {
+  const taken = [...$("areaRows").children].map((tr) => tr.read().client);
+  const next = state.clients.find((c) => !taken.includes(c));
+  if (!next) { $("areaMsg").textContent = "Every client already has a card."; return; }
+  $("areaRows").append(areaRow(state, { client: next, label: "" }));
+  $("areaMsg").textContent = "Unsaved changes: click Save cards.";
+};
+$("areaRows").addEventListener("input", () => { $("areaMsg").textContent = "Unsaved changes: click Save cards."; });
+$("saveAreas").onclick = async () => {
+  const list = [...$("areaRows").children].map((tr) => tr.read());
+  if (new Set(list.map((a) => a.client)).size !== list.length) { $("areaMsg").textContent = "Each client can only have one card."; return; }
+  try { showState(await api("/api/areas", { areas: list }), "areas"); $("areaMsg").textContent = "Saved."; loadAreas(); }
+  catch (e) { $("areaMsg").textContent = e.message; return; }
+  setTimeout(() => { if ($("areaMsg").textContent === "Saved.") $("areaMsg").textContent = ""; }, 4000);
+};
 
 /* ---------- insights ---------- */
 async function loadInsights() {
@@ -2107,7 +2364,7 @@ $("viewerStop").onclick = async () => { await api("/api/viewer/stop", {}); $("vi
 
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
-  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect();
+  loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect(); loadAreas();
 }
 (async () => {
   try { showState(await api("/api/state"), true); }
@@ -2116,7 +2373,7 @@ function refreshAll(auto = false) {
   checkForUpdate(false);
   refreshAll();
   loadRemote();
-  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); loadCollect(); } catch (_) {} }, 60000);
+  setInterval(async () => { try { showState(await api("/api/state")); loadToday(); loadTargets(); loadMonth(true); loadWeek(); loadAllowances(); loadOutstanding(); loadCollect(); loadAreas(); if (areaOpen) loadArea(true); } catch (_) {} }, 60000);
 })();
 </script>
 </body>

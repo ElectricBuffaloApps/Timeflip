@@ -103,6 +103,17 @@ CREATE TABLE IF NOT EXISTS extra (
     created_at TEXT NOT NULL,
     bill_id INTEGER
 );
+-- Hours in lieu: a bank of hours per client, typed in by hand. Positive rows put hours in; negative rows take them
+-- out. A row made by adding banked hours to a day points at the entry it created (entry_id), and stops counting if
+-- that entry is later deleted, so the hours go back in the bank.
+CREATE TABLE IF NOT EXISTS lieu (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    entry_id INTEGER
+);
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
 -- Time the user added by hand (not tracked on the cube).
@@ -468,6 +479,26 @@ class Store:
         with self.db:
             self.db.execute("UPDATE extra SET bill_id = ? WHERE bill_id IS NULL AND lower(client) = lower(?) AND month = ?",
                             (bill_id, client, month))
+
+    # ----- hours in lieu -----
+
+    _LIEU_LIVE = f"(l.entry_id IS NULL OR EXISTS (SELECT 1 FROM manual_entry m WHERE m.id = -l.entry_id - {MANUAL_ID_OFFSET}))"
+
+    def add_lieu(self, client: str, seconds: int, note: str = "", entry_id: int | None = None) -> None:
+        with self.db:
+            self.db.execute("INSERT INTO lieu (client, seconds, note, created_at, entry_id) VALUES (?,?,?,?,?)",
+                            (client, seconds, note, datetime.now(timezone.utc).isoformat(), entry_id))
+
+    def lieu_balance(self, client: str) -> int:
+        row = self.db.execute(f"SELECT COALESCE(SUM(l.seconds), 0) FROM lieu l WHERE lower(l.client) = lower(?) AND {self._LIEU_LIVE}",
+                              (client,)).fetchone()
+        return int(row[0])
+
+    def lieu_log(self, client: str, limit: int = 12) -> list[dict]:
+        """The latest changes to a client's bank, newest first."""
+        return [dict(r) for r in self.db.execute(
+            f"SELECT l.id, l.seconds, l.note, l.created_at, l.entry_id FROM lieu l WHERE lower(l.client) = lower(?) AND {self._LIEU_LIVE} "
+            "ORDER BY l.id DESC LIMIT ?", (client, limit))]
 
     def dismissed(self) -> set[str]:
         return {r[0] for r in self.db.execute("SELECT key FROM dismissed")}

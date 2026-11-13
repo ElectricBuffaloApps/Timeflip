@@ -1087,3 +1087,48 @@ class SmtpTest(unittest.TestCase):
             billing.clean_business({"name": "X", "email": "x@example.com", "mail_method": "smtp"})
         with self.assertRaisesRegex(ValueError, "Couldn't send"):
             mailer.send({**b, "smtp_port": 1}, None, "c@example.com", "s", "b", [])
+
+
+class AreasTest(unittest.TestCase):
+    def test_cards_page_and_hours_in_lieu(self):
+        from datetime import date
+        from tftrack import areas
+        at = lambda mo, d, h: datetime(2026, mo, d, h).astimezone().astimezone(UTC).isoformat()
+        tasks = [{"id": 1, "name": "Coaching", "tag": "FYPT1"}, {"id": 2, "name": "Admin", "tag": "FYPT1"},
+                 {"id": 3, "name": "Justin", "tag": "HTB"}]
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(11, 9, 9), "duration": 2 * 3600},    # Mon 9 Nov: this week
+            {"id": 2, "taskId": 2, "startedAt": at(11, 3, 9), "duration": 3600},        # Tue 3 Nov: last week
+            {"id": 3, "taskId": 1, "startedAt": at(10, 20, 9), "duration": 4 * 3600},   # October
+            {"id": 4, "taskId": 3, "startedAt": at(11, 10, 9), "duration": 3600},
+        ], tasks=tasks)
+        today = date(2026, 11, 12)                                                      # a Thursday
+        conf = {"clients": {"HTB": {"billing": "day", "rate": 40}}}
+        cards = {c["client"]: c for c in areas.cards(store, conf, today)}
+        self.assertEqual(cards["FYPT1"]["label"], "FYPT Clients")                       # friendly name until renamed
+        self.assertEqual((cards["FYPT1"]["week_seconds"], cards["FYPT1"]["month_seconds"]), (2 * 3600, 3 * 3600))
+        conf["areas"] = areas.clean([{"client": "htb", "label": "Hit The Books"}, {"client": "nope"},
+                                     {"client": "HTB", "label": "twice"}], ["FYPT1", "HTB"])
+        self.assertEqual(conf["areas"], [{"client": "HTB", "label": "Hit The Books"}])
+        d = areas.detail(store, conf, "fypt1", today)
+        self.assertEqual((d["week_seconds"], d["month_seconds"], d["task_order"]), (2 * 3600, 3 * 3600, ["Coaching", "Admin"]))
+        self.assertEqual((len(d["series"]["day"]), len(d["series"]["week"]), len(d["series"]["month"])), (28, 12, 12))
+        self.assertEqual([b["seconds"] for b in d["series"]["week"][-2:]], [3600, 2 * 3600])
+        self.assertEqual([b["seconds"] for b in d["series"]["month"][-2:]], [4 * 3600, 3 * 3600])
+        self.assertEqual(d["series"]["week"][-1]["tasks"], {"Coaching": 2 * 3600})
+        # hours in lieu: bank by hand, then add to a week as real time
+        store.add_lieu("HTB", 3 * 3600, "Extra evening")
+        with self.assertRaisesRegex(ValueError, "more than the hours in lieu"):
+            areas.use_lieu(store, conf, "HTB", 3, "day", today, 4 * 3600)
+        with self.assertRaisesRegex(ValueError, "task from this area"):
+            areas.use_lieu(store, conf, "HTB", 1, "day", today, 3600)
+        areas.use_lieu(store, conf, "HTB", 3, "week", date(2026, 11, 5), 2 * 3600)      # lands on Mon 2 Nov
+        self.assertEqual(store.lieu_balance("htb"), 3600)
+        h = areas.detail(store, conf, "HTB", today, carried_s=1800)
+        self.assertEqual(h["lieu"]["bank_seconds"], 3600)
+        self.assertEqual(h["lieu"]["total_seconds"], 3600 + 1800)                        # the bank plus carried-over time
+        self.assertEqual([b["seconds"] for b in h["series"]["week"][-2:]], [2 * 3600, 3600])
+        added = [r for r in store.segments(datetime(2026, 11, 2).astimezone(), datetime(2026, 11, 3).astimezone()) if r["manual"]]
+        self.assertEqual([(r["task"], r["seconds"]) for r in added], [("Justin", 2 * 3600)])
+        store.delete_manual(added[0]["id"])                                              # deleting the entry gives the hours back
+        self.assertEqual(store.lieu_balance("HTB"), 3 * 3600)
