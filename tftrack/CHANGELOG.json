@@ -1,6 +1,6 @@
 [
   {
-    "version": 33,
+    "version": 34,
     "changes": [
       "Area cards: the top of the Dashboard now has a card for each of your main clients, showing hours this week and this month. Choose which clients have a card, and what each is called, in Settings → Dashboard cards.",
       "Area pages: click a card for a page about that client. It shows this week, this month and last week, and a chart of hours you can switch between by day (28 days), by week (12 weeks) and by month (12 months), split by task.",
@@ -9,6 +9,16 @@
       "Hours in lieu: each area has a bank of hours you type in. Pick the day, or pick the week from a list, and the banked hours become real time: they count in your totals and go on that client's timesheet and invoice, marked as added. Delete the added entry on the timesheet and the hours go back in the bank.",
       "For a client with a monthly allowance, the hours-in-lieu figure also includes carried-over time. You still add carried-over time from the timesheet.",
       "Money to collect reminds you about banked hours on paying clients that haven't been used."
+    ]
+  },
+  {
+    "version": 33,
+    "changes": [
+      "Carried hours ledger: a new page showing, month by month for each allowance, the max, hours worked, hours rolled over, hours added to an invoice, the balance left and its value, and whether the month is marked as invoiced. Open it from Outstanding on the Dashboard, from Settings, or from the allowance line on a timesheet. Each month links to its timesheet.",
+      "Allowances for a whole client: tick 'Bill as allowance' on a client's weekly limit and all of that client's work counts, so any of its entries can be rolled over.",
+      "Several allowances for one client: each task's allowance has its own maximum, Roll over ticks, carried-over box and balance.",
+      "A client can have allowances on its tasks or one for all its work, not both, because the same hours would count twice. Settings tells you if you try.",
+      "Your existing Justin allowance, rolled-over entries and carried hours are unchanged."
     ]
   },
   {

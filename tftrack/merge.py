@@ -83,10 +83,11 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
 
         n = 0
         for c in t.get("carry_added", []):
-            mine = db.execute("SELECT seconds FROM carry_added WHERE lower(client)=lower(?) AND month=?",
-                              (c["client"], c["month"])).fetchone()
+            task = c.get("task") or ""
+            mine = db.execute("SELECT seconds FROM carry_added WHERE lower(client)=lower(?) AND month=? "
+                              "AND lower(task)=lower(?)", (c["client"], c["month"], task)).fetchone()
             if not mine:
-                db.execute("INSERT INTO carry_added VALUES (?, ?, ?)", (c["client"], c["month"], c["seconds"]))
+                db.execute("INSERT INTO carry_added VALUES (?, ?, ?, ?)", (c["client"], c["month"], c["seconds"], task))
                 n += 1
             elif mine["seconds"] != c["seconds"]:
                 kept.append(f"carried hours added to {c['client']} {c['month']} differ")

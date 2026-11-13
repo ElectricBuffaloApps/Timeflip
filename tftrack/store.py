@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS carry_added (
     client TEXT NOT NULL,
     month TEXT NOT NULL,        -- YYYY-MM
     seconds INTEGER NOT NULL,
-    PRIMARY KEY (client, month)
+    task TEXT NOT NULL DEFAULT '',   -- the allowance's task; '' for a whole-client allowance (or an older entry)
+    PRIMARY KEY (client, month, task)
 );
 -- Months the user has marked as invoiced, with what the invoice came to at the time.
 CREATE TABLE IF NOT EXISTS invoiced (
@@ -175,6 +176,15 @@ class Store:
         if old:
             self.db.execute("ALTER TABLE bill RENAME TO bill_v30")
         self.db.executescript(SCHEMA)
+        if "task" not in [r[1] for r in self.db.execute("PRAGMA table_info(carry_added)")]:
+            # Older versions kept one lot of carried hours per client and month; now it's one per allowance.
+            with self.db:
+                self.db.execute("ALTER TABLE carry_added RENAME TO carry_added_old")
+                self.db.execute("CREATE TABLE carry_added (client TEXT NOT NULL, month TEXT NOT NULL, "
+                                "seconds INTEGER NOT NULL, task TEXT NOT NULL DEFAULT '', "
+                                "PRIMARY KEY (client, month, task))")
+                self.db.execute("INSERT INTO carry_added SELECT client, month, seconds, '' FROM carry_added_old")
+                self.db.execute("DROP TABLE carry_added_old")
         if old:
             with self.db:
                 self.db.execute(
@@ -359,16 +369,17 @@ class Store:
             else:
                 self.db.execute("DELETE FROM rollover WHERE interval_id = ?", (interval_id,))
 
-    def carry_added(self, client: str) -> dict[str, int]:
-        """Carried-over hours added to each month's invoice for a client: month -> seconds."""
-        return {r["month"]: r["seconds"] for r in
-                self.db.execute("SELECT month, seconds FROM carry_added WHERE lower(client) = lower(?)", (client,))}
+    def carry_rows(self, client: str) -> list[dict]:
+        """Carried-over hours added to a client's invoices: [{"month", "task" ("" = whole client), "seconds"}]."""
+        return [{"month": r["month"], "task": r["task"], "seconds": r["seconds"]} for r in self.db.execute(
+            "SELECT month, task, seconds FROM carry_added WHERE lower(client) = lower(?) ORDER BY month", (client,))]
 
-    def set_carry_added(self, client: str, month: str, seconds: int) -> None:
+    def set_carry_added(self, client: str, month: str, seconds: int, task: str = "") -> None:
         with self.db:
-            self.db.execute("DELETE FROM carry_added WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            self.db.execute("DELETE FROM carry_added WHERE lower(client) = lower(?) AND month = ? "
+                            "AND lower(task) = lower(?)", (client, month, task))
             if seconds > 0:
-                self.db.execute("INSERT INTO carry_added VALUES (?, ?, ?)", (client, month, seconds))
+                self.db.execute("INSERT INTO carry_added VALUES (?, ?, ?, ?)", (client, month, seconds, task))
 
     def invoiced(self, client: str) -> dict[str, dict]:
         """Months marked as invoiced for a client: month -> {marked_at, seconds, amount}."""
