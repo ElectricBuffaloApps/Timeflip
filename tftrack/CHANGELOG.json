@@ -1,5 +1,13 @@
 [
   {
+    "version": 37,
+    "changes": [
+      "Every device now moves to a new version together. When the tracker is updated, a page left open on your phone or another computer loads the new version by itself, instead of carrying on with the old one until you refreshed it.",
+      "If you're part-way through changing a setting when that happens, it waits and shows a Reload button so nothing you've typed is lost.",
+      "Coming back to the tracker on your phone now refreshes the figures straight away, instead of waiting up to a minute."
+    ]
+  },
+  {
     "version": 36,
     "changes": [
       "Hours in lieu now fill by themselves: any week you work more than an area's hours a week, the extra goes into its bank. You still choose when to use them, by adding them to a day or week on the area's page.",

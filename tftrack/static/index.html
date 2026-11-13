@@ -465,6 +465,10 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <div><b id="newsTitle">What's new</b><ul id="newsList"></ul></div>
     <button class="primary" id="newsOk">Got it</button>
   </div>
+  <div class="banner update hidden" id="reloadBanner">
+    <span>TimeFlip Tracker has been updated. Save what you're changing, then reload to get the new version.</span>
+    <button class="primary" id="reloadBtn">Reload</button>
+  </div>
   <div class="banner update hidden" id="updateBanner">
     <span id="updateText">A new version of TimeFlip Tracker is available.</span>
     <button class="primary" id="updateBtn">Update now</button>
@@ -957,6 +961,7 @@ async function api(path, body) {
 
 /* ---------- tabs ---------- */
 const TABS = ["dashboard", "reports", "timesheets", "invoices", "settings"];
+let pageVersion = null;   // the app version this page was loaded from
 let areaOpen = null;   // the client whose page is showing
 function showTab(name) {
   areaOpen = null;
@@ -1029,6 +1034,13 @@ function showState(s, redraw = false) {
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
   $("version").textContent = s.version;
+  // Every device shows the same tracker. When it's been updated (from any device), an open page is the old version
+  // talking to the new app, so load the new page: straight away, unless there are changes waiting to be saved.
+  if (pageVersion === null) pageVersion = s.version;
+  else if (s.version !== pageVersion) {
+    const unsaved = [...document.querySelectorAll(".msg")].some((m) => /^(Unsaved|Fill)/.test(m.textContent)) || !!document.querySelector("dialog[open]");
+    if (unsaved) $("reloadBanner").classList.remove("hidden"); else { location.reload(); return; }
+  }
   $("appPath").textContent = s.app_path || "not created yet";
   $("autoUpdate").checked = s.auto_update;
   showNews(s.whats_new || []);
@@ -2216,6 +2228,19 @@ $("updateBtn").onclick = async () => {
     $("updateBtn").disabled = false; $("updateBtn").textContent = "Try again";
   }
 };
+
+/* ---------- keeping every device on the same version ---------- */
+$("reloadBtn").onclick = () => location.reload();
+// Coming back to the tracker (a phone waking, a tab chosen again): check for a new version and fresh figures now.
+let lastCheck = Date.now();
+async function catchUp() {
+  if (document.hidden || Date.now() - lastCheck < 5000) return;
+  lastCheck = Date.now();
+  try { showState(await api("/api/state")); refreshAll(true); } catch (_) {}
+}
+document.addEventListener("visibilitychange", catchUp);
+window.addEventListener("focus", catchUp);
+window.addEventListener("pageshow", (ev) => { if (ev.persisted) location.reload(); });   // restored from the phone's page cache
 
 /* ---------- today ---------- */
 const mins = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
