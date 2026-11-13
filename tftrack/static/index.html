@@ -720,7 +720,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
       <div class="actions"><button id="areaAdd">+ Add a card</button><button class="primary" id="saveAreas">Save cards</button><span class="msg" id="areaMsg"></span></div>
       <p class="note"><b>Hours a week</b> is what you mean to do for that client each week. Cards turn red when you're behind, so you know what to do first. It's the same figure as the client's weekly time target, below.</p>
-      <p class="note"><b>Bank hours over that:</b> any week you work more than the hours a week, the extra goes into that area's hours in lieu by itself. For a client invoiced by the week, those hours are also left off that week's invoice and charged when you add them to a later day or week, so nothing is charged twice. Check <b>Counting from</b> is after the last month you've already invoiced.</p>
+      <p class="note"><b>Bank hours over that:</b> any week you work more than the hours a week, the extra goes into that area's hours in lieu by itself. For a client invoiced by the week, those hours are also left off that week's invoice and charged when you add them to a later day or week, so nothing is charged twice. If <b>Counting from</b> goes back into months you've already invoiced, the bank assumes those invoices charged only the hours a week. If one charged everything you worked, move the date to after it.</p>
     </section>
     <div class="setgroup c12"><span class="lbl">Invoicing</span></div>
     <section class="tile c12" id="businessTile">
@@ -1558,6 +1558,10 @@ async function loadArea(auto = false) {
                               : `No weeks over your ${d.allotted_hours}h a week since ${ukDate(L.start)}`);
     if (L.hand_seconds) parts.push(`${L.hand_seconds > 0 ? "plus" : "less"} ${hm(Math.abs(L.hand_seconds))} added, taken out or used`);
     if (L.holds_back) parts.push("Hours over the week are left off that week's invoice and charged when you add them below");
+    if (L.invoiced_months && L.invoiced_months.length) {
+      const names = L.invoiced_months.map((m) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("en-GB", { month: "long" }); });
+      parts.push(`This counts weeks in ${names.join(", ")}, already invoiced: right only if those invoices charged no more than ${d.allotted_hours}h a week`);
+    }
   } else {
     parts.push(L.hand_seconds ? `${hm(L.hand_seconds)} banked by hand` : "Nothing banked");
     parts.push(L.why ? `Not banked automatically: ${L.why.toLowerCase()}` : "Automatic banking is switched off in Settings → Dashboard cards");

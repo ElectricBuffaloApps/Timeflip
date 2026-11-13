@@ -1359,10 +1359,9 @@ class AutoBankTest(unittest.TestCase):
             self.conf["targets"]["hours"]["FCY"]["week"] = 11
             self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-10")[:2], (20 * h, 400.0))
             self.assertEqual(areas.bank(store, self.conf, "FCY", today)["seconds"], 0)
-            # an invoiced month's hours have been charged: banking can't start inside it
-            self.conf["areas"][0]["bank_start"] = "2026-10-15"
-            with self.assertRaisesRegex(ValueError, "Banking can start from 01/11/2026"):
-                areas.check_starts(self.conf, store)
+            # the area page says which invoiced months the bank is counting weeks from
+            self.assertEqual(areas.invoiced_since_start(store, self.conf, "FCY"), ["2026-10"])
+            self.assertEqual(areas.invoiced_since_start(store, self.conf, "FYPTD"), [])
 
     def test_start_date_and_switching_off(self):
         from datetime import date
@@ -1381,8 +1380,28 @@ class AutoBankTest(unittest.TestCase):
             "weeks": [{"start": "2026-10-12", "worked_seconds": 7 * h, "over_seconds": 2 * h}]})
         self.conf["areas"][1]["bank_auto"] = False
         self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 3 * h)
-        # a client invoiced by the week starts after its last invoiced month
+        # the start is the same fixed date even when earlier months are already invoiced: those invoices are taken
+        # to have charged only the hours a week, so their extra hours belong in the bank
         store.set_invoiced("FCY", "2026-09", 3600, 20.0)
         conf = {**self.conf, "areas": [{"client": "FCY", "label": "FCY"}]}
         areas.settle_starts(conf, store)
-        self.assertEqual(conf["areas"][0]["bank_start"], "2026-10-01")
+        self.assertEqual(conf["areas"][0]["bank_start"], "2026-09-01")
+
+    def test_weeks_over_in_months_already_invoiced_are_in_the_bank(self):
+        from datetime import date
+        from tftrack import areas, web
+        h = 3600
+        sep = lambda d, hh: datetime(2026, 9, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": sep(7, 8), "duration": 13 * h},       # w/c 7 Sep: 3 over
+                            {"id": 2, "taskId": 1, "startedAt": sep(14, 8), "duration": 9 * h},       # w/c 14 Sep: under
+                            {"id": 3, "taskId": 1, "startedAt": self.at(5, 8), "duration": 11 * h}],  # w/c 5 Oct: 1 over
+                           tasks=self.tasks)
+        store.set_invoiced("FCY", "2026-09", 19 * h, 380.0)       # invoiced for the allotted hours only: 10 + 9
+        areas.settle_starts(self.conf, store)
+        b = areas.bank(store, self.conf, "FCY", date(2026, 11, 13))
+        self.assertEqual(b["seconds"], 4 * h)
+        self.assertEqual([(w["start"], w["over_seconds"]) for w in b["weeks"]], [("2026-09-07", 3 * h), ("2026-10-05", 1 * h)])
+        p = self.patched(store)
+        with p[0], p[1], p[2], p[3]:
+            # the September timesheet now agrees with what was invoiced
+            self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-09")[0], 19 * h)

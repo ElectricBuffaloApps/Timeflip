@@ -982,7 +982,6 @@ class Handler(BaseHTTPRequestHandler):
                             del a["bank_start"]
                     areas.set_allotted(conf, body.get("areas"), known)
                     areas.settle_starts(conf, service.open_store())
-                    areas.check_starts(conf, service.open_store())
                     cfg.save_config(conf)
                 elif self.path == "/api/lieu/bank":
                     client = str(body.get("client") or "").strip()

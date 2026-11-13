@@ -4,8 +4,8 @@
     "changes": [
       "Hours in lieu now fill by themselves: any week you work more than an area's hours a week, the extra goes into its bank. You still choose when to use them, by adding them to a day or week on the area's page.",
       "For a client invoiced by the week, the hours over are also left off that week's invoice (the timesheet says how many were banked) and are charged when you add them to a later day or week. Every hour is charged once.",
-      "Settings → Dashboard cards has two new columns: 'Bank hours over that' to switch it on or off for each area, and 'Counting from' for the date it starts. It starts from 01/09/2026, or the month after the last one you've marked as invoiced for a client invoiced by the week.",
-      "Check 'Counting from' before your next invoice: if you've sent an invoice for a month but not marked it as invoiced, mark it first, or hours you've already charged could be banked.",
+      "Settings → Dashboard cards has two new columns: 'Bank hours over that' to switch it on or off for each area, and 'Counting from' for the date it starts. It starts from 01/09/2026.",
+      "The bank counts weeks in months you've already invoiced, on the understanding that those invoices charged only the hours a week. The area's page names the months it's assuming this for. If one of them charged everything you worked, move 'Counting from' to after it.",
       "Clients with a monthly allowance (Roll over and carried hours) are left as they are. Clients invoiced by the day or by the hour can only be banked by hand.",
       "Once a month is invoiced, what its weeks banked is fixed, so changing the hours a week later can't alter that invoice or lose banked time.",
       "'Adjust the bank by hand' is still there for anything the automatic count misses."

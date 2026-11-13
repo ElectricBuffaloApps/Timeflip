@@ -81,11 +81,6 @@ def _has_allowance(conf: dict, store, client: str) -> bool:
                for l in conf.get("limits") or [])
 
 
-def _next_month_start(month: str) -> date:
-    y, m = (int(x) for x in month.split("-"))
-    return date(y + (m == 12), m % 12 + 1, 1)
-
-
 def bank_rules(conf: dict, store, client: str) -> dict:
     """Whether this client's bank fills by itself, from when, and whether the hours are held back from invoices."""
     area = next((a for a in conf.get("areas") or [] if a["client"].lower() == client.lower()), {})
@@ -108,14 +103,15 @@ def bank_rules(conf: dict, store, client: str) -> dict:
             "start": start, "limit_seconds": round((limit or 0) * 3600), "holds_back": weekly, "monday_weeks": weekly}
 
 
-def earliest_start(store, conf: dict, client: str) -> date | None:
-    """For a client invoiced by the week: the first day banking may start, after every month already invoiced.
-    Hours in an invoiced month have been charged, so they must not be banked and charged again."""
-    c = _client_conf(conf, client)
-    if not c or c.get("billing") != "week" or c.get("notional"):
-        return None
-    done = store.invoiced(client)
-    return _next_month_start(max(done)) if done else None
+def invoiced_since_start(store, conf: dict, client: str) -> list[str]:
+    """For a client invoiced by the week whose bank holds hours back: the months already marked as invoiced that the
+    bank counts weeks from. Banking those weeks is only right if their invoices charged no more than the hours a
+    week, so the page says which months it is assuming that for."""
+    rules = bank_rules(conf, store, client)
+    if not (rules["auto"] and rules["holds_back"]):
+        return []
+    first = f"{rules['start']:%Y-%m}"
+    return sorted(m for m in store.invoiced(client) if m >= first)
 
 
 def settle_starts(conf: dict, store) -> bool:
@@ -125,20 +121,11 @@ def settle_starts(conf: dict, store) -> bool:
     changed = conf.get("areas") is None
     for a in areas_now:
         if not a.get("bank_start"):
-            floor = earliest_start(store, conf, a["client"])
-            a["bank_start"] = max(date.fromisoformat(DEFAULT_BANK_START), floor or date.min).isoformat()
+            a["bank_start"] = DEFAULT_BANK_START
             changed = True
     if changed:
         conf["areas"] = areas_now
     return changed
-
-
-def check_starts(conf: dict, store) -> None:
-    for a in conf.get("areas") or []:
-        floor = earliest_start(store, conf, a["client"])
-        if floor and a.get("bank_start") and a.get("bank_auto", True) and date.fromisoformat(a["bank_start"]) < floor:
-            raise ValueError(f"{a['client']} is already invoiced up to {floor - timedelta(days=1):%d/%m/%Y}, so those hours "
-                             f"have been charged. Banking can start from {floor:%d/%m/%Y}.")
 
 
 def over_weeks(store, conf: dict, client: str, today: date) -> list[dict]:
@@ -316,6 +303,7 @@ def detail(store, conf: dict, client: str, today: date, carried_s: int = 0, holi
                  "total_seconds": banked["seconds"] + carried_s, "auto_seconds": banked["auto_seconds"],
                  "hand_seconds": banked["hand_seconds"], "weeks": banked["weeks"][::-1][:12], "auto": rules["auto"],
                  "why": rules["why"], "start": rules["start"].isoformat(), "holds_back": rules["auto"] and rules["holds_back"],
+                 "invoiced_months": invoiced_since_start(store, conf, match),
                  "log": store.lieu_log(match)},
     }
 
