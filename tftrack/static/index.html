@@ -2548,6 +2548,7 @@ $("viewerStop").onclick = async () => { await api("/api/viewer/stop", {}); $("vi
 /* ---------- start ---------- */
 function refreshAll(auto = false) {
   loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect(); loadAreas();
+  if (areaOpen) loadArea(true);   // an area's page that's open follows a sync too
 }
 (async () => {
   try { showState(await api("/api/state"), true); }

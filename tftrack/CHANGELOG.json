@@ -4,7 +4,8 @@
     "changes": [
       "Every device now moves to a new version together. When the tracker is updated, a page left open on your phone or another computer loads the new version by itself, instead of carrying on with the old one until you refreshed it.",
       "If you're part-way through changing a setting when that happens, it waits and shows a Reload button so nothing you've typed is lost.",
-      "Coming back to the tracker on your phone now refreshes the figures straight away, instead of waiting up to a minute."
+      "Coming back to the tracker on your phone now refreshes the figures straight away, instead of waiting up to a minute.",
+      "Sync now also refreshes an area's page if you have one open. Before, its figures could lag up to a minute behind."
     ]
   },
   {
