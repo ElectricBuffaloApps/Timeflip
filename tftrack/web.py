@@ -63,7 +63,10 @@ def state() -> dict:
         "week_starts": conf.get("week_starts", "monday"),
         "payment_terms_days": collect.terms_days(conf),
         "businesses": billing.businesses(conf),
-        "areas": areas.configured(conf, store),
+        "areas": [{**a, "week_hours": next((t.get("week") for n, t in ((conf.get("targets") or {}).get("hours") or {}).items()
+                                            if n.lower() == a["client"].lower()), None),
+                   "allotted_hours": areas.allotted_hours(conf, store, a["client"])}
+                  for a in areas.configured(conf, store)],
         "client_details": conf.get("client_details", {}),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
         "limits": conf.get("limits", []),
@@ -605,12 +608,14 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
             if url.path == "/api/areas":
-                return self._send(200, {"areas": areas.cards(service.open_store(), cfg.load_config(), date.today())})
+                return self._send(200, {"areas": areas.cards(service.open_store(), cfg.load_config(), date.today(),
+                                                             allowance.bank_holidays()[0] or set())})
             if url.path == "/api/area":
                 try:
                     client = q.get("client") or ""
                     return self._send(200, areas.detail(service.open_store(), cfg.load_config(), client, date.today(),
-                                                        _carried(client, date.today())))
+                                                        _carried(client, date.today()),
+                                                        allowance.bank_holidays()[0] or set()))
                 except ValueError as e:
                     return self._send(404, {"error": str(e)})
             if url.path == "/api/insights":
@@ -909,6 +914,7 @@ class Handler(BaseHTTPRequestHandler):
                     conf = cfg.load_config()
                     known = sorted({t["tag"] for t in service.open_store().tasks() if t["tag"]})
                     conf["areas"] = areas.clean(body.get("areas"), known)
+                    areas.set_allotted(conf, body.get("areas"), known)
                     cfg.save_config(conf)
                 elif self.path == "/api/lieu/bank":
                     client = str(body.get("client") or "").strip()

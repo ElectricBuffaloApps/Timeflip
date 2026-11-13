@@ -4,7 +4,9 @@
     "changes": [
       "Area cards: the top of the Dashboard now has a card for each of your main clients, showing hours this week and this month. Choose which clients have a card, and what each is called, in Settings → Dashboard cards.",
       "Area pages: click a card for a page about that client. It shows this week, this month and last week, and a chart of hours you can switch between by day (28 days), by week (12 weeks) and by month (12 months), split by task.",
-      "Hours in lieu: each area has a bank of hours you type in. Add banked hours to a day or a week and they become real time: they count in your totals and go on that client's timesheet and invoice, marked as added. Delete the added entry on the timesheet and the hours go back in the bank.",
+      "Hours a week: in Settings → Dashboard cards, enter the hours you mean to do for each client every week. Each card then shows a progress bar and how much is left to do. A card turns red when you're behind for the week, and a 'Do first' line under the cards lists what to prioritise, furthest behind first, with the hours a day needed to catch up.",
+      "On an area's page, the weekly chart has a line at your allotted hours, and weeks that fell short are faded.",
+      "Hours in lieu: each area has a bank of hours you type in. Pick the day, or pick the week from a list, and the banked hours become real time: they count in your totals and go on that client's timesheet and invoice, marked as added. Delete the added entry on the timesheet and the hours go back in the bank.",
       "For a client with a monthly allowance, the hours-in-lieu figure also includes carried-over time. You still add carried-over time from the timesheet.",
       "Money to collect reminds you about banked hours on paying clients that haven't been used."
     ]

@@ -1132,3 +1132,41 @@ class AreasTest(unittest.TestCase):
         self.assertEqual([(r["task"], r["seconds"]) for r in added], [("Justin", 2 * 3600)])
         store.delete_manual(added[0]["id"])                                              # deleting the entry gives the hours back
         self.assertEqual(store.lieu_balance("HTB"), 3 * 3600)
+
+
+class AllottedHoursTest(unittest.TestCase):
+    def test_behind_on_track_and_done(self):
+        from datetime import date
+        from tftrack import areas
+        ws = date(2026, 11, 9)                                    # a Monday
+        h = 3600
+        # Thursday: three working days are finished, so 10h a week means 6h by now
+        p = areas.week_progress(10, 4 * h, ws, date(2026, 11, 12), set())
+        self.assertEqual((p["status"], p["to_go_seconds"], p["behind_seconds"], p["days_left"], p["per_day_seconds"]),
+                         ("behind", 6 * h, 2 * h, 2, 3 * h))
+        self.assertEqual(areas.week_progress(10, 6 * h, ws, date(2026, 11, 12), set())["status"], "on_track")
+        self.assertEqual(areas.week_progress(10, 0, ws, date(2026, 11, 9), set())["status"], "on_track")   # Monday morning
+        self.assertEqual(areas.week_progress(10, 10 * h, ws, date(2026, 11, 12), set())["status"], "done")
+        self.assertEqual(areas.week_progress(10, 9 * h, ws, date(2026, 11, 14), set())["status"], "behind")  # Saturday, 1h short
+        self.assertIsNone(areas.week_progress(None, 5 * h, ws, date(2026, 11, 12), set()))
+        # a bank holiday Monday leaves four working days: 10h a week is 2.5h a day
+        p = areas.week_progress(10, 2 * h, ws, date(2026, 11, 11), {date(2026, 11, 9)})
+        self.assertEqual((p["status"], p["behind_seconds"]), ("behind", round(0.5 * h)))
+
+    def test_where_the_hours_come_from_and_saving_them(self):
+        from tftrack import areas
+        store = make_store([], tasks=[{"id": 1, "name": "Justin", "tag": "HTB"}, {"id": 2, "name": "Prog", "tag": "FCY"},
+                                      {"id": 3, "name": "Dev", "tag": "FYPTD"}])
+        conf = {"limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True}, {"client": "FCY", "weekly_hours": 8}],
+                "targets": {"hours": {"fcy": {"week": 12, "month": 40}}}}
+        self.assertEqual(areas.allotted_hours(conf, store, "HTB"), 6.0)      # its allowance task
+        self.assertEqual(areas.allotted_hours(conf, store, "FCY"), 12.0)     # the weekly target wins over the limit
+        self.assertIsNone(areas.allotted_hours(conf, store, "FYPTD"))
+        known = ["FCY", "FYPTD", "HTB"]
+        areas.set_allotted(conf, [{"client": "FYPTD", "week_hours": "5"}, {"client": "FCY", "week_hours": ""},
+                                  {"client": "HTB"}], known)
+        self.assertEqual(conf["targets"]["hours"]["FYPTD"]["week"], 5.0)
+        self.assertEqual(conf["targets"]["hours"]["fcy"], {"day": None, "week": None, "month": 40})   # month target kept
+        self.assertEqual(areas.allotted_hours(conf, store, "FCY"), 8.0)      # back to the limit
+        with self.assertRaisesRegex(ValueError, "must be a number"):
+            areas.set_allotted(conf, [{"client": "HTB", "week_hours": "lots"}], known)

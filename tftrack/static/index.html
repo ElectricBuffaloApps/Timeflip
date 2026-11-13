@@ -204,6 +204,16 @@ a.acard:hover, a.acard:focus-visible { transform: translateY(-2px); box-shadow: 
 .acard .figs span { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
 @media (max-width: 560px) { a.acard { padding: 12px 14px; } .acard .figs b { font-size: 17px; }
   .acard .figs span { font-size: 10px; letter-spacing: .03em; white-space: nowrap; } .acard .name span { display: none; } }
+a.acard.behind { border-top-color: var(--critical); }
+a.acard.done { border-top-color: var(--good); }
+.acard .prog { display: grid; gap: 6px; }
+.acard .prog .row2 { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; align-items: center; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.nudge { border-left: 4px solid var(--critical); font-size: 13px; }
+.nudge b { font-family: Sora, Inter, sans-serif; }
+.target-line { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--ink-2); pointer-events: none; opacity: .7; }
+.target-line span { position: absolute; right: 0; top: -18px; font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--surface); padding: 0 4px; }
+.ins-chart { position: relative; }
+.ins-chart .col.short .bar { opacity: .5; }
 .area-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
 .area-head h2 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
 .area-head .meta { font-size: 12px; color: var(--ink-2); margin-right: auto; }
@@ -445,6 +455,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
   <!-- ================= DASHBOARD ================= -->
   <div class="board" data-panel="dashboard" role="tabpanel">
     <div class="areas c12 hidden" id="areaCards" aria-label="Your areas"></div>
+    <div class="callout nudge c12 hidden" id="areaNudge" role="status"></div>
     <section class="tile c12 collect hidden" id="collectTile" aria-label="Money to collect">
       <div class="owed-head">
         <div><div class="lbl">Money to collect</div><div class="owed-sub" id="collectSub"></div></div>
@@ -624,7 +635,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="lieu-form">
         <h3>Add banked hours to a day or week</h3>
         <label class="field">Add to<select id="luMode"><option value="day">A day</option><option value="week">A week</option></select></label>
-        <label class="field"><span id="luDateLabel">Day</span><input type="date" id="luDate"></label>
+        <label class="field" id="luDayField">Day<input type="date" id="luDate"></label>
+        <label class="field hidden" id="luWeekField">Week<select id="luWeek"></select></label>
         <label class="field">Task<select id="luTask"></select></label>
         <label class="field">Hours<input type="number" id="luHours" min="0.25" step="0.25"></label>
         <div class="wide"><button class="primary" id="luUse">Add to that day</button></div>
@@ -683,11 +695,12 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="tile-head"><h2>Dashboard cards</h2><span class="meta">The areas shown at the top of the Dashboard. Each opens its own page.</span></div>
       <div class="tablewrap">
         <table class="edit">
-          <thead><tr><th>Client</th><th>Name on the card</th><th></th></tr></thead>
+          <thead><tr><th>Client</th><th>Name on the card</th><th>Hours a week</th><th></th></tr></thead>
           <tbody id="areaRows"></tbody>
         </table>
       </div>
       <div class="actions"><button id="areaAdd">+ Add a card</button><button class="primary" id="saveAreas">Save cards</button><span class="msg" id="areaMsg"></span></div>
+      <p class="note"><b>Hours a week</b> is what you mean to do for that client each week. Cards turn red when you're behind, so you know what to do first. It's the same figure as the client's weekly time target, below.</p>
     </section>
     <section class="tile c12" id="businessTile">
       <div class="tile-head"><h2>Your businesses</h2><span class="meta">Each has its own details and invoice numbers</span></div>
@@ -1412,9 +1425,32 @@ async function loadAreas() {
       const d = el("div"); d.append(el("b", {}, hm(secs)), el("span", {}, label)); figs.append(d);
     }
     card.append(name, figs);
+    const p = a.progress;
+    if (p) {
+      card.classList.add(p.status === "behind" ? "behind" : p.status === "done" ? "done" : "ontrack");
+      const prog = el("div", { class: "prog" });
+      const track = el("div", { class: "track" }), fill = el("div", { class: "fill" });
+      fill.style.width = `${Math.min(100, (100 * a.week_seconds) / p.target_seconds)}%`;
+      fill.style.background = { behind: "var(--critical)", done: "var(--good)", on_track: "var(--accent)" }[p.status];
+      track.append(fill);
+      const row = el("div", { class: "row2" });
+      row.append(el("span", {}, `of ${hShort(p.target_seconds)} this week`),
+                 p.status === "done" ? chip("good", "Done") : p.status === "behind" ? chip("critical", `${hShort(p.to_go_seconds)} to do · behind`)
+                                                             : chip("", `${hShort(p.to_go_seconds)} to do`));
+      prog.append(track, row); card.append(prog);
+    }
     if (a.lieu_seconds > 0) { const foot = el("div"); foot.append(chip("tag", `${hm(a.lieu_seconds)} in lieu`)); card.append(foot); }
     return card;
   }));
+  // what to do first: the areas behind their week, the furthest behind first
+  const behind = r.areas.filter((a) => a.progress && a.progress.status === "behind").sort((x, y) => y.progress.behind_seconds - x.progress.behind_seconds);
+  $("areaNudge").classList.toggle("hidden", !behind.length);
+  if (behind.length) {
+    $("areaNudge").replaceChildren(el("b", {}, "Do first: "), behind.map((a) => {
+      const p = a.progress;
+      return `${a.label} (${hShort(p.to_go_seconds)} left this week` + (p.days_left ? `, ${hShort(p.per_day_seconds)} a day` : "") + ")";
+    }).join(", ") + ".");
+  }
 }
 let areaMode = "week", areaData = null;
 try { areaMode = localStorage.getItem("areaMode") || "week"; } catch (_) {}
@@ -1435,7 +1471,21 @@ async function loadArea(auto = false) {
   const wk = d.series.week, mo = d.series.month;
   const lastWk = wk.length > 1 ? wk[wk.length - 2].seconds : 0, lastMo = mo.length > 1 ? mo[mo.length - 2].seconds : 0;
   $("arKpis").replaceChildren(
-    tile("This week", hm(d.week_seconds), worth(d.week_seconds) || `Last week ${hm(lastWk)}`),
+    (() => {
+      const p = d.progress;
+      if (!p) return tile("This week", hm(d.week_seconds), worth(d.week_seconds) || "Set hours a week in Settings → Dashboard cards");
+      const t = tile("This week", hm(d.week_seconds), "");
+      t.querySelector(".fig").append(el("small", {}, ` of ${hShort(p.target_seconds)}`));
+      const track = el("div", { class: "track" }), fill = el("div", { class: "fill" });
+      fill.style.width = `${Math.min(100, (100 * d.week_seconds) / p.target_seconds)}%`;
+      fill.style.background = { behind: "var(--critical)", done: "var(--good)", on_track: "var(--accent)" }[p.status];
+      track.append(fill);
+      t.querySelector(".foot").append(p.status === "done" ? chip("good", "Week done") : p.status === "behind"
+        ? chip("critical", `${hShort(p.to_go_seconds)} to do · ${hShort(p.behind_seconds)} behind`) : chip("", `${hShort(p.to_go_seconds)} to do · on track`),
+        p.status !== "done" && p.days_left ? el("span", {}, `${hShort(p.per_day_seconds)} a day for ${p.days_left} day${p.days_left === 1 ? "" : "s"}`) : "");
+      t.insertBefore(track, t.querySelector(".foot"));
+      return t;
+    })(),
     tile("This month", hm(d.month_seconds), worth(d.month_seconds) || `Last month ${hm(lastMo)}`),
     tile("Last week", hm(lastWk), `Last month ${hm(lastMo)}`),
     tile("Hours in lieu", hm(d.lieu.total_seconds), d.lieu.total_seconds && d.rate ? `Worth ${gbp((d.lieu.total_seconds / 3600) * d.rate)}` : "Banked, not yet used"));
@@ -1447,6 +1497,8 @@ async function loadArea(auto = false) {
     : "Hours you've banked. Add them to a day or week and they count as time worked, and go on the invoice.";
   if (!auto) {
     $("luTask").replaceChildren(...d.tasks.map((t) => el("option", { value: String(t.id) }, t.name)));
+    $("luWeek").replaceChildren(...d.weeks.map((w) => el("option", { value: w.start }, w.label)));
+    $("luWeek").value = d.week_starts;
     $("luDate").value = d.today; $("luHours").value = ""; $("lbHours").value = ""; $("lbNote").value = ""; $("arLieuMsg").textContent = "";
   }
   $("luUse").disabled = d.lieu.bank_seconds <= 0;
@@ -1463,7 +1515,8 @@ function drawAreaChart() {
   for (const b of document.querySelectorAll("[data-armode]")) b.setAttribute("aria-pressed", String(b.dataset.armode === areaMode));
   const buckets = d.series[areaMode];
   const colour = (task) => { const i = d.task_order.indexOf(task); return i >= 0 && i < SLOTS - 1 ? `var(--s${i + 1})` : "var(--other)"; };
-  const max = Math.max(3600, ...buckets.map((b) => b.seconds));
+  const target = areaMode === "week" && d.allotted_hours ? d.allotted_hours * 3600 : 0;
+  const max = Math.max(3600, target, ...buckets.map((b) => b.seconds));
   const chart = $("arChart"), tip = $("arTip");
   chart.style.setProperty("--cols", buckets.length);
   chart.classList.toggle("dense", areaMode === "day");
@@ -1471,7 +1524,9 @@ function drawAreaChart() {
   chart.replaceChildren(...buckets.map((b, i) => {
     const last = i === buckets.length - 1;
     const weekStart = areaMode === "day" && new Date(`${b.key}T12:00:00`).getDay() === new Date(`${d.week_starts}T12:00:00`).getDay();
-    const col = el("div", { class: `col${last ? " today" : ""}${weekStart ? " wkstart" : ""}`, tabindex: "0", "aria-label": `${b.name}: ${hm(b.seconds)}` });
+    const short = target && !last && b.seconds < target;
+    const col = el("div", { class: `col${last ? " today" : ""}${weekStart ? " wkstart" : ""}${short ? " short" : ""}`, tabindex: "0",
+                            "aria-label": `${b.name}: ${hm(b.seconds)}` + (target ? (b.seconds >= target ? ", allotted hours met" : `, ${hm(target - b.seconds)} under`) : "") });
     const bar = el("div", { class: "bar" });
     bar.style.height = `${Math.max(1, (100 * b.seconds) / max) * 0.78}%`;
     const parts = Object.entries(b.tasks).sort((x, y) => d.task_order.indexOf(x[0]) - d.task_order.indexOf(y[0]));
@@ -1482,6 +1537,7 @@ function drawAreaChart() {
     col.append(el("div", { class: "val" }, b.seconds ? hShort(b.seconds) : "–"), bar, el("div", { class: "day" }, b.label));
     const show = () => {
       tip.replaceChildren(el("b", {}, b.name), el("div", {}, b.seconds ? hm(b.seconds) : "Nothing tracked"));
+      if (target) tip.append(el("div", {}, b.seconds >= target ? `Met the ${hShort(target)} a week` : `${hm(target - b.seconds)} under the ${hShort(target)} a week`));
       for (const [task, secs] of parts) {
         const row = el("div"); const key = el("span", { class: "k" }); key.style.background = colour(task);
         row.append(key, `${task}: ${hm(secs)}`); tip.append(row);
@@ -1495,13 +1551,20 @@ function drawAreaChart() {
     col.onmouseleave = col.onblur = () => tip.classList.add("hidden");
     return col;
   }));
+  if (target) {
+    const line = el("div", { class: "target-line", "aria-hidden": "true" });
+    line.style.bottom = `calc(${((100 * target) / max) * 0.78}% + 23px)`;
+    line.append(el("span", {}, `${hShort(target)} a week`));
+    chart.append(line);
+  }
   const shown = d.task_order.filter((t) => used.has(t));
   $("arLegend").replaceChildren(...(shown.length > 1 ? shown.map((t) => {
     const item = el("span"); const sw = el("i"); sw.style.background = colour(t); item.append(sw, t); return item;
   }) : []));
   const total = buckets.reduce((t, b) => t + b.seconds, 0);
   $("arChartNote").textContent = { day: "Last 28 days", week: "Last 12 weeks", month: "Last 12 months" }[areaMode] +
-    `: ${hm(total)} in all, ${hm(total / buckets.length)} on average per ${areaMode}.`;
+    `: ${hm(total)} in all, ${hm(total / buckets.length)} on average per ${areaMode}.` +
+    (target ? ` Faded weeks were under the ${hShort(target)} allotted.` : "");
 }
 for (const b of document.querySelectorAll("[data-armode]")) b.onclick = () => {
   areaMode = b.dataset.armode;
@@ -1511,14 +1574,15 @@ for (const b of document.querySelectorAll("[data-armode]")) b.onclick = () => {
 $("arSheet").onclick = () => { if (areaData) openSheet(areaData.client, areaData.today.slice(0, 7)); };
 $("luMode").onchange = () => {
   const week = $("luMode").value === "week";
-  $("luDateLabel").textContent = week ? "Any day in that week" : "Day";
+  $("luDayField").classList.toggle("hidden", week); $("luWeekField").classList.toggle("hidden", !week);
   $("luUse").textContent = week ? "Add to that week" : "Add to that day";
 };
 const areaChanged = () => { loadArea(true); loadAreas(); loadToday(); loadWeek(); loadTargets(); loadOutstanding(); loadCollect(); };
 $("luUse").onclick = async () => {
   try {
+    const week = $("luMode").value === "week";
     await api("/api/lieu/use", { client: areaData.client, task_id: Number($("luTask").value), mode: $("luMode").value,
-                                 date: $("luDate").value, hours: $("luHours").value });
+                                 date: week ? $("luWeek").value : $("luDate").value, hours: $("luHours").value });
     $("arLieuMsg").textContent = `Added ${$("luHours").value}h. It's on the timesheet as an added entry: delete it there to put the hours back.`;
     $("luHours").value = ""; areaChanged();
   } catch (e) { $("arLieuMsg").textContent = e.message; }
@@ -1541,8 +1605,11 @@ function areaRow(s, a) {
   const gone = el("button", { class: "link" }, "Remove");
   gone.onclick = () => { tr.remove(); $("areaMsg").textContent = "Unsaved changes: click Save cards."; };
   const cell = (x) => { const td = el("td"); td.append(x); return td; };
-  tr.append(cell(pick), cell(label), cell(gone));
-  tr.read = () => ({ client: pick.value, label: label.value });
+  const hours = el("input", { type: "number", min: "0", step: "0.5", style: "width:100px", "aria-label": "Hours a week",
+                              placeholder: a.allotted_hours && !a.week_hours ? `${a.allotted_hours} (from limits)` : "none" });
+  hours.value = a.week_hours ?? "";
+  tr.append(cell(pick), cell(label), cell(hours), cell(gone));
+  tr.read = () => ({ client: pick.value, label: label.value, week_hours: hours.value });
   return tr;
 }
 function renderAreaRows(s) { $("areaRows").replaceChildren(...s.areas.map((a) => areaRow(s, a))); }
@@ -1557,7 +1624,7 @@ $("areaRows").addEventListener("input", () => { $("areaMsg").textContent = "Unsa
 $("saveAreas").onclick = async () => {
   const list = [...$("areaRows").children].map((tr) => tr.read());
   if (new Set(list.map((a) => a.client)).size !== list.length) { $("areaMsg").textContent = "Each client can only have one card."; return; }
-  try { showState(await api("/api/areas", { areas: list }), "areas"); $("areaMsg").textContent = "Saved."; loadAreas(); }
+  try { showState(await api("/api/areas", { areas: list }), "areas"); renderTargetSettings(state); $("areaMsg").textContent = "Saved."; loadAreas(); loadTargets(); }
   catch (e) { $("areaMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("areaMsg").textContent === "Saved.") $("areaMsg").textContent = ""; }, 4000);
 };

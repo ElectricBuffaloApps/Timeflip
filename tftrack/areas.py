@@ -55,21 +55,84 @@ def clean(raw: list, known: list[str]) -> list[dict]:
     return out
 
 
+def set_allotted(conf: dict, raw: list, known: list[str]) -> None:
+    """Save the hours a week typed beside each card. They're the clients' weekly time targets, so Targets shows them too."""
+    targets = conf.setdefault("targets", {})
+    hours = targets.setdefault("hours", {})
+    for a in raw if isinstance(raw, list) else []:
+        if "week_hours" not in (a or {}):
+            continue
+        match = next((k for k in known if k.lower() == str(a.get("client") or "").lower()), None)
+        if not match:
+            continue
+        value = a["week_hours"]
+        try:
+            value = None if value in (None, "") else float(value)
+        except (TypeError, ValueError):
+            raise ValueError("Hours a week must be a number.")
+        if value is not None and value < 0:
+            raise ValueError("Hours a week can't be negative.")
+        key = next((k for k in hours if k.lower() == match.lower()), match)
+        entry = dict(hours.get(key) or {})
+        entry["week"] = value or None
+        if any(entry.get(p) for p in ("day", "week", "month")):
+            hours[key] = {p: entry.get(p) for p in ("day", "week", "month")}
+        else:
+            hours.pop(key, None)
+
+
+def allotted_hours(conf: dict, store, client: str) -> float | None:
+    """The hours a week meant for this client: its weekly time target, else its weekly limit, else the weekly hours
+    of its allowance tasks."""
+    for name, t in ((conf.get("targets") or {}).get("hours") or {}).items():
+        if name.lower() == client.lower() and (t or {}).get("week"):
+            return float(t["week"])
+    limits = conf.get("limits") or []
+    for l in limits:
+        if (l.get("client") or "").lower() == client.lower() and l.get("weekly_hours"):
+            return float(l["weekly_hours"])
+    mine = {t["name"].lower() for t in store.tasks() if (t["tag"] or "").lower() == client.lower()}
+    total = sum(float(l["weekly_hours"]) for l in limits
+                if l.get("allowance") and l.get("weekly_hours") and (l.get("task") or "").lower() in mine)
+    return total or None
+
+
+def week_progress(target_hours: float | None, seconds: int, ws: date, today: date, holidays: set) -> dict | None:
+    """Where this week stands against the allotted hours. "Behind" means under the pace of the working days already
+    finished (today isn't counted until it's over), so it's a prompt to prioritise, not a telling-off at 9am."""
+    if not target_hours:
+        return None
+    target = round(target_hours * 3600)
+    days = [ws + timedelta(days=n) for n in range(7)]
+    working = [d for d in days if d.weekday() < 5 and d not in holidays] or days
+    done = len([d for d in working if d < today])
+    left = len([d for d in working if d >= today])
+    to_go = max(0, target - seconds)
+    expected = target * done / len(working)
+    status = "done" if seconds >= target else "behind" if seconds < expected else "on_track"
+    return {"target_seconds": target, "to_go_seconds": to_go, "status": status,
+            "behind_seconds": max(0, round(expected - seconds)) if status == "behind" else 0,
+            "days_left": left, "per_day_seconds": round(to_go / left) if left and to_go else 0}
+
+
 def _seconds(store, client: str, start: date, end: date) -> int:
     return sum(r["seconds"] for r in timesheet_rows(store, start, end, client) if not r["excluded"])
 
 
-def cards(store, conf: dict, today: date) -> list[dict]:
+def cards(store, conf: dict, today: date, holidays: set = frozenset()) -> list[dict]:
     ws = week_start(today, conf)
     out = []
     for a in configured(conf, store):
-        out.append({**a, "week_seconds": _seconds(store, a["client"], ws, today),
+        week = _seconds(store, a["client"], ws, today)
+        out.append({**a, "week_seconds": week,
                     "month_seconds": _seconds(store, a["client"], today.replace(day=1), today),
-                    "lieu_seconds": store.lieu_balance(a["client"])})
+                    "lieu_seconds": store.lieu_balance(a["client"]),
+                    "allotted_hours": allotted_hours(conf, store, a["client"]),
+                    "progress": week_progress(allotted_hours(conf, store, a["client"]), week, ws, today, holidays)})
     return out
 
 
-def detail(store, conf: dict, client: str, today: date, carried_s: int = 0) -> dict:
+def detail(store, conf: dict, client: str, today: date, carried_s: int = 0, holidays: set = frozenset()) -> dict:
     """Everything for one area's page."""
     known = sorted({t["tag"] for t in store.tasks() if t["tag"]}, key=str.lower)
     match = next((k for k in known if k.lower() == client.lower()), None)
@@ -104,6 +167,13 @@ def detail(store, conf: dict, client: str, today: date, carried_s: int = 0) -> d
         "week_seconds": sum(r["seconds"] for r in rows if date.fromisoformat(r["date"]) >= ws),
         "month_seconds": sum(r["seconds"] for r in rows if r["date"][:7] == f"{today:%Y-%m}"),
         "week_starts": ws.isoformat(), "today": today.isoformat(),
+        "allotted_hours": allotted_hours(conf, store, match),
+        "progress": week_progress(allotted_hours(conf, store, match),
+                                  sum(r["seconds"] for r in rows if date.fromisoformat(r["date"]) >= ws), ws, today, holidays),
+        "weeks": [{"start": (ws + timedelta(weeks=n)).isoformat(),
+                   "label": ("This week" if n == 0 else "Last week" if n == -1 else "Next week" if n == 1 else "Week")
+                            + f" ({ws + timedelta(weeks=n):%d/%m} to {ws + timedelta(weeks=n, days=6):%d/%m})"}
+                  for n in range(1, -9, -1)],
         "series": {
             "day": bucket(lambda d: d, days, lambda d: str(d.day), lambda d: f"{d:%A %d/%m/%Y}"),
             "week": bucket(lambda d: week_start(d, conf), weeks, lambda d: f"{d.day} {d:%b}",
