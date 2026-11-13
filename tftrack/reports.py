@@ -191,7 +191,7 @@ def invoice(store, client: str, year: int, month: int, style: str,
         while monday <= end:
             days = [day_entry(monday + timedelta(days=n)) for n in range(7)]
             days = [d for d in days if d["entries"]]
-            groups.append({"label": f"Week commencing {monday:%a %d %b %Y}", "days": days,
+            groups.append({"label": f"Week commencing {monday:%a %d %b %Y}", "days": days, "monday": monday.isoformat(),
                            "billed_s": sum(d["billed_s"] for d in days)})
             monday += timedelta(days=7)
     else:
@@ -278,9 +278,10 @@ def money_summary(store, start: date, end: date, clients_conf: dict) -> dict:
     """
     per_client_day: dict[str, dict[str, int]] = {}
     by_task: dict[str, dict] = {}
+    from_bank = store.lieu_entry_ids()   # banked hours added to a day: already counted when they were worked
     for r in timesheet_rows(store, start, end):
         conf = _client_conf(clients_conf, r["client"] if r["client"] != NO_CLIENT else None)
-        if r["excluded"] or not conf:
+        if r["excluded"] or not conf or r["id"] in from_bank:
             continue
         days = per_client_day.setdefault(r["client"], {})
         days[r["date"]] = days.get(r["date"], 0) + r["seconds"]

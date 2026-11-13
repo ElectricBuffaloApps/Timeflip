@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+from . import areas
 from .allowance import working_days
 from .reports import days_between, targets_summary, timesheet_rows
 
@@ -139,7 +140,7 @@ def build(store, conf: dict, today: date, owed: dict, month_due, holidays: set[d
                 c["carried_value"], c["client"], owed["month"], "timesheet")
 
     for client in clients:
-        banked = store.lieu_balance(client)
+        banked = areas.bank(store, conf, client, today)["seconds"]
         cc = next((c for n, c in (conf.get("clients") or {}).items() if n.lower() == client.lower()), {})
         if banked > 0 and not cc.get("notional") and cc.get("billing") != "monthly":
             add(f"lieu:{client.lower()}:{banked}", "lieu", "info",

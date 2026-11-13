@@ -660,7 +660,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <div class="wide"><button class="primary" id="luUse">Add to that day</button></div>
       </div>
       <div class="lieu-form">
-        <h3>Change the bank</h3>
+        <h3>Adjust the bank by hand</h3>
         <label class="field">Hours <span class="hint">(minus to take out)</span><input type="number" id="lbHours" step="0.25"></label>
         <label class="field">Note <span class="hint">(optional)</span><input id="lbNote"></label>
         <div class="wide"><button id="lbAdd">Put in the bank</button></div>
@@ -714,12 +714,13 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="tile-head"><h2>Dashboard cards</h2><span class="meta">The areas shown at the top of the Dashboard. Each opens its own page.</span></div>
       <div class="tablewrap">
         <table class="edit">
-          <thead><tr><th>Client</th><th>Name on the card</th><th>Hours a week</th><th></th></tr></thead>
+          <thead><tr><th>Client</th><th>Name on the card</th><th>Hours a week</th><th>Bank hours over that</th><th>Counting from</th><th></th></tr></thead>
           <tbody id="areaRows"></tbody>
         </table>
       </div>
       <div class="actions"><button id="areaAdd">+ Add a card</button><button class="primary" id="saveAreas">Save cards</button><span class="msg" id="areaMsg"></span></div>
       <p class="note"><b>Hours a week</b> is what you mean to do for that client each week. Cards turn red when you're behind, so you know what to do first. It's the same figure as the client's weekly time target, below.</p>
+      <p class="note"><b>Bank hours over that:</b> any week you work more than the hours a week, the extra goes into that area's hours in lieu by itself. For a client invoiced by the week, those hours are also left off that week's invoice and charged when you add them to a later day or week, so nothing is charged twice. Check <b>Counting from</b> is after the last month you've already invoiced.</p>
     </section>
     <div class="setgroup c12"><span class="lbl">Invoicing</span></div>
     <section class="tile c12" id="businessTile">
@@ -1551,9 +1552,18 @@ async function loadArea(auto = false) {
   drawAreaChart();
   // hours in lieu
   $("arLieu").textContent = hm(d.lieu.total_seconds);
-  $("arLieuSub").textContent = d.lieu.carried_seconds
-    ? `${hm(d.lieu.bank_seconds)} banked by you · ${hm(d.lieu.carried_seconds)} carried over on timesheets (add those from the timesheet)`
-    : "Hours you've banked. Add them to a day or week and they count as time worked, and go on the invoice.";
+  const L = d.lieu, parts = [];
+  if (L.auto) {
+    parts.push(L.weeks.length ? `${hm(L.auto_seconds)} from ${L.weeks.length} week${L.weeks.length === 1 ? "" : "s"} over your ${d.allotted_hours}h a week since ${ukDate(L.start)}`
+                              : `No weeks over your ${d.allotted_hours}h a week since ${ukDate(L.start)}`);
+    if (L.hand_seconds) parts.push(`${L.hand_seconds > 0 ? "plus" : "less"} ${hm(Math.abs(L.hand_seconds))} added, taken out or used`);
+    if (L.holds_back) parts.push("Hours over the week are left off that week's invoice and charged when you add them below");
+  } else {
+    parts.push(L.hand_seconds ? `${hm(L.hand_seconds)} banked by hand` : "Nothing banked");
+    parts.push(L.why ? `Not banked automatically: ${L.why.toLowerCase()}` : "Automatic banking is switched off in Settings → Dashboard cards");
+  }
+  if (L.carried_seconds) parts.push(`${hm(L.carried_seconds)} carried over on timesheets (add those from the timesheet)`);
+  $("arLieuSub").textContent = parts.join(". ") + ".";
   if (!auto) {
     $("luTask").replaceChildren(...d.tasks.map((t) => el("option", { value: String(t.id) }, t.name)));
     $("luWeek").replaceChildren(...d.weeks.map((w) => el("option", { value: w.start }, w.label)));
@@ -1566,6 +1576,10 @@ async function loadArea(auto = false) {
   $("arLieuLog").replaceChildren(...d.lieu.log.map((l) => {
     const row = el("div");
     row.append(el("span", {}, `${ukDate(l.created_at)} · ${l.note}`), el("b", {}, `${l.seconds > 0 ? "+" : "−"}${hm(Math.abs(l.seconds))}`));
+    return row;
+  }), ...d.lieu.weeks.map((w) => {
+    const row = el("div");
+    row.append(el("span", {}, `Week of ${ukDate(w.start)} · worked ${hm(w.worked_seconds)}`), el("b", {}, `+${hm(w.over_seconds)}`));
     return row;
   }));
 }
@@ -1667,8 +1681,18 @@ function areaRow(s, a) {
   const hours = el("input", { type: "number", min: "0", step: "0.5", style: "width:100px", "aria-label": "Hours a week",
                               placeholder: a.allotted_hours && !a.week_hours ? `${a.allotted_hours} (from limits)` : "none" });
   hours.value = a.week_hours ?? "";
-  tr.append(cell(pick), cell(label), cell(hours), cell(gone));
-  tr.read = () => ({ client: pick.value, label: label.value, week_hours: hours.value });
+  const rules = a.bank || { eligible: true, auto: true, start: "" };
+  const auto = el("input", { type: "checkbox", "aria-label": "Bank hours over the weekly hours" }); auto.checked = !!rules.auto;
+  const from = el("input", { type: "date", "aria-label": "Bank counting from" }); from.value = rules.start || "";
+  const autoCell = el("td"), fromCell = el("td");
+  if (rules.eligible) {
+    const lab = el("label", { class: "check" }); lab.append(auto, rules.holds_back ? "Yes, and hold off the invoice" : "Yes");
+    autoCell.append(lab); fromCell.append(from);
+    auto.onchange = () => { from.disabled = !auto.checked; }; from.disabled = !auto.checked;
+  } else autoCell.append(el("span", { class: "sub" }, rules.why || ""));
+  tr.append(cell(pick), cell(label), cell(hours), autoCell, fromCell, cell(gone));
+  tr.read = () => ({ client: pick.value, label: label.value, week_hours: hours.value,
+                     ...(rules.eligible ? { bank_auto: auto.checked, bank_start: from.value } : {}) });
   return tr;
 }
 function renderAreaRows(s) { $("areaRows").replaceChildren(...s.areas.map((a) => areaRow(s, a))); }
@@ -1680,10 +1704,14 @@ $("areaAdd").onclick = () => {
   $("areaMsg").textContent = "Unsaved changes: click Save cards.";
 };
 $("areaRows").addEventListener("input", () => { $("areaMsg").textContent = "Unsaved changes: click Save cards."; });
+$("areaRows").addEventListener("change", () => { $("areaMsg").textContent = "Unsaved changes: click Save cards."; });
 $("saveAreas").onclick = async () => {
   const list = [...$("areaRows").children].map((tr) => tr.read());
   if (new Set(list.map((a) => a.client)).size !== list.length) { $("areaMsg").textContent = "Each client can only have one card."; return; }
-  try { showState(await api("/api/areas", { areas: list }), "areas"); renderTargetSettings(state); $("areaMsg").textContent = "Saved."; loadAreas(); loadTargets(); }
+  try {
+    showState(await api("/api/areas", { areas: list }), "areas"); renderTargetSettings(state); $("areaMsg").textContent = "Saved.";
+    loadAreas(); loadTargets(); loadOutstanding(); loadCollect();
+  }
   catch (e) { $("areaMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("areaMsg").textContent === "Saved.") $("areaMsg").textContent = ""; }, 4000);
 };

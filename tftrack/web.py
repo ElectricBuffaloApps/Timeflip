@@ -65,7 +65,9 @@ def state() -> dict:
         "businesses": billing.businesses(conf),
         "areas": [{**a, "week_hours": next((t.get("week") for n, t in ((conf.get("targets") or {}).get("hours") or {}).items()
                                             if n.lower() == a["client"].lower()), None),
-                   "allotted_hours": areas.allotted_hours(conf, store, a["client"])}
+                   "allotted_hours": areas.allotted_hours(conf, store, a["client"]),
+                   "bank": {k: (v.isoformat() if k == "start" else v)
+                            for k, v in areas.bank_rules(conf, store, a["client"]).items()}}
                   for a in areas.configured(conf, store)],
         "client_details": conf.get("client_details", {}),
         "alert_levels_percent": conf.get("alert_levels_percent", [80, 100]),
@@ -403,7 +405,9 @@ def invoice_page(inv: dict) -> str:
                                 f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
                     week_s = 0
         if g["label"]:
-            rows.append(f'<tr class="sub"><td colspan=3>Week total</td><td class=n>{_hm(g["billed_s"])}</td>'
+            banked = (f' <span class="tag">{_hm(g["banked_s"])} over the weekly hours: banked, not charged here</span>'
+                      if g.get("banked_s") else "")
+            rows.append(f'<tr class="sub"><td colspan=3>Week total{banked}</td><td class=n>{_hm(g["billed_s"])}</td>'
                         f'<td class=n>{g["billed_s"] / 3600:.2f} h</td></tr>')
         parts.append("".join(rows))
     month = date.fromisoformat(inv["month"] + "-01")
@@ -654,7 +658,11 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/outstanding":
                 return self._send(200, outstanding(date.today()))
             if url.path == "/api/areas":
-                return self._send(200, {"areas": areas.cards(service.open_store(), cfg.load_config(), date.today(),
+                with LOCK:   # the first time, each area's bank gets a fixed start date
+                    conf = cfg.load_config()
+                    if areas.settle_starts(conf, service.open_store()):
+                        cfg.save_config(conf)
+                return self._send(200, {"areas": areas.cards(service.open_store(), conf, date.today(),
                                                              allowance.bank_holidays()[0] or set())})
             if url.path == "/api/area":
                 try:
@@ -899,6 +907,7 @@ class Handler(BaseHTTPRequestHandler):
                     if body.get("invoiced"):
                         secs, amount, _ = _month_due(store, cfg.load_config(), client, month)
                         store.set_invoiced(client, month, secs, amount)
+                        _fix_banked(store, client, month)
                     else:
                         bill = store.bill_for(client, month)
                         if bill:
@@ -964,8 +973,16 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/api/areas":
                     conf = cfg.load_config()
                     known = sorted({t["tag"] for t in service.open_store().tasks() if t["tag"]})
+                    before = {a["client"].lower(): a for a in conf.get("areas") or []}
                     conf["areas"] = areas.clean(body.get("areas"), known)
+                    for a in conf["areas"]:   # keep a start date the page didn't send
+                        old = before.get(a["client"].lower(), {})
+                        a.setdefault("bank_start", old.get("bank_start") or "")
+                        if not a["bank_start"]:
+                            del a["bank_start"]
                     areas.set_allotted(conf, body.get("areas"), known)
+                    areas.settle_starts(conf, service.open_store())
+                    areas.check_starts(conf, service.open_store())
                     cfg.save_config(conf)
                 elif self.path == "/api/lieu/bank":
                     client = str(body.get("client") or "").strip()
@@ -976,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
                     store = service.open_store()
                     if not client or not seconds:
                         raise ValueError("Enter a number of hours.")
-                    if store.lieu_balance(client) + seconds < 0:
+                    if areas.bank(store, cfg.load_config(), client, date.today())["seconds"] + seconds < 0:
                         raise ValueError("You can't take out more than is in the bank.")
                     note = str(body.get("note") or "").strip()[:200] or ("Added by hand" if seconds > 0 else "Taken out by hand")
                     store.add_lieu(client, seconds, note)
@@ -1175,6 +1192,14 @@ def _invoice(q: dict) -> dict:
     al = allowance.for_invoice(service.open_store(), cfg.load_config(), inv, holidays or set())
     if al:
         allowance.apply(inv, al)
+    # Hours over the weekly hours are in the bank: leave them off the week they were worked in.
+    held = areas.held_back(service.open_store(), cfg.load_config(), client, date.today()) if style == "week" else {}
+    inv["banked_s"] = 0
+    for g in inv["groups"]:
+        g["banked_s"] = min(held.get(g.get("monday"), 0), g["billed_s"])
+        g["billed_s"] -= g["banked_s"]
+        inv["banked_s"] += g["banked_s"]
+    inv["total_billed_s"] -= inv["banked_s"]
     inv["rate"] = c.get("rate")
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
@@ -1261,6 +1286,14 @@ def _carried(client: str, today: date) -> int:
         return 0
 
 
+def _fix_banked(store, client: str, month: str) -> None:
+    """A month invoiced by the week has just been invoiced: fix what each of its weeks held back for the bank."""
+    c = _client_settings(cfg.load_config(), client)
+    if c.get("billing") == "week" and not c.get("notional"):
+        inv = _invoice({"client": client, "month": month})
+        store.fix_banked_weeks(client, month, {g["monday"]: g["banked_s"] for g in inv["groups"]})
+
+
 def _month_dates(month: str) -> tuple[date, date]:
     y, m = (int(x) for x in month.split("-"))
     return date(y, m, 1), date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
@@ -1297,6 +1330,7 @@ def _create_bill(client: str, month: str, today: date) -> dict:
     lines = lines + billing.extra_lines(store.extras(client, month))
     bill, conf = billing.create(store, conf, client, month, lines, seconds, today, collect.terms_days(conf))
     cfg.save_config(conf)
+    _fix_banked(store, client, month)
     return bill
 
 

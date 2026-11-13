@@ -115,6 +115,15 @@ CREATE TABLE IF NOT EXISTS lieu (
     created_at TEXT NOT NULL,
     entry_id INTEGER
 );
+-- Hours held back from an invoiced month's weeks and put in the bank, fixed at the moment the month was invoiced, so
+-- a later change to the weekly hours can't alter what was charged or lose banked time.
+CREATE TABLE IF NOT EXISTS banked_week (
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- the invoiced month the week belongs to
+    week_start TEXT NOT NULL,   -- YYYY-MM-DD
+    seconds INTEGER NOT NULL,
+    PRIMARY KEY (client, week_start)
+);
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
 -- Time the user added by hand (not tracked on the cube).
@@ -393,8 +402,20 @@ class Store:
             if seconds is not None:
                 self.db.execute("INSERT INTO invoiced VALUES (?, ?, ?, ?, ?)",
                                 (client, month, datetime.now(timezone.utc).isoformat(), seconds, amount))
-            else:   # no invoice, so nothing to have been paid
+            else:   # no invoice, so nothing to have been paid, and its weeks' banked hours are worked out afresh
                 self.db.execute("DELETE FROM paid WHERE lower(client) = lower(?) AND month = ?", (client, month))
+                self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
+
+    def fix_banked_weeks(self, client: str, month: str, weeks: dict[str, int]) -> None:
+        """Record what each week of a month just invoiced held back (week start -> seconds, zeros included)."""
+        with self.db:
+            self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            self.db.executemany("INSERT OR REPLACE INTO banked_week VALUES (?, ?, ?, ?)",
+                                [(client, month, ws, secs) for ws, secs in weeks.items()])
+
+    def banked_weeks(self, client: str) -> dict[str, int]:
+        return {r["week_start"]: r["seconds"] for r in
+                self.db.execute("SELECT week_start, seconds FROM banked_week WHERE lower(client) = lower(?)", (client,))}
 
     def paid(self, client: str) -> dict[str, str]:
         """Invoiced months a client has paid: month -> when it was marked paid."""
@@ -504,6 +525,10 @@ class Store:
         row = self.db.execute(f"SELECT COALESCE(SUM(l.seconds), 0) FROM lieu l WHERE lower(l.client) = lower(?) AND {self._LIEU_LIVE}",
                               (client,)).fetchone()
         return int(row[0])
+
+    def lieu_entry_ids(self) -> set[int]:
+        """The added entries that came out of a bank (so they aren't counted as freshly worked time)."""
+        return {r[0] for r in self.db.execute("SELECT entry_id FROM lieu WHERE entry_id IS NOT NULL")}
 
     def lieu_log(self, client: str, limit: int = 12) -> list[dict]:
         """The latest changes to a client's bank, newest first."""

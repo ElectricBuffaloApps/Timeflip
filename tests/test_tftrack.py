@@ -1294,3 +1294,95 @@ class AreaCarriedTest(unittest.TestCase):
                 mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
             self.assertEqual(web._carried("HTB", date(2026, 10, 23)), 3600)
             self.assertEqual(web._carried("Nobody", date(2026, 10, 23)), 0)
+
+
+class AutoBankTest(unittest.TestCase):
+    def setUp(self):
+        self.at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
+        self.tasks = [{"id": 1, "name": "Prog", "tag": "FCY"}, {"id": 2, "name": "Dev", "tag": "FYPTD"},
+                      {"id": 3, "name": "Justin", "tag": "HTB"}, {"id": 4, "name": "Odd jobs", "tag": "Daily"}]
+        self.conf = {
+            "clients": {"FCY": {"billing": "week", "rounding": "none", "block_minutes": 15, "rate": 20},
+                        "FYPTD": {"billing": "hourly", "rate": 50, "notional": True},
+                        "HTB": {"billing": "day", "rate": 40}, "Daily": {"billing": "day", "rate": 30}},
+            "limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}],
+            "targets": {"hours": {"FCY": {"week": 10}, "FYPTD": {"week": 5}, "Daily": {"week": 5}}},
+            "areas": [{"client": c, "label": c} for c in ("FCY", "FYPTD", "HTB", "Daily")]}
+
+    def patched(self, store):
+        from unittest import mock
+        from tftrack import web, allowance
+        stack = mock.patch.multiple(web.cfg, load_config=mock.DEFAULT, save_config=mock.DEFAULT)
+        return (mock.patch.object(web.service, "open_store", return_value=store),
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: self.conf),
+                mock.patch.object(web.cfg, "save_config", side_effect=lambda c: None),
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)))
+
+    def test_hours_over_the_week_are_banked_held_back_and_charged_once(self):
+        from datetime import date
+        from tftrack import areas, web
+        from tftrack.reports import money_summary
+        h = 3600
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": self.at(5, 8), "duration": 7 * h},    # w/c Mon 5 Oct: 12h, 2 over
+            {"id": 2, "taskId": 1, "startedAt": self.at(6, 8), "duration": 5 * h},
+            {"id": 3, "taskId": 1, "startedAt": self.at(13, 8), "duration": 8 * h},   # w/c Mon 12 Oct: 8h, 2 short
+            {"id": 4, "taskId": 2, "startedAt": self.at(7, 8), "duration": 6 * h},    # own business: 1 over
+        ], tasks=self.tasks)
+        today = date(2026, 10, 23)
+        areas.settle_starts(self.conf, store)
+        self.assertEqual({a["client"]: a["bank_start"] for a in self.conf["areas"]}["FCY"], "2026-09-01")
+        rules = {c: areas.bank_rules(self.conf, store, c) for c in ("FCY", "FYPTD", "HTB", "Daily")}
+        self.assertEqual([(c, r["auto"], r["holds_back"]) for c, r in rules.items()],
+                         [("FCY", True, True), ("FYPTD", True, False), ("HTB", False, False), ("Daily", False, False)])
+        self.assertIn("Roll over", rules["HTB"]["why"])
+        self.assertIn("by the week", rules["Daily"]["why"])
+        self.assertEqual(areas.bank(store, self.conf, "FCY", today)["seconds"], 2 * h)
+        self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 1 * h)
+        p = self.patched(store)
+        with p[0], p[1], p[2], p[3]:
+            inv = web._invoice({"client": "FCY", "month": "2026-10"})
+            self.assertEqual([(g["billed_s"], g["banked_s"]) for g in inv["groups"][:2]], [(10 * h, 2 * h), (8 * h, 0)])
+            self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-10")[:2], (18 * h, 360.0))
+            # use the banked hours in the short week: they're charged there, and the bank is empty
+            areas.use_lieu(store, self.conf, "FCY", 1, "week", date(2026, 10, 14), 2 * h)
+            self.assertEqual(areas.bank(store, self.conf, "FCY", today)["seconds"], 0)
+            inv = web._invoice({"client": "FCY", "month": "2026-10"})
+            self.assertEqual([g["billed_s"] for g in inv["groups"][:2]], [10 * h, 10 * h])
+            self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-10")[:2], (20 * h, 400.0))   # 20h worked, 20h charged
+            # reports count the work when it was done, once
+            self.assertEqual(money_summary(store, date(2026, 10, 1), date(2026, 10, 31), self.conf["clients"])["earned"], 400.0)
+            # once the month is invoiced, a change to the weekly hours can't alter it or lose banked time
+            secs, amount, _ = web._month_due(store, self.conf, "FCY", "2026-10")
+            store.set_invoiced("FCY", "2026-10", secs, amount)
+            web._fix_banked(store, "FCY", "2026-10")
+            self.conf["targets"]["hours"]["FCY"]["week"] = 11
+            self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-10")[:2], (20 * h, 400.0))
+            self.assertEqual(areas.bank(store, self.conf, "FCY", today)["seconds"], 0)
+            # an invoiced month's hours have been charged: banking can't start inside it
+            self.conf["areas"][0]["bank_start"] = "2026-10-15"
+            with self.assertRaisesRegex(ValueError, "Banking can start from 01/11/2026"):
+                areas.check_starts(self.conf, store)
+
+    def test_start_date_and_switching_off(self):
+        from datetime import date
+        from tftrack import areas
+        h = 3600
+        store = make_store([{"id": 1, "taskId": 2, "startedAt": self.at(5, 8), "duration": 9 * h},     # 4 over
+                            {"id": 2, "taskId": 2, "startedAt": self.at(13, 8), "duration": 7 * h}],   # 2 over
+                           tasks=self.tasks)
+        today = date(2026, 10, 23)
+        self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 6 * h)
+        self.conf["areas"][1]["bank_start"] = "2026-10-12"            # only weeks starting on or after this count
+        self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 2 * h)
+        store.add_lieu("FYPTD", 3 * h, "From before")                  # changes by hand still add on
+        self.assertEqual(areas.bank(store, self.conf, "FYPTD", today), {
+            "auto_seconds": 2 * h, "hand_seconds": 3 * h, "seconds": 5 * h,
+            "weeks": [{"start": "2026-10-12", "worked_seconds": 7 * h, "over_seconds": 2 * h}]})
+        self.conf["areas"][1]["bank_auto"] = False
+        self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 3 * h)
+        # a client invoiced by the week starts after its last invoiced month
+        store.set_invoiced("FCY", "2026-09", 3600, 20.0)
+        conf = {**self.conf, "areas": [{"client": "FCY", "label": "FCY"}]}
+        areas.settle_starts(conf, store)
+        self.assertEqual(conf["areas"][0]["bank_start"], "2026-10-01")

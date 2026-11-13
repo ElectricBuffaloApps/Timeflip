@@ -298,7 +298,10 @@ def invoice_pdf(inv: dict) -> bytes:
                           bold=True, fill=GREY_BG, notes={0: note} if note else None)
                     week_s = 0
         if g["label"]:
-            t.row(["Week total", "", "", _hm(g["billed_s"]), f"{g['billed_s'] / 3600:.2f} h"], bold=True, fill=TINT)
+            banked = ((f"{_hm(g['banked_s'])} over the weekly hours: banked, not charged here", MUTED)
+                      if g.get("banked_s") else None)
+            t.row(["Week total", "", "", _hm(g["billed_s"]), f"{g['billed_s'] / 3600:.2f} h"], bold=True, fill=TINT,
+                  notes={0: banked} if banked else None)
     t.gap(8)
     t.room(4)
     if inv["style"] == "day":

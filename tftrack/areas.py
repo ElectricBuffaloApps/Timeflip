@@ -1,7 +1,12 @@
 """Areas: the clients shown as cards at the top of the Dashboard, each with its own page.
 
 An area is a client (a TimeFlip tag) with a display name. Its page charts the hours by day, week or month and keeps
-the area's hours in lieu: a bank of hours typed in by hand, which can be added to a day or a week as real time.
+the area's hours in lieu: a bank of hours which can be added to a day or a week as real time.
+
+The bank fills by itself. Every week you work more than the area's hours a week, the extra goes in. For a client
+invoiced by the week, those extra hours are also held back from that week's invoice, so they're charged once: when
+you add them to a later day or week. Clients with a monthly allowance keep their own Roll over and carried hours
+instead, and other hourly-paying clients can only be banked by hand, because their invoices can't hold hours back.
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ DAYS, WEEKS, MONTHS = 28, 12, 12
 MAX_AREAS = 8
 # Friendlier names for some tags, used until the user names their own cards.
 DEFAULT_LABELS = {"fypt1": "FYPT Clients", "fyptd": "FYPT Deep"}
+DEFAULT_BANK_START = "2026-09-01"
 
 
 def week_start(day: date, conf: dict) -> date:
@@ -51,8 +57,132 @@ def clean(raw: list, known: list[str]) -> list[dict]:
         if not match or match.lower() in seen:
             continue
         seen.add(match.lower())
-        out.append({"client": match, "label": str(a.get("label") or "").strip()[:40] or match})
+        area = {"client": match, "label": str(a.get("label") or "").strip()[:40] or match}
+        if "bank_auto" in a:
+            area["bank_auto"] = bool(a["bank_auto"])
+        if a.get("bank_start"):
+            try:
+                area["bank_start"] = date.fromisoformat(str(a["bank_start"])).isoformat()
+            except ValueError:
+                raise ValueError("Choose a real date for banking to start from.")
+        out.append(area)
     return out
+
+
+# ---------- the bank: hours over the weekly hours ----------
+
+def _client_conf(conf: dict, client: str) -> dict | None:
+    return next((c for n, c in (conf.get("clients") or {}).items() if n.lower() == client.lower()), None)
+
+
+def _has_allowance(conf: dict, store, client: str) -> bool:
+    mine = {t["name"].lower() for t in store.tasks() if (t["tag"] or "").lower() == client.lower()}
+    return any(l.get("allowance") and ((l.get("client") or "").lower() == client.lower() or (l.get("task") or "").lower() in mine)
+               for l in conf.get("limits") or [])
+
+
+def _next_month_start(month: str) -> date:
+    y, m = (int(x) for x in month.split("-"))
+    return date(y + (m == 12), m % 12 + 1, 1)
+
+
+def bank_rules(conf: dict, store, client: str) -> dict:
+    """Whether this client's bank fills by itself, from when, and whether the hours are held back from invoices."""
+    area = next((a for a in conf.get("areas") or [] if a["client"].lower() == client.lower()), {})
+    c = _client_conf(conf, client)
+    limit = allotted_hours(conf, store, client)
+    weekly = bool(c) and c.get("billing") == "week" and not c.get("notional")
+    unbilled = not c or c.get("notional") or c.get("billing") == "monthly" or not c.get("rate")
+    why = None
+    if _has_allowance(conf, store, client):
+        why = "Uses Roll over and carried hours instead"
+    elif not limit:
+        why = "Set hours a week first"
+    elif not (weekly or unbilled):
+        why = "Only for clients invoiced by the week (bank by hand instead)"
+    try:
+        start = date.fromisoformat(area.get("bank_start") or DEFAULT_BANK_START)
+    except ValueError:
+        start = date.fromisoformat(DEFAULT_BANK_START)
+    return {"eligible": why is None, "why": why, "auto": why is None and area.get("bank_auto", True) is not False,
+            "start": start, "limit_seconds": round((limit or 0) * 3600), "holds_back": weekly, "monday_weeks": weekly}
+
+
+def earliest_start(store, conf: dict, client: str) -> date | None:
+    """For a client invoiced by the week: the first day banking may start, after every month already invoiced.
+    Hours in an invoiced month have been charged, so they must not be banked and charged again."""
+    c = _client_conf(conf, client)
+    if not c or c.get("billing") != "week" or c.get("notional"):
+        return None
+    done = store.invoiced(client)
+    return _next_month_start(max(done)) if done else None
+
+
+def settle_starts(conf: dict, store) -> bool:
+    """Give every area a fixed date its bank starts from, the first time it's needed. Fixed, because once hours have
+    been held back from an invoice the start must not drift. Returns True if the settings changed."""
+    areas_now = configured(conf, store)
+    changed = conf.get("areas") is None
+    for a in areas_now:
+        if not a.get("bank_start"):
+            floor = earliest_start(store, conf, a["client"])
+            a["bank_start"] = max(date.fromisoformat(DEFAULT_BANK_START), floor or date.min).isoformat()
+            changed = True
+    if changed:
+        conf["areas"] = areas_now
+    return changed
+
+
+def check_starts(conf: dict, store) -> None:
+    for a in conf.get("areas") or []:
+        floor = earliest_start(store, conf, a["client"])
+        if floor and a.get("bank_start") and a.get("bank_auto", True) and date.fromisoformat(a["bank_start"]) < floor:
+            raise ValueError(f"{a['client']} is already invoiced up to {floor - timedelta(days=1):%d/%m/%Y}, so those hours "
+                             f"have been charged. Banking can start from {floor:%d/%m/%Y}.")
+
+
+def over_weeks(store, conf: dict, client: str, today: date) -> list[dict]:
+    """Each week since the bank's start with more worked than the hours a week: [{start, worked_seconds, over_seconds}].
+
+    Worked means tracked or typed in, and charged: not excluded, not rolled over, and not hours that came out of the
+    bank. Weeks run Monday to Sunday for a client invoiced by the week (to match its invoice), else from the day the
+    week starts in Settings.
+    """
+    rules = bank_rules(conf, store, client)
+    if not rules["auto"]:
+        return []
+    start_of = (lambda d: d - timedelta(days=d.weekday())) if rules["monday_weeks"] else (lambda d: week_start(d, conf))
+    skip, rolled = store.lieu_entry_ids(), store.rolled()
+    weeks: dict[date, int] = {}
+    for r in timesheet_rows(store, rules["start"], today, client):
+        if r["excluded"] or r["id"] in skip or r["id"] in rolled:
+            continue
+        ws = start_of(date.fromisoformat(r["date"]))
+        if ws >= rules["start"]:
+            weeks[ws] = weeks.get(ws, 0) + r["seconds"]
+    fixed = store.banked_weeks(client)   # weeks of months already invoiced keep what was held back then
+    out = []
+    for ws in sorted(set(weeks) | {date.fromisoformat(k) for k in fixed}):
+        worked = weeks.get(ws, 0)
+        over = fixed[ws.isoformat()] if ws.isoformat() in fixed else worked - rules["limit_seconds"]
+        if over > 0:
+            out.append({"start": ws.isoformat(), "worked_seconds": worked, "over_seconds": over})
+    return out
+
+
+def bank(store, conf: dict, client: str, today: date) -> dict:
+    """The area's hours in lieu: what the weeks over the limit put in, plus changes made by hand, less what's been used."""
+    weeks = over_weeks(store, conf, client, today)
+    auto = sum(w["over_seconds"] for w in weeks)
+    by_hand = store.lieu_balance(client)
+    return {"auto_seconds": auto, "hand_seconds": by_hand, "seconds": auto + by_hand, "weeks": weeks}
+
+
+def held_back(store, conf: dict, client: str, today: date) -> dict[str, int]:
+    """For a client invoiced by the week: Monday -> seconds to leave off that week's invoice (they're in the bank)."""
+    if not bank_rules(conf, store, client)["holds_back"]:
+        return {}
+    return {w["start"]: w["over_seconds"] for w in over_weeks(store, conf, client, today)}
 
 
 def set_allotted(conf: dict, raw: list, known: list[str]) -> None:
@@ -126,7 +256,7 @@ def cards(store, conf: dict, today: date, holidays: set = frozenset()) -> list[d
         week = _seconds(store, a["client"], ws, today)
         out.append({**a, "week_seconds": week,
                     "month_seconds": _seconds(store, a["client"], today.replace(day=1), today),
-                    "lieu_seconds": store.lieu_balance(a["client"]),
+                    "lieu_seconds": bank(store, conf, a["client"], today)["seconds"],
                     "allotted_hours": allotted_hours(conf, store, a["client"]),
                     "progress": week_progress(allotted_hours(conf, store, a["client"]), week, ws, today, holidays)})
     return out
@@ -161,7 +291,8 @@ def detail(store, conf: dict, client: str, today: date, carried_s: int = 0, holi
     tasks = [{"id": t["id"], "name": t["name"]} for t in store.tasks() if (t["tag"] or "").lower() == match.lower()]
     tasks.sort(key=lambda t: (-totals.get(t["name"], 0), t["name"].lower()))
     rate = next((c.get("rate") for n, c in (conf.get("clients") or {}).items() if n.lower() == match.lower()), None)
-    bank = store.lieu_balance(match)
+    banked = bank(store, conf, match, today)
+    rules = bank_rules(conf, store, match)
     return {
         "client": match, "label": label, "rate": rate,
         "week_seconds": sum(r["seconds"] for r in rows if date.fromisoformat(r["date"]) >= ws),
@@ -181,7 +312,10 @@ def detail(store, conf: dict, client: str, today: date, carried_s: int = 0, holi
             "month": bucket(lambda d: d.replace(day=1), months, lambda d: f"{d:%b}", lambda d: f"{d:%B %Y}"),
         },
         "task_order": [t["name"] for t in tasks], "tasks": tasks,
-        "lieu": {"bank_seconds": bank, "carried_seconds": carried_s, "total_seconds": bank + carried_s,
+        "lieu": {"bank_seconds": banked["seconds"], "carried_seconds": carried_s,
+                 "total_seconds": banked["seconds"] + carried_s, "auto_seconds": banked["auto_seconds"],
+                 "hand_seconds": banked["hand_seconds"], "weeks": banked["weeks"][::-1][:12], "auto": rules["auto"],
+                 "why": rules["why"], "start": rules["start"].isoformat(), "holds_back": rules["auto"] and rules["holds_back"],
                  "log": store.lieu_log(match)},
     }
 
@@ -190,7 +324,7 @@ def use_lieu(store, conf: dict, client: str, task_id: int, mode: str, when: date
     """Take hours out of the bank and add them as time on a day (or on the first day of a week)."""
     if seconds <= 0:
         raise ValueError("Enter how many hours to add.")
-    if seconds > store.lieu_balance(client):
+    if seconds > bank(store, conf, client, date.today())["seconds"]:
         raise ValueError("That's more than the hours in lieu you have banked.")
     task = next((t for t in store.tasks() if t["id"] == task_id and (t["tag"] or "").lower() == client.lower()), None)
     if not task:
