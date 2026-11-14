@@ -261,7 +261,10 @@ def invoice_pdf(inv: dict) -> bytes:
             note = _entry_notes(r)
             t.row([f"{day:%a %d %b}", f"{r['start']}–{r['end']}", r["task"], _hm(r["seconds"]), ""],
                   color=FAINT if faded else INK, strike=r["excluded"], notes={2: note} if note else None)
-        actual = "" if d["actual_s"] == d["billed_s"] else f"actual {_hm(d['actual_s'])}"
+        banked = d.get("banked_s", 0)
+        actual = "" if d["actual_s"] == d["billed_s"] + banked else f"actual {_hm(d['actual_s'])}"
+        if banked:
+            actual = (actual + " · " if actual else "") + f"{_hm(banked)} over the weekly hours: banked, not charged here"
         t.room(2)
         t.row([f"{day:%A %d %B} total", "", "", _hm(d["billed_s"]), f"{d['billed_s'] / 3600:.2f} h"],
               bold=True, fill=TINT, notes={0: (actual, MUTED)} if actual else None)

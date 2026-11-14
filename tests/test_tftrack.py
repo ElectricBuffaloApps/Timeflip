@@ -1300,14 +1300,16 @@ class AutoBankTest(unittest.TestCase):
     def setUp(self):
         self.at = lambda d, h: datetime(2026, 10, d, h).astimezone().astimezone(UTC).isoformat()
         self.tasks = [{"id": 1, "name": "Prog", "tag": "FCY"}, {"id": 2, "name": "Dev", "tag": "FYPTD"},
-                      {"id": 3, "name": "Justin", "tag": "HTB"}, {"id": 4, "name": "Odd jobs", "tag": "Daily"}]
+                      {"id": 3, "name": "Justin", "tag": "HTB"}, {"id": 4, "name": "Odd jobs", "tag": "Daily"},
+                      {"id": 5, "name": "Bits", "tag": "Plain"}]
         self.conf = {
             "clients": {"FCY": {"billing": "week", "rounding": "none", "block_minutes": 15, "rate": 20},
                         "FYPTD": {"billing": "hourly", "rate": 50, "notional": True},
-                        "HTB": {"billing": "day", "rate": 40}, "Daily": {"billing": "day", "rate": 30}},
+                        "HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40},
+                        "Daily": {"billing": "day", "rate": 30}, "Plain": {"billing": "hourly", "rate": 30}},
             "limits": [{"task": "Justin", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}],
-            "targets": {"hours": {"FCY": {"week": 10}, "FYPTD": {"week": 5}, "Daily": {"week": 5}}},
-            "areas": [{"client": c, "label": c} for c in ("FCY", "FYPTD", "HTB", "Daily")]}
+            "targets": {"hours": {"FCY": {"week": 10}, "FYPTD": {"week": 5}, "Daily": {"week": 5}, "Plain": {"week": 5}}},
+            "areas": [{"client": c, "label": c} for c in ("FCY", "FYPTD", "HTB", "Daily", "Plain")]}
 
     def patched(self, store):
         from unittest import mock
@@ -1332,11 +1334,13 @@ class AutoBankTest(unittest.TestCase):
         today = date(2026, 10, 23)
         areas.settle_starts(self.conf, store)
         self.assertEqual({a["client"]: a["bank_start"] for a in self.conf["areas"]}["FCY"], "2026-09-01")
-        rules = {c: areas.bank_rules(self.conf, store, c) for c in ("FCY", "FYPTD", "HTB", "Daily")}
+        rules = {c: areas.bank_rules(self.conf, store, c) for c in ("FCY", "FYPTD", "HTB", "Daily", "Plain")}
         self.assertEqual([(c, r["auto"], r["holds_back"]) for c, r in rules.items()],
-                         [("FCY", True, True), ("FYPTD", True, False), ("HTB", False, False), ("Daily", False, False)])
-        self.assertIn("Roll over", rules["HTB"]["why"])
-        self.assertIn("by the week", rules["Daily"]["why"])
+                         [("FCY", True, True), ("FYPTD", True, False), ("HTB", True, True), ("Daily", True, True),
+                          ("Plain", False, False)])
+        self.assertIn("by the day or the week", rules["Plain"]["why"])
+        # a client without a card isn't banked: there'd be nowhere to see or use the hours
+        self.assertIn("card", areas.bank_rules({**self.conf, "areas": []}, store, "FCY")["why"])
         self.assertEqual(areas.bank(store, self.conf, "FCY", today)["seconds"], 2 * h)
         self.assertEqual(areas.bank(store, self.conf, "FYPTD", today)["seconds"], 1 * h)
         p = self.patched(store)
@@ -1405,3 +1409,60 @@ class AutoBankTest(unittest.TestCase):
         with p[0], p[1], p[2], p[3]:
             # the September timesheet now agrees with what was invoiced
             self.assertEqual(web._month_due(store, self.conf, "FCY", "2026-09")[0], 19 * h)
+
+
+class AllowanceBankTest(unittest.TestCase):
+    """A client invoiced by the day, with a monthly allowance: the week from Dave's screenshot (8h 15m against 6h)."""
+
+    def test_week_over_the_allowance_is_banked_off_its_last_days(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import areas, web, allowance
+        m = 60
+        at = lambda d, hh, mm=0: datetime(2026, 10, d, hh, mm).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(5, 9), "duration": 60 * m},          # Mon 1h
+            {"id": 2, "taskId": 1, "startedAt": at(7, 9), "duration": 135 * m},         # Wed 2h15
+            {"id": 3, "taskId": 1, "startedAt": at(9, 13, 30), "duration": 136 * m},    # Fri 2h16 -> 2h30
+            {"id": 4, "taskId": 1, "startedAt": at(10, 11), "duration": 143 * m},       # Sat 2h23 -> 2h30: 8h15 in all
+            {"id": 5, "taskId": 1, "startedAt": at(13, 9), "duration": 4 * 60 * m},     # the next week: 4h, 2h short
+        ], tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}},
+                "limits": [{"task": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}],
+                "areas": [{"client": "HTB", "label": "HTB", "bank_start": "2026-09-01"}]}
+        today = date(2026, 10, 23)
+        self.assertEqual(areas.allotted_hours(conf, store, "HTB"), 6.0)
+        self.assertEqual(areas.bank(store, conf, "HTB", today)["weeks"],
+                         [{"start": "2026-10-05", "worked_seconds": 495 * m, "over_seconds": 135 * m}])   # 2h15 over
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            days = {d["date"]: (d["billed_s"] // m, d["banked_s"] // m) for g in inv["groups"] for d in g["days"]}
+            self.assertEqual(days, {"2026-10-05": (60, 0), "2026-10-07": (135, 0), "2026-10-09": (150, 0),
+                                    "2026-10-10": (15, 135), "2026-10-13": (240, 0)})      # Saturday keeps 15m of the 6h
+            self.assertEqual(inv["total_billed_s"], (6 + 4) * 60 * m)
+            self.assertEqual(inv["allowances"][0]["charging_s"], 10 * 60 * m)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[:2], (10 * 60 * m, 400.0))
+            self.assertIn("2h 15m over the weekly hours: banked", web.invoice_page(inv))
+            self.assertTrue(web.pdf.invoice_pdf(inv).startswith(b"%PDF"))
+            # an entry rolled over goes to the carried hours instead, so it isn't banked as well
+            store.set_rolled(1, "carried", "2026-10-05")
+            self.assertEqual(areas.bank(store, conf, "HTB", today)["seconds"], 75 * m)       # 7h15 left: 1h15 over
+            self.assertEqual(web._carried("HTB", today), 60 * m)                            # and 1h carried
+            store.set_rolled(1, None)
+            # add the banked hours to the short week: charged there in full, on top of that week's own hours
+            areas.use_lieu(store, conf, "HTB", 1, "day", date(2026, 10, 14), 120 * m)
+            self.assertEqual(areas.bank(store, conf, "HTB", today)["seconds"], 15 * m)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[0], 12 * 60 * m)
+            # banked hours used in a week that's already full aren't banked a second time
+            areas.use_lieu(store, conf, "HTB", 1, "day", date(2026, 10, 8), 15 * m)
+            self.assertEqual(areas.bank(store, conf, "HTB", today)["seconds"], 0)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[0], 12 * 60 * m + 15 * m)   # 12h15 worked in all
+            # invoicing fixes each day, so a later change to the hours a week leaves the month alone
+            secs, amount, _ = web._month_due(store, conf, "HTB", "2026-10")
+            store.set_invoiced("HTB", "2026-10", secs, amount)
+            web._fix_banked(store, "HTB", "2026-10")
+            conf["limits"][0]["weekly_hours"] = 8
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[0], secs)
+            self.assertEqual(areas.bank(store, conf, "HTB", today)["seconds"], 0)

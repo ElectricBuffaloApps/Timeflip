@@ -384,7 +384,10 @@ def _entry_row(r: dict, day: date, inv: dict) -> str:
 
 
 def _day_total(d: dict, day: date) -> str:
-    actual = "" if d["actual_s"] == d["billed_s"] else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>'
+    banked = d.get("banked_s", 0)
+    actual = ("" if d["actual_s"] == d["billed_s"] + banked else f' <span class="tag">(actual {_hm(d["actual_s"])})</span>')
+    if banked:
+        actual += f' <span class="tag adj">{_hm(banked)} over the weekly hours: banked, not charged here</span>'
     return (f'<tr class="sub"><td colspan=3>{day:%A %d %B} total{actual}</td>'
             f'<td class=n>{_hm(d["billed_s"])}</td><td class=n>{d["billed_s"] / 3600:.2f} h</td></tr>')
 
@@ -452,6 +455,8 @@ def invoice_page(inv: dict) -> str:
                  if over > 0 else f'{_hm(-over)} under the max')
         added = f' (incl. {_hm(c["added_s"])} carried over)' if c["added_s"] else ""
         rolling = f' · rolling over {_hm(al["rolling_s"])}' if al["rolling_s"] else ""
+        if al.get("banked_s"):
+            rolling += f' · {_hm(al["banked_s"])} over the weekly hours banked automatically'
         summary += (f'<div class="allow"><b>{esc(task)}, {month:%B %Y}:</b> max {_hm(al["max_s"])} '
                     f'({al["working_days"]} working days) · charging {_hm(al["charging_s"])}{added}{rolling} · {state}'
                     f' · <a href="/carried">Carried hours ledger</a></div>'
@@ -1214,14 +1219,23 @@ def _invoice(q: dict) -> dict:
     al = allowance.for_invoice(service.open_store(), cfg.load_config(), inv, holidays or set())
     if al:
         allowance.apply(inv, al)
-    # Hours over the weekly hours are in the bank: leave them off the week they were worked in.
-    held = areas.held_back(service.open_store(), cfg.load_config(), client, date.today()) if style == "week" else {}
+    # Hours over the weekly hours are in the bank: leave them off the days they were worked on.
+    held = areas.held_back(service.open_store(), cfg.load_config(), client, date.today())
     inv["banked_s"] = 0
     for g in inv["groups"]:
-        g["banked_s"] = min(held.get(g.get("monday"), 0), g["billed_s"])
+        g["banked_s"] = 0
+        for d in g["days"]:
+            d["banked_s"] = min(held.get(d["date"], 0), d["billed_s"])
+            d["billed_s"] -= d["banked_s"]
+            g["banked_s"] += d["banked_s"]
         g["billed_s"] -= g["banked_s"]
         inv["banked_s"] += g["banked_s"]
     inv["total_billed_s"] -= inv["banked_s"]
+    if inv["banked_s"]:
+        inv["days_worked"] = sum(1 for g in inv["groups"] for d in g["days"] if d["billed_s"] > 0)
+        if al:   # the allowance line says what's being charged: that's now less the banked hours
+            al[0]["banked_s"] = inv["banked_s"]
+            al[0]["charging_s"] -= min(inv["banked_s"], al[0]["charging_s"])
     inv["rate"] = c.get("rate")
     inv["smooth"] = client.lower() in [s.lower() for s in cfg.load_config().get("smooth_weeks", [])]
     inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
@@ -1311,9 +1325,9 @@ def _carried(client: str, today: date) -> int:
 def _fix_banked(store, client: str, month: str) -> None:
     """A month invoiced by the week has just been invoiced: fix what each of its weeks held back for the bank."""
     c = _client_settings(cfg.load_config(), client)
-    if c.get("billing") == "week" and not c.get("notional"):
+    if c.get("billing") in ("day", "week") and not c.get("notional"):
         inv = _invoice({"client": client, "month": month})
-        store.fix_banked_weeks(client, month, {g["monday"]: g["banked_s"] for g in inv["groups"]})
+        store.fix_banked_days(client, month, {d["date"]: d["banked_s"] for g in inv["groups"] for d in g["days"]})
 
 
 def _month_dates(month: str) -> tuple[date, date]:

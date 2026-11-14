@@ -1,5 +1,15 @@
 [
   {
+    "version": 39,
+    "changes": [
+      "HTB now banks automatically, like your other areas. Any week over its hours a week, the extra goes into its hours in lieu and comes off that week's charge. This works for every client invoiced by the day, not just by the week.",
+      "The hours held back come off the last days worked that week. The timesheet shows them on the day: 'over the weekly hours: banked, not charged here'.",
+      "Roll over still works. An entry you roll over goes to carried hours as before and isn't banked as well. The area's hours in lieu add the two together.",
+      "The allowance line at the top of the timesheet says how much was banked automatically, and 'charging' is now what the invoice will actually charge.",
+      "Only clients with a card on the Dashboard are banked."
+    ]
+  },
+  {
     "version": 38,
     "changes": [
       "Phone layout fixed throughout: nothing runs off the side of the screen or scrolls sideways any more, and long sentences wrap.",

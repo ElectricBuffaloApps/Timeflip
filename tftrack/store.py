@@ -124,6 +124,14 @@ CREATE TABLE IF NOT EXISTS banked_week (
     seconds INTEGER NOT NULL,
     PRIMARY KEY (client, week_start)
 );
+-- The same, day by day: what each day of an invoiced month held back. Clients invoiced by the day need it by day.
+CREATE TABLE IF NOT EXISTS banked_day (
+    client TEXT NOT NULL,
+    month TEXT NOT NULL,        -- the invoiced month
+    day TEXT NOT NULL,          -- YYYY-MM-DD
+    seconds INTEGER NOT NULL,
+    PRIMARY KEY (client, day)
+);
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
 -- Time the user added by hand (not tracked on the cube).
@@ -405,6 +413,19 @@ class Store:
             else:   # no invoice, so nothing to have been paid, and its weeks' banked hours are worked out afresh
                 self.db.execute("DELETE FROM paid WHERE lower(client) = lower(?) AND month = ?", (client, month))
                 self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
+                self.db.execute("DELETE FROM banked_day WHERE lower(client) = lower(?) AND month = ?", (client, month))
+
+    def fix_banked_days(self, client: str, month: str, days: dict[str, int]) -> None:
+        """Record what each day of a month just invoiced held back for the bank (day -> seconds, zeros included)."""
+        with self.db:
+            self.db.execute("DELETE FROM banked_day WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
+            self.db.executemany("INSERT OR REPLACE INTO banked_day VALUES (?, ?, ?, ?)",
+                                [(client, month, day, secs) for day, secs in days.items()])
+
+    def banked_days(self, client: str) -> dict[str, int]:
+        return {r["day"]: r["seconds"] for r in
+                self.db.execute("SELECT day, seconds FROM banked_day WHERE lower(client) = lower(?)", (client,))}
 
     def fix_banked_weeks(self, client: str, month: str, weeks: dict[str, int]) -> None:
         """Record what each week of a month just invoiced held back (week start -> seconds, zeros included)."""

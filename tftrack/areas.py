@@ -4,16 +4,17 @@ An area is a client (a TimeFlip tag) with a display name. Its page charts the ho
 the area's hours in lieu: a bank of hours which can be added to a day or a week as real time.
 
 The bank fills by itself. Every week you work more than the area's hours a week, the extra goes in. For a client
-invoiced by the week, those extra hours are also held back from that week's invoice, so they're charged once: when
-you add them to a later day or week. Clients with a monthly allowance keep their own Roll over and carried hours
-instead, and other hourly-paying clients can only be banked by hand, because their invoices can't hold hours back.
+invoiced by the day or by the week, those extra hours are also held back from the invoice (from the last days of
+that week), so they're charged once: when you add them to a later day or week. A client with a monthly allowance
+keeps Roll over and its carried hours as well: an entry rolled over goes there, anything else over the week goes
+in the bank. Clients on the plain hourly timesheet can only be banked by hand, as that sheet can't hold hours back.
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
 from .limits import WEEKDAYS
-from .reports import NO_CLIENT, timesheet_rows
+from .reports import NO_CLIENT, round_seconds, timesheet_rows
 
 DAYS, WEEKS, MONTHS = 28, 12, 12
 MAX_AREAS = 8
@@ -83,24 +84,24 @@ def _has_allowance(conf: dict, store, client: str) -> bool:
 
 def bank_rules(conf: dict, store, client: str) -> dict:
     """Whether this client's bank fills by itself, from when, and whether the hours are held back from invoices."""
-    area = next((a for a in conf.get("areas") or [] if a["client"].lower() == client.lower()), {})
+    area = next((a for a in conf.get("areas") or [] if a["client"].lower() == client.lower()), None)
     c = _client_conf(conf, client)
     limit = allotted_hours(conf, store, client)
-    weekly = bool(c) and c.get("billing") == "week" and not c.get("notional")
     unbilled = not c or c.get("notional") or c.get("billing") == "monthly" or not c.get("rate")
+    holds = not unbilled and c.get("billing") in ("day", "week")
     why = None
-    if _has_allowance(conf, store, client):
-        why = "Uses Roll over and carried hours instead"
+    if area is None:
+        why = "Give this client a card first"
     elif not limit:
         why = "Set hours a week first"
-    elif not (weekly or unbilled):
-        why = "Only for clients invoiced by the week (bank by hand instead)"
+    elif not (holds or unbilled):
+        why = "Only for clients invoiced by the day or the week (bank by hand instead)"
     try:
-        start = date.fromisoformat(area.get("bank_start") or DEFAULT_BANK_START)
+        start = date.fromisoformat((area or {}).get("bank_start") or DEFAULT_BANK_START)
     except ValueError:
         start = date.fromisoformat(DEFAULT_BANK_START)
     return {"eligible": why is None, "why": why, "auto": why is None and area.get("bank_auto", True) is not False,
-            "start": start, "limit_seconds": round((limit or 0) * 3600), "holds_back": weekly, "monday_weeks": weekly}
+            "start": start, "limit_seconds": round((limit or 0) * 3600), "holds_back": holds, "monday_weeks": holds}
 
 
 def invoiced_since_start(store, conf: dict, client: str) -> list[str]:
@@ -128,33 +129,71 @@ def settle_starts(conf: dict, store) -> bool:
     return changed
 
 
+def _billed_weeks(store, conf: dict, client: str, today: date, rules: dict) -> tuple[dict[str, int], list[dict]]:
+    """For a client whose invoices hold the hours back: (day -> seconds held back, the weeks that went over).
+
+    Works on what the invoice would charge: each day's time rounded the client's way, Monday to Sunday. The week's
+    hours a week are used up in date order, so what's held back comes off the last days worked. Hours that came out
+    of the bank are charged in full and never count towards the week. A month already invoiced keeps what it held
+    back then.
+    """
+    c = _client_conf(conf, client) or {}
+    block, mode = c.get("block_minutes", 15), c.get("rounding", "none")
+    from_bank, rolled = store.lieu_entry_ids(), store.rolled()
+    first = rules["start"] + timedelta(days=(7 - rules["start"].weekday()) % 7)   # the first Monday on or after the start
+    days: dict[str, list[int]] = {}
+    for r in timesheet_rows(store, first, today, client):
+        if r["excluded"] or r["id"] in rolled:
+            continue
+        d = days.setdefault(r["date"], [0, 0])
+        d[0] += r["seconds"]
+        d[1] += r["seconds"] if r["id"] in from_bank else 0
+    weeks: dict[date, list[tuple[str, int]]] = {}
+    for iso in sorted(days):
+        total = round_seconds(days[iso][0], block, mode)
+        d = date.fromisoformat(iso)
+        weeks.setdefault(d - timedelta(days=d.weekday()), []).append((iso, total - min(total, days[iso][1])))
+    fixed_days, fixed_weeks = store.banked_days(client), store.banked_weeks(client)
+    held, out = {}, []
+    for ws, items in sorted(weeks.items()):
+        worked = sum(secs for _, secs in items)
+        budget = rules["limit_seconds"]
+        if ws.isoformat() in fixed_weeks and not any(iso in fixed_days for iso, _ in items):
+            budget = max(0, worked - fixed_weeks[ws.isoformat()])   # a week fixed as a whole (how version 36 kept it)
+        used = over = 0
+        for iso, secs in items:
+            h = min(fixed_days[iso], secs) if iso in fixed_days else max(0, secs - max(0, budget - used))
+            used += secs - h
+            if h:
+                held[iso] = h
+                over += h
+        if over:
+            out.append({"start": ws.isoformat(), "worked_seconds": worked, "over_seconds": over})
+    return held, out
+
+
 def over_weeks(store, conf: dict, client: str, today: date) -> list[dict]:
     """Each week since the bank's start with more worked than the hours a week: [{start, worked_seconds, over_seconds}].
 
     Worked means tracked or typed in, and charged: not excluded, not rolled over, and not hours that came out of the
-    bank. Weeks run Monday to Sunday for a client invoiced by the week (to match its invoice), else from the day the
-    week starts in Settings.
+    bank. Weeks run Monday to Sunday for a client whose invoices hold the hours back (to match its timesheet), else
+    from the day the week starts in Settings.
     """
     rules = bank_rules(conf, store, client)
     if not rules["auto"]:
         return []
-    start_of = (lambda d: d - timedelta(days=d.weekday())) if rules["monday_weeks"] else (lambda d: week_start(d, conf))
+    if rules["holds_back"]:
+        return _billed_weeks(store, conf, client, today, rules)[1]
     skip, rolled = store.lieu_entry_ids(), store.rolled()
     weeks: dict[date, int] = {}
     for r in timesheet_rows(store, rules["start"], today, client):
         if r["excluded"] or r["id"] in skip or r["id"] in rolled:
             continue
-        ws = start_of(date.fromisoformat(r["date"]))
+        ws = week_start(date.fromisoformat(r["date"]), conf)
         if ws >= rules["start"]:
             weeks[ws] = weeks.get(ws, 0) + r["seconds"]
-    fixed = store.banked_weeks(client)   # weeks of months already invoiced keep what was held back then
-    out = []
-    for ws in sorted(set(weeks) | {date.fromisoformat(k) for k in fixed}):
-        worked = weeks.get(ws, 0)
-        over = fixed[ws.isoformat()] if ws.isoformat() in fixed else worked - rules["limit_seconds"]
-        if over > 0:
-            out.append({"start": ws.isoformat(), "worked_seconds": worked, "over_seconds": over})
-    return out
+    return [{"start": ws.isoformat(), "worked_seconds": secs, "over_seconds": secs - rules["limit_seconds"]}
+            for ws, secs in sorted(weeks.items()) if secs > rules["limit_seconds"]]
 
 
 def bank(store, conf: dict, client: str, today: date) -> dict:
@@ -166,10 +205,12 @@ def bank(store, conf: dict, client: str, today: date) -> dict:
 
 
 def held_back(store, conf: dict, client: str, today: date) -> dict[str, int]:
-    """For a client invoiced by the week: Monday -> seconds to leave off that week's invoice (they're in the bank)."""
-    if not bank_rules(conf, store, client)["holds_back"]:
+    """Day -> seconds to leave off that day's charge, because they're in the bank. Empty unless this client's
+    invoices hold banked hours back."""
+    rules = bank_rules(conf, store, client)
+    if not (rules["auto"] and rules["holds_back"]):
         return {}
-    return {w["start"]: w["over_seconds"] for w in over_weeks(store, conf, client, today)}
+    return _billed_weeks(store, conf, client, today, rules)[0]
 
 
 def set_allotted(conf: dict, raw: list, known: list[str]) -> None:
