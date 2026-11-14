@@ -54,6 +54,7 @@ def state() -> dict:
     return {
         "email": conf.get("email"),
         "version": updater.current_version(),
+        "version_name": updater.version_name(updater.current_version()),
         "app_path": _app_path(),
         "auto_update": conf.get("auto_update", True),
         "whats_new": updater.changes_since(conf.get("last_seen_version")),

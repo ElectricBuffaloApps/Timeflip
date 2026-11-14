@@ -30,6 +30,15 @@ INSTALL_DIR = CODE_DIR.parent
 EXTRA_FILES = ["Uninstall TimeFlip Tracker.command"]
 
 
+def version_name(n: int | None) -> str:
+    """How a version is shown to people: 0.41, 0.42, and so on, until the tracker is ready to be called 1.0.
+
+    The VERSION file itself stays a plain whole number that goes up by one each release. Installed copies read it
+    as a whole number to decide whether to update, so its format must never change.
+    """
+    return "" if n is None else f"0.{int(n)}"
+
+
 def current_version() -> int:
     return int((CODE_DIR / "VERSION").read_text().strip())
 

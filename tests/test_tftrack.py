@@ -1513,3 +1513,15 @@ class ShortWeeksTest(unittest.TestCase):
             nov = {w["monday"]: w for w in web._invoice({"client": "HTB", "month": "2026-11"})["bank"]["weeks"]}
             self.assertEqual(nov["2026-10-26"]["spare_s"], 3 * h)
             self.assertEqual(web._invoice({"client": "HTB", "month": "2026-10"})["total_billed_s"], 9 * h)   # 6 + 3
+
+
+class VersionNameTest(unittest.TestCase):
+    def test_shown_as_0_point_n_but_stored_as_a_whole_number(self):
+        from tftrack import updater
+        self.assertEqual(updater.version_name(41), "0.41")
+        self.assertEqual(updater.version_name(100), "0.100")
+        self.assertEqual(updater.version_name(None), "")
+        # the file must stay a whole number: every installed copy parses it with int() before updating
+        raw = (Path(updater.__file__).parent / "VERSION").read_text().strip()
+        self.assertTrue(raw.isdigit(), raw)
+        self.assertEqual(updater.current_version(), int(raw))

@@ -102,4 +102,4 @@ Double-click **Uninstall TimeFlip Tracker.command**, which is in the download fo
 - Commands (run from `~/Library/Application Support/TimeFlip Tracker`): `python3 -m tftrack status | sync | check | probe | serve`.
 - `probe` prints a sample of the raw API data. If durations turn out to be in milliseconds, set `"duration_unit": "milliseconds"` in `config.json`.
 - Tests: `python3 -m unittest discover -s tests`
-- **Releasing:** with every change pushed to the branch, increase the number in `tftrack/VERSION` and add a matching entry to `tftrack/CHANGELOG.json`. Installed copies compare the version with GitHub, update overnight from the background check, and show the changelog once.
+- **Releasing:** with every change pushed to the branch, increase the number in `tftrack/VERSION` and add a matching entry to `tftrack/CHANGELOG.json`. The number in `VERSION` must stay a plain whole number (installed copies read it that way to decide whether to update); people see it as `0.` followed by that number, so 42 shows as version 0.42. Installed copies compare the version with GitHub, update overnight from the background check, and show the changelog once.

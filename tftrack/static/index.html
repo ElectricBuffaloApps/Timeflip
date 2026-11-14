@@ -977,6 +977,8 @@ const svgEl = (tag, attrs = {}) => {
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   return e;
 };
+// Versions are shown as 0.41, 0.42…; underneath they're whole numbers that go up by one (see updater.version_name).
+const vName = (n) => (n == null ? "" : `0.${n}`);
 function hm(seconds) {
   const m = Math.round(seconds / 60);
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
@@ -1101,7 +1103,7 @@ function showState(s, redraw = false) {
   $("error").classList.toggle("hidden", !s.last_error);
   $("error").textContent = s.last_error ? `Couldn't reach TimeFlip: ${s.last_error}` : "";
   $("email").textContent = s.email || "(not set)";
-  $("version").textContent = s.version;
+  $("version").textContent = vName(s.version);
   // Every device shows the same tracker. When it's been updated (from any device), an open page is the old version
   // talking to the new app, so load the new page: straight away, unless there are changes waiting to be saved.
   if (pageVersion === null) pageVersion = s.version;
@@ -2254,7 +2256,7 @@ function showNews(notes) {
   $("newsBanner").classList.toggle("hidden", !notes.length);
   if (!notes.length) return;
   const newest = Math.max(...notes.map((n) => n.version));
-  $("newsTitle").textContent = `Updated to version ${newest}. What's new:`;
+  $("newsTitle").textContent = `Updated to version ${vName(newest)}. What's new:`;
   $("newsList").replaceChildren(...notes.flatMap((n) => n.changes).map((c) => el("li", {}, c)));
 }
 $("newsOk").onclick = async () => { showState(await api("/api/seen", {})); };
@@ -2269,7 +2271,7 @@ async function checkForUpdate(manual) {
     const u = await api("/api/update");
     if (u.error) { if (manual) $("updateMsg").textContent = u.error; return; }
     $("updateBanner").classList.toggle("hidden", !(u.available && u.can_update));
-    $("updateText").textContent = `A new version of TimeFlip Tracker is available (version ${u.latest}; you have ${u.current}).`;
+    $("updateText").textContent = `A new version of TimeFlip Tracker is available (version ${vName(u.latest)}; you have ${vName(u.current)}).`;
     if (manual) $("updateMsg").textContent = u.available
       ? (u.can_update ? "Available: use Update now at the top." : "Available, but this copy can't update itself.")
       : "You're up to date.";
@@ -2284,7 +2286,7 @@ $("updateBtn").onclick = async () => {
   $("updateBtn").disabled = true; $("updateBtn").textContent = "Updating…";
   try {
     const r = await api("/api/update", {});
-    $("updateText").textContent = `Installed version ${r.version}. Restarting…`;
+    $("updateText").textContent = `Installed version ${vName(r.version)}. Restarting…`;
     // Wait for the server to come back on the new version, then reload.
     for (let i = 0; i < 30; i++) {
       await new Promise((ok) => setTimeout(ok, 1000));
@@ -2599,7 +2601,7 @@ $("viewerCheck").onclick = async () => {
   $("viewerMsg").textContent = "Checking…";
   try {
     const r = await api("/api/viewer/check", { url: $("viewerUrl").value });
-    $("viewerMsg").textContent = `Found the tracker (version ${r.version}). Before you switch, bring this Mac's changes into it (step 2 on the main Mac).`;
+    $("viewerMsg").textContent = `Found the tracker (version ${vName(r.version)}). Before you switch, bring this Mac's changes into it (step 2 on the main Mac).`;
     $("viewerStart").classList.remove("hidden");
   } catch (e) { $("viewerMsg").textContent = e.message; $("viewerStart").classList.add("hidden"); }
 };

@@ -1,5 +1,11 @@
 [
   {
+    "version": 42,
+    "changes": [
+      "Version numbers are now shown as 0.42, 0.43 and so on, because the tracker isn't at version 1 yet. Nothing else has changed, and updates work exactly as before."
+    ]
+  },
+  {
     "version": 41,
     "changes": [
       "Short weeks are now found properly on the timesheet's hours-in-lieu box. A week with nothing recorded counts as fully short, and so does a week that runs into the next or previous month (such as the last week of October). Before, those were skipped.",
