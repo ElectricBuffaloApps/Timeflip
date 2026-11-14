@@ -1466,3 +1466,50 @@ class AllowanceBankTest(unittest.TestCase):
             conf["limits"][0]["weekly_hours"] = 8
             self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[0], secs)
             self.assertEqual(areas.bank(store, conf, "HTB", today)["seconds"], 0)
+
+
+class ShortWeeksTest(unittest.TestCase):
+    def test_empty_and_month_edge_weeks_count_as_short(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import areas, web, allowance
+        h = 3600
+        at = lambda mo, d, hh: datetime(2026, mo, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(10, 19, 9), "duration": 9 * h},   # w/c 19 Oct: 9h, 3 over -> banked
+            # w/c 26 Oct (runs into November): nothing recorded at all
+            {"id": 2, "taskId": 1, "startedAt": at(11, 3, 9), "duration": 4 * h},    # w/c 2 Nov: 4h, 2 short
+            {"id": 3, "taskId": 1, "startedAt": at(11, 10, 9), "duration": 1 * h},   # w/c 9 Nov: this week, not finished
+        ], tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}},
+                "limits": [{"task": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}],
+                "areas": [{"client": "HTB", "label": "HTB", "bank_start": "2026-09-01"}]}
+
+        class Today(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 11, 14)
+
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)), \
+                mock.patch.object(web, "date", Today), mock.patch.object(areas, "date", Today):
+            self.assertEqual(areas.charged_by_week(store, conf, "HTB", date(2026, 10, 1), date(2026, 10, 31)),
+                             {"2026-10-19": 6 * h})                                   # 9h worked, 3h held back
+            octo = web._invoice({"client": "HTB", "month": "2026-10"})["bank"]
+            self.assertEqual(octo["seconds"], 3 * h)
+            last = octo["weeks"][-1]
+            self.assertEqual((last["monday"], last["charged_s"], last["spare_s"], last["split"], last["first"]),
+                             ("2026-10-26", 0, 6 * h, True, "2026-10-26"))            # empty week: the full 6h short
+            page = web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"}))
+            self.assertIn("Fill short weeks (3h 00m)", page)
+            self.assertIn("Week of Mon 26 Oct · 0h 00m charged · 6h 00m short (runs into another month)", page)
+            nov = {w["monday"]: w for w in web._invoice({"client": "HTB", "month": "2026-11"})["bank"]["weeks"]}
+            self.assertEqual((nov["2026-10-26"]["spare_s"], nov["2026-10-26"]["first"]), (6 * h, "2026-11-01"))
+            self.assertEqual(nov["2026-11-02"]["spare_s"], 2 * h)
+            self.assertEqual((nov["2026-11-09"]["spare_s"], nov["2026-11-09"]["finished"]), (0, False))   # still in progress
+            # topping the empty week up on October's sheet uses that room, so November no longer offers it
+            areas.use_lieu(store, conf, "HTB", 1, "day", date(2026, 10, 26), 3 * h)
+            nov = {w["monday"]: w for w in web._invoice({"client": "HTB", "month": "2026-11"})["bank"]["weeks"]}
+            self.assertEqual(nov["2026-10-26"]["spare_s"], 3 * h)
+            self.assertEqual(web._invoice({"client": "HTB", "month": "2026-10"})["total_billed_s"], 9 * h)   # 6 + 3

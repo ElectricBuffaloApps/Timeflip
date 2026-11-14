@@ -559,23 +559,23 @@ def _bank_for_sheet(inv: dict) -> dict | None:
     banked = areas.bank(store, conf, inv["client"], date.today())["seconds"]
     if banked <= 0 and not rules["auto"]:
         return None
-    charged: dict[str, int] = {}
     worked_by_task: dict[int, int] = {}
     for g in inv["groups"]:
         for d in g["days"]:
-            day = date.fromisoformat(d["date"])
-            monday = (day - timedelta(days=day.weekday())).isoformat()
-            charged[monday] = charged.get(monday, 0) + d["billed_s"]
             for r in d["entries"]:
                 worked_by_task[r["task_id"]] = worked_by_task.get(r["task_id"], 0) + r["seconds"]
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
+    today = date.today()
+    # Whole weeks, Monday to Sunday, even where a week runs into the month before or after: a week with nothing
+    # recorded, or one at the month's edge, is still short of the weekly hours.
+    charged = areas.charged_by_week(store, conf, inv["client"], start, end)
     weeks, monday = [], start - timedelta(days=start.weekday())
     while monday <= end:
         got = charged.get(monday.isoformat(), 0)
-        # a week that runs into another month is only partly on this sheet, so its spare room can't be told from here
-        whole = monday >= start and monday + timedelta(days=6) <= end or inv["style"] == "week"
-        weeks.append({"monday": monday.isoformat(), "first": max(monday, start).isoformat(), "charged_s": got, "whole": whole,
-                      "spare_s": max(0, rules["limit_seconds"] - got) if rules["limit_seconds"] and whole else 0})
+        over = monday + timedelta(days=6) < today      # only a finished week can be said to be short
+        weeks.append({"monday": monday.isoformat(), "first": max(monday, start).isoformat(), "charged_s": got,
+                      "finished": over, "split": monday < start or monday + timedelta(days=6) > end,
+                      "spare_s": max(0, rules["limit_seconds"] - got) if rules["limit_seconds"] and over else 0})
         monday += timedelta(days=7)
     tasks = [t for t in store.tasks() if (t["tag"] or "").lower() == inv["client"].lower()]
     tasks.sort(key=lambda t: (-worked_by_task.get(t["id"], 0), t["name"].lower()))
@@ -610,11 +610,12 @@ def _bank_box(inv: dict) -> str:
                 if total else "")
     week_opts = "".join(
         f'<option value="{w["first"]}">Week of {date.fromisoformat(w["monday"]):%a %d %b} · {_hm(w["charged_s"])} charged'
-        f'{" · " + _hm(w["spare_s"]) + " spare" if w["spare_s"] else "" if w["whole"] else " · partly in another month"}</option>'
+        f'{" · " + _hm(w["spare_s"]) + " short" if w["spare_s"] else "" if w["finished"] else " · not finished yet"}'
+        f'{" (runs into another month)" if w["split"] else ""}</option>'
         for w in b["weeks"])
     task_opts = "".join(f'<option value="{t["id"]}">{esc(t["name"])}</option>' for t in b["tasks"])
-    limit = (f' Weeks under {_hm(b["limit_seconds"])} have room: <b>Fill short weeks</b> tops them up, earliest first.'
-             if b["limit_seconds"] and total else "")
+    limit = (f' Finished weeks under {_hm(b["limit_seconds"])} are short, including any with nothing recorded: '
+             f'<b>Fill short weeks</b> tops them up, earliest first.' if b["limit_seconds"] and total else "")
     return f"""<div class="carrybox bankbox" data-client="{client}" data-max="{b["seconds"]}">{head}
 <div class="carrybtns">{fill_btn}</div>
 <div class="bankform">

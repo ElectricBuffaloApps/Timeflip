@@ -204,6 +204,29 @@ def bank(store, conf: dict, client: str, today: date) -> dict:
     return {"auto_seconds": auto, "hand_seconds": by_hand, "seconds": auto + by_hand, "weeks": weeks}
 
 
+def charged_by_week(store, conf: dict, client: str, first: date, last: date) -> dict[str, int]:
+    """Monday -> what's charged in that whole week (Monday to Sunday), whichever months its days fall in.
+
+    Each day's time rounded the client's way, less anything held back for the bank. A timesheet only holds the part
+    of a week inside its month, so this is how it knows how short a week at the month's edge really is.
+    """
+    c = _client_conf(conf, client) or {}
+    block, mode = c.get("block_minutes", 15), c.get("rounding", "none")
+    start = first - timedelta(days=first.weekday())
+    end = last + timedelta(days=6 - last.weekday())
+    rolled, days = store.rolled(), {}
+    for r in timesheet_rows(store, start, end, client):
+        if not r["excluded"] and r["id"] not in rolled:
+            days[r["date"]] = days.get(r["date"], 0) + r["seconds"]
+    held = held_back(store, conf, client, max(end, date.today()))
+    out: dict[str, int] = {}
+    for iso, secs in days.items():
+        d = date.fromisoformat(iso)
+        monday = (d - timedelta(days=d.weekday())).isoformat()
+        out[monday] = out.get(monday, 0) + round_seconds(secs, block, mode) - held.get(iso, 0)
+    return out
+
+
 def held_back(store, conf: dict, client: str, today: date) -> dict[str, int]:
     """Day -> seconds to leave off that day's charge, because they're in the bank. Empty unless this client's
     invoices hold banked hours back."""

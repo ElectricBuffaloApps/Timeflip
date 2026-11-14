@@ -1,5 +1,14 @@
 [
   {
+    "version": 41,
+    "changes": [
+      "Short weeks are now found properly on the timesheet's hours-in-lieu box. A week with nothing recorded counts as fully short, and so does a week that runs into the next or previous month (such as the last week of October). Before, those were skipped.",
+      "A week at the month's edge is measured as a whole week, Monday to Sunday, across both months. Top it up on one month's timesheet and the other month's sheet knows.",
+      "The week you're in isn't called short until it's over, so Fill short weeks never fills a week you're still working in.",
+      "The week list now says 'short' with the amount, for example 'Week of Mon 26 Oct · 0h 00m charged · 6h 00m short'."
+    ]
+  },
+  {
     "version": 40,
     "changes": [
       "Hours in lieu on the timesheet: every monthly timesheet now opens with the client's banked hours and a way to add them, so you don't have to go to the area's page first.",
