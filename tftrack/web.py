@@ -84,6 +84,14 @@ def state() -> dict:
     }
 
 
+# On every page that isn't the main one: a way back. A phone's home-screen app has no browser Back button.
+BACK_LINK = ('''<a class="btn back" href="/" onclick="if(history.length>1&&document.referrer.indexOf(location.origin)===0)'''
+             '''{history.back();return false}">← Tracker</a>''')
+# Copies each column heading onto its cells, so a table can stack on a phone and still say what each figure is.
+LABEL_SCRIPT = ('''<script>for(const t of document.querySelectorAll("table.labelled")){const h=[...t.querySelectorAll("thead th")]'''
+                '''.map(x=>x.textContent.trim());for(const r of t.querySelectorAll("tbody tr, tfoot tr"))[...r.children]'''
+                '''.forEach((c,i)=>{if(i&&h[i]&&c.textContent.trim())c.dataset.label=h[i]})}</script>''')
+
 PAGE_STYLE = """
 body{font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827;background:#fff;margin:32px}
 h1,h2,button{font-family:Sora,Inter,sans-serif;letter-spacing:-0.02em}
@@ -129,8 +137,23 @@ dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5D
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
 dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
-@media (max-width:700px){body{margin:14px} table{display:block;overflow-x:auto} .lines{padding:12px}
- th,td{padding:5px 6px;font-size:13px} dialog{min-width:0;width:calc(100% - 32px)}}
+.bar a.back{background:#fff;color:#111827;border:1px solid #D1D5DB} .bar a.back:hover{background:#fff;border-color:#F97316}
+/* On a phone nothing scrolls sideways: each table row becomes a short block that wraps. */
+@media screen and (max-width:700px){body{margin:14px;overflow-wrap:anywhere} h1{font-size:21px} .lines{padding:12px}
+ table,tbody,tfoot{display:block;width:100%} thead{display:none}
+ tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:9px 2px;border-bottom:1px solid #E5E7EB}
+ th,td{display:block;border:none!important;padding:0;font-size:13px} td.n{margin-left:auto;white-space:nowrap}
+ td.n+td.n{margin-left:0} td[colspan]{flex:1 1 45%;min-width:0} td:empty{display:none}
+ td.keep{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:4px}
+ td.keep button.edit,label.roll{margin-left:0} label.ex{font-size:13px}
+ tr.sub,tr.week{padding:9px 8px;border-radius:8px;margin:2px 0} tr.week{background:#F3F4F6} tr.sub{background:#FFF7ED}
+ tr.sub td,tr.week td{background:none!important} tr.grand{border-top:2px solid #1E2530;border-bottom:none}
+ .tag{margin-left:0;display:block} button.copy{margin-left:4px}
+ table.labelled tr{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px}
+ table.labelled td:first-child{grid-column:1/-1;font-weight:600} table.labelled td.n{margin:0;text-align:left!important;white-space:normal}
+ table.labelled td[data-label]::before{content:attr(data-label) ": ";color:#6B7280;font-size:11px;font-weight:400}
+ .bar{gap:8px} .bar button,.bar a.btn{padding:8px 12px;font-size:13px} .carrybtns button{flex:1 1 auto}
+ dialog{min-width:0;width:calc(100% - 32px)} dialog input,dialog select{max-width:100%}}
 @media print{.bar,label.ex,.lines,button.edit,.carrybox{display:none} body{margin:0}}
 """
 
@@ -304,11 +327,11 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 <title>{esc(title)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>{PAGE_STYLE}</style></head><body data-defaults="{defaults}">
-<div class="bar"><a class="btn" href="{esc(pdf_url)}">Save PDF</a>
+<div class="bar">{BACK_LINK}<a class="btn" href="{esc(pdf_url)}">Save PDF</a>
 <button class="secondary" onclick="window.print()">Print</button>
 <button id="addEntry" class="secondary">+ Add entry</button>
 {status}<span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
-<h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}</body></html>"""
+<h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}{LABEL_SCRIPT}</body></html>"""
 
 
 def timesheet_page(rows: list[dict], start: date, end: date, client: str | None) -> str:
@@ -518,7 +541,7 @@ def ledger_page(books: list[dict], today: date) -> str:
         parts.append(f"""<h2>{esc(who)}</h2>
 <p>{b["hours_per_week"]:g}h a week, from {date.fromisoformat(b["start"] + "-01"):%B %Y}. Still to charge:
 <b>{_hm(b["balance_s"])}</b>{" · " + money(b["balance_s"], b["rate"]) if b["rate"] else ""}</p>
-<table><thead><tr><th>Month</th><th class=n>Max</th><th class=n>Worked</th><th class=n>Rolled over</th>
+<table class="labelled"><thead><tr><th>Month</th><th class=n>Max</th><th class=n>Worked</th><th class=n>Rolled over</th>
 <th class=n>Added to invoice</th><th class=n>Balance left</th><th class=n>Value</th><th>Invoiced</th></tr></thead>
 <tbody>{"".join(rows) or '<tr><td colspan=8>Nothing yet.</td></tr>'}</tbody>
 <tfoot><tr class="grand"><td>Total</td><td></td><td class=n>{_hm(total("worked_s"))}</td>
@@ -532,11 +555,11 @@ def ledger_page(books: list[dict], today: date) -> str:
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>{PAGE_STYLE}
 h2{{margin-top:36px}} td a{{color:#c2410c}} .warn{{color:#c2410c}} @media print{{.bar{{display:none}}}}</style></head><body>
-<div class="bar"><button onclick="window.print()">Print</button><span>As at {today:%d/%m/%Y}</span></div>
+<div class="bar">{BACK_LINK}<button onclick="window.print()">Print</button><span>As at {today:%d/%m/%Y}</span></div>
 <h1>Carried hours</h1>
 <p>Month by month for each allowance. Worked is everything tracked that month, including what was rolled over.
 Balance left is what has been rolled over or brought in and not yet added to an invoice.</p>
-{body}</body></html>"""
+{body}{LABEL_SCRIPT}</body></html>"""
 
 
 def _lines_panel(inv: dict) -> str:
@@ -576,7 +599,7 @@ def _lines_panel(inv: dict) -> str:
 <h2 style="margin-top:0">Invoice lines</h2>
 <p>One line per {"day" if inv["style"] == "day" else "week"}, ready to copy into your invoice: description, then quantity
 (hours), then rate.{rate_note}</p>{smooth_box}
-<table><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
+<table class="labelled"><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
 <tbody>{rows}</tbody>
 <tfoot><tr class="grand"><td>Total</td><td class=n>{total_hours:.2f}</td><td></td>
 <td class=n>{'£' + format(total_amount, '.2f') if rate else '–'}</td></tr></tfoot></table>

@@ -434,6 +434,58 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 .kv > div { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
 .kv .k { font-size: 13px; }
 .kv .v { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+
+/* ---------- phones: nothing wider than the screen, nothing scrolling sideways ---------- */
+@media (max-width: 700px) {
+  body { overflow-wrap: anywhere; }
+  main { padding-left: 12px; padding-right: 12px; }
+  .topbar-inner { padding: 10px 12px; gap: 8px 12px; }
+  .tabs { overflow: visible; padding: 3px; }
+  .tabs { gap: 0; }
+  .tabs button { flex: 1 1 auto; min-width: 0; padding: 8px 4px; font-size: 12px; letter-spacing: -0.01em; }
+  input, select, textarea { max-width: 100%; min-width: 0; }
+  .tile { padding: 16px 14px; }
+  .tile-head h2 { overflow-wrap: anywhere; }
+  .tile-head .meta, .meta, .note, .sub, .callout { white-space: normal; overflow-wrap: anywhere; }
+  .row { flex-wrap: wrap; }
+  /* area cards: week and month one above the other, so long hours fit */
+  .areas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  a.acard { padding: 12px; gap: 8px; min-width: 0; }
+  .acard .name { font-size: 14px; }
+  .acard .figs { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .acard .figs div { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .acard .figs b { font-size: 16px; }
+  .acard .figs span { font-size: 9px; letter-spacing: .04em; white-space: nowrap; order: -1; }
+  .acard .prog .row2 { flex-direction: column; align-items: flex-start; }
+  .acard .chip { white-space: normal; }
+  .owed-head { gap: 8px 18px; } .owed-total b { font-size: 20px; }
+  .chip { white-space: normal; }
+  /* tables become a list of blocks, each cell under its own heading */
+  .tablewrap { overflow: visible; }
+  table.edit, table.cmp, table.edit tbody, table.cmp tbody { display: block; width: 100%; }
+  table.edit thead, table.cmp thead { display: none; }
+  table.edit tr, table.cmp tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+  table.edit tr:first-child, table.cmp tr:first-child { border-top: none; padding-top: 0; }
+  table.edit td, table.cmp td, table.bills td { display: block; padding: 0 !important; border: none !important; white-space: normal !important; text-align: left !important; min-width: 0; width: auto !important; }
+  table.edit td[data-label]::before, table.cmp td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ink-2); font-weight: 600; margin-bottom: 3px; }
+  table.edit td:first-child, table.cmp td:first-child, table.edit td:has(textarea), table.cmp td.share { grid-column: 1 / -1; }
+  table.edit td input:not([type=checkbox]), table.edit td select, table.edit td textarea { width: 100% !important; min-width: 0 !important; }
+  table.edit td.hidden { display: none !important; }
+  table.cmp td.share { min-width: 0; }
+  .xform, .lieu-form, .formgrid .trio { grid-template-columns: minmax(0, 1fr); }
+  .xform .desc { grid-column: auto; }
+  .cprompt .worth { font-size: 15px; }
+  .area-head h2 { font-size: 19px; flex: 1 1 100%; order: -1; }
+  .toggle button { padding: 5px 9px; }
+  .actions button { flex: 1 1 auto; }
+  .allow-extra label { white-space: normal; flex-wrap: wrap; }
+  table.edit td:has(.allow-extra), table.edit td:has(> label.check) { grid-column: 1 / -1; }
+  .dev-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .dev-step { min-width: 0; }
+  input[type=file] { width: 100%; }
+}
+@media (max-width: 360px) { .tabs button { font-size: 11px; padding: 8px 3px; letter-spacing: -0.02em; } }
 </style>
 </head>
 <body>
@@ -959,6 +1011,22 @@ async function api(path, body) {
   return data;
 }
 
+/* ---------- opening timesheets and invoices ---------- */
+function samePage() {
+  return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches || window.innerWidth < 760;
+}
+function openPage(url) { if (samePage()) location.href = url; else window.open(url, "_blank"); }
+
+/* Phone layout: a table's rows stack, so each cell carries its column's heading. */
+function labelTables() {
+  for (const t of document.querySelectorAll("table.edit, table.cmp")) {
+    const heads = [...t.querySelectorAll("thead th")].map((h) => h.textContent.trim());
+    for (const r of t.querySelectorAll("tbody tr")) [...r.children].forEach((c, i) => { if (heads[i]) c.dataset.label = heads[i]; });
+  }
+}
+{ let due = null; new MutationObserver(() => { clearTimeout(due); due = setTimeout(labelTables, 50); })
+    .observe(document.querySelector("main"), { subtree: true, childList: true }); }
+
 /* ---------- tabs ---------- */
 const TABS = ["dashboard", "reports", "timesheets", "invoices", "settings"];
 let pageVersion = null;   // the app version this page was loaded from
@@ -1410,7 +1478,7 @@ function openSheet(client, month) {
     const [y, m] = month.split("-").map(Number);
     url = `/timesheet?start=${month}-01&end=${iso(new Date(y, m, 0))}&client=${encodeURIComponent(client)}`;
   }
-  window.open(url, "_blank");
+  openPage(url);
 }
 const COLLECT_SHOWN = 5;
 let collectAll = false;
@@ -1448,7 +1516,7 @@ async function loadCollect() {
                   act("Open timesheet", () => openSheet(p.client, p.month)),
                   act("Mark invoiced", async () => { await api("/api/invoiced", { client: p.client, month: p.month, invoiced: true }); again(); }));
     } else if (p.action === "paid") {
-      if (p.bill_id) side.append(act("Open invoice", () => window.open(`/bill?id=${p.bill_id}`, "_blank")));
+      if (p.bill_id) side.append(act("Open invoice", () => openPage(`/bill?id=${p.bill_id}`)));
       side.append(act("Mark paid", async () => { await api("/api/paid", { client: p.client, month: p.month, paid: true }); again(); },
                       p.level === "critical" ? "primary" : ""));
     } else if (p.action === "timesheet") {
@@ -1821,7 +1889,7 @@ async function loadInsights() {
 /* ---------- invoices ---------- */
 const ukDate = (isoDay) => isoDay.slice(0, 10).split("-").reverse().join("/");
 async function createBill(client, month) {
-  const w = window.open("", "_blank");   // opened before the request, or the browser blocks it as a pop-up
+  const w = samePage() ? null : window.open("", "_blank");   // opened before the request, or the browser blocks it as a pop-up
   try {
     const r = await api("/api/bill/create", { client, month });
     const url = `/bill?id=${r.ids[0]}`;
@@ -1868,7 +1936,7 @@ async function loadBills() {
   $("billRows").replaceChildren(...b.bills.map((x) => {
     const tr = el("tr", x.status === "void" ? { class: "void" } : {});
     const q = `id=${x.id}`;
-    const num = el("td"); num.append(el("a", { href: `/bill?${q}`, target: "_blank" }, x.number));
+    const num = el("td"); num.append(el("a", samePage() ? { href: `/bill?${q}` } : { href: `/bill?${q}`, target: "_blank" }, x.number));
     const st = el("td", { class: "st" });
     st.append(chip(STATUS[x.status][0], x.status === "overdue" ? `${x.days_overdue} day${x.days_overdue === 1 ? "" : "s"} overdue` : STATUS[x.status][1]));
     const acts = el("td");
@@ -2079,7 +2147,7 @@ async function loadOutstanding() {
     link.onclick = (e) => {
       e.preventDefault();
       $("tsClient").value = c.client; $("tsMonth").value = o.month; updateTsHint();
-      window.open(tsUrl(false), "_blank");
+      openPage(tsUrl(false));
     };
     top.append(link);
     const line = (cls, label, secs, value) => {
@@ -2139,7 +2207,7 @@ function tsUrl(csv) {
   return `/timesheet${csv ? ".csv" : ""}?${q}`;
 }
 $("tsMonth").value = iso(new Date()).slice(0, 7);
-$("tsPdf").onclick = () => window.open(tsUrl(false), "_blank");
+$("tsPdf").onclick = () => openPage(tsUrl(false));
 $("tsCsv").onclick = () => { window.location.href = tsUrl(true); };
 $("tsSavePdf").onclick = () => { window.location.href = tsUrl(false).replace(/^\/(invoice|timesheet)\?/, "/$1.pdf?"); };
 

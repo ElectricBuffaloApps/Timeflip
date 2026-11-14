@@ -1,5 +1,15 @@
 [
   {
+    "version": 38,
+    "changes": [
+      "Phone layout fixed throughout: nothing runs off the side of the screen or scrolls sideways any more, and long sentences wrap.",
+      "Getting back from a timesheet: on a phone, timesheets, invoices and the carried hours ledger now open in the same screen with a '← Tracker' button at the top to return to where you were. On a computer they still open in a new tab.",
+      "All five tabs fit across a phone screen.",
+      "Area cards on a phone show This week and This month one above the other, so long hours fit inside the card.",
+      "Tables (timesheets, invoice lines, the ledger, Clients compared, and every Settings table) turn into a list of short blocks on a phone, each figure under its heading."
+    ]
+  },
+  {
     "version": 37,
     "changes": [
       "Every device now moves to a new version together. When the tracker is updated, a page left open on your phone or another computer loads the new version by itself, instead of carrying on with the old one until you refreshed it.",

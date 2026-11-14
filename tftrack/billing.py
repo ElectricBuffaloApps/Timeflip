@@ -383,6 +383,9 @@ def bill_pdf(bill: dict) -> bytes:
 
 # ---------- page ----------
 
+BACK_LINK = ('''<a class="btn back" href="/" onclick="if(history.length>1&&document.referrer.indexOf(location.origin)===0)'''
+             '''{history.back();return false}">← Tracker</a>''')
+
 STYLE = """
 body{font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827;background:#F3F4F6;margin:0;padding:24px}
 h1,h2,button,.big{font-family:Sora,Inter,sans-serif;letter-spacing:-0.02em}
@@ -413,8 +416,15 @@ table.lines{border-collapse:collapse;width:100%;margin-top:24px}
 .pay{background:#FFF7ED;border-radius:10px;padding:14px 18px;margin-top:28px;white-space:pre-line}
 .pay h2{margin:0 0 6px}.foot{color:#9CA3AF;font-size:12px;margin-top:20px;white-space:pre-line}
 .hint{max-width:820px;margin:14px auto 0;color:#6B7280;font-size:13px}
-@media (max-width:700px){body{padding:12px}.sheet{padding:22px 18px}.meta{text-align:left}.meta table{margin-left:0}
- .meta td{text-align:left;padding-left:0;padding-right:16px}.lines{display:block;overflow-x:auto}button.danger{margin-left:0}}
+a.back{margin-right:4px}
+@media screen and (max-width:700px){body{padding:12px;overflow-wrap:anywhere}.sheet{padding:22px 18px}.meta{text-align:left}.meta table{margin-left:0}
+ .meta td{text-align:left;padding-left:0;padding-right:16px}button.danger{margin-left:0}
+ button,a.btn{padding:8px 12px;font-size:13px}.from b{font-size:18px}.meta .big{font-size:24px}
+ table.lines,table.lines tbody{display:block}table.lines thead{display:none}
+ table.lines tr{display:flex;flex-wrap:wrap;gap:2px 12px;padding:9px 0;border-bottom:1px solid #E5E7EB}
+ table.lines td{padding:0;border:none}table.lines td:first-child{flex:1 1 100%;font-weight:500}
+ table.lines td.n{color:#6B7280}table.lines td.n:last-child{margin-left:auto;color:#111827;font-weight:600}
+ table.lines td:empty{display:none}.totals{width:100%}.pay{padding:12px 14px}}
 @media print{.bar,.hint{display:none}body{background:#fff;padding:0}.sheet{box-shadow:none;padding:0;max-width:none}}
 """
 
@@ -493,7 +503,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
 <title>Invoice {esc(bill['number'])} – {esc(bill['client'])}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap">
 <style>{STYLE}</style></head><body data-bill="{info}">
-<div class="bar"><span class="state {s['status']}">{state}</span>{buttons}</div>
+<div class="bar">{BACK_LINK}<span class="state {s['status']}">{state}</span>{buttons}</div>
 <div class="sheet {s['status']}">
 <div class="top"><div class="from"><b>{esc(b['name'])}</b>{esc(b['address'])}{''.join('<br>' + x for x in extra)}</div>
 <div class="meta"><p class="big">Invoice</p><table>
