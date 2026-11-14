@@ -358,7 +358,10 @@ def use_lieu(store, conf: dict, client: str, task_id: int, mode: str, when: date
     task = next((t for t in store.tasks() if t["id"] == task_id and (t["tag"] or "").lower() == client.lower()), None)
     if not task:
         raise ValueError("Choose a task from this area.")
-    day = week_start(when, conf) if mode == "week" else when
+    # a week means the same week the timesheet shows: Monday to Sunday where invoices hold banked hours back
+    monday_weeks = bank_rules(conf, store, client)["monday_weeks"]
+    first_day = (when - timedelta(days=when.weekday())) if monday_weeks else week_start(when, conf)
+    day = first_day if mode == "week" else when
     start = datetime(day.year, day.month, day.day, 9).astimezone()
     entry_id = store.add_manual(start, seconds, task_id)
     store.add_lieu(client, -seconds, f"Added to {'week of ' if mode == 'week' else ''}{day:%d/%m/%Y} ({task['name']})", entry_id)

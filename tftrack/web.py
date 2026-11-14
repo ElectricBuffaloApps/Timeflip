@@ -109,6 +109,13 @@ tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:norma
 .carrybtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px} .carrybtns button{font-size:13px;padding:5px 12px}
 .carrybtns button.primary{background:#F97316;border-color:#F97316;color:#fff} .carrybtns button:disabled{opacity:.4;cursor:default}
 .carrybox .hint{margin:8px 0 0;font-size:12px}
+.bankbox{border-color:#F97316;background:#FFF7ED;margin:0 0 20px}
+.bankform{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:flex-end;margin-top:12px}
+.bankform label{font-size:12px;color:#6B7280;font-weight:600}
+.bankform input,.bankform select{font:inherit;font-size:14px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:3px;max-width:100%}
+.bankform input[type=number]{width:110px} .bankbox button{font-size:13px;padding:7px 14px}
+.bankform label{min-width:0} .bankform select{min-width:0;max-width:100%}
+.bankbox button.primary{background:#F97316;border-color:#F97316;color:#fff}
 label.roll{margin-left:8px} th.section{padding-top:18px;color:#0b0b0b;font-size:15px}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
@@ -153,6 +160,8 @@ dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button
  table.labelled td:first-child{grid-column:1/-1;font-weight:600} table.labelled td.n{margin:0;text-align:left!important;white-space:normal}
  table.labelled td[data-label]::before{content:attr(data-label) ": ";color:#6B7280;font-size:11px;font-weight:400}
  .bar{gap:8px} .bar button,.bar a.btn{padding:8px 12px;font-size:13px} .carrybtns button{flex:1 1 auto}
+ .bankform label{flex:1 1 100%} .bankform select,.bankform input{width:100%!important;box-sizing:border-box}
+ .bankform button{flex:1 1 100%}
  dialog{min-width:0;width:calc(100% - 32px)} dialog input,dialog select{max-width:100%}}
 @media print{.bar,label.ex,.lines,button.edit,.carrybox{display:none} body{margin:0}}
 """
@@ -239,6 +248,26 @@ for (const b of document.querySelectorAll("button.paid")) {
     b.disabled = true;
     try { await post("/api/paid", {client: b.dataset.client, month: b.dataset.month, paid: !!b.dataset.paid}); location.reload(); }
     catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
+const bankBox = document.querySelector(".bankbox[data-client]");
+if (bankBox) {
+  const useBank = (date, hours, mode) => post("/api/lieu/use", {client: bankBox.dataset.client, task_id: Number($f("bankTask").value),
+                                                                 mode, date, hours});
+  const fail = (e) => { $f("bankErr").textContent = e.message; };
+  $f("bankWhere").addEventListener("change", () => { $f("bankDayWrap").style.display = $f("bankWhere").value === "day" ? "" : "none"; });
+  $f("bankAdd").addEventListener("click", async () => {
+    const hours = Number($f("bankHours").value), day = $f("bankWhere").value === "day";
+    if (!(hours > 0)) return fail(new Error("Enter how many hours to add."));
+    $f("bankAdd").disabled = true;
+    try { await useBank(day ? $f("bankDay").value : $f("bankWhere").value, hours, "day"); location.reload(); }
+    catch (e) { fail(e); $f("bankAdd").disabled = false; }
+  });
+  const fill = $f("bankFill");
+  if (fill) fill.addEventListener("click", async () => {
+    fill.disabled = true;
+    try { for (const p of JSON.parse(fill.dataset.plan)) await useBank(p.date, p.seconds / 3600, "day"); location.reload(); }
+    catch (e) { fail(e); setTimeout(() => location.reload(), 2500); }
   });
 }
 for (const b of document.querySelectorAll("button.carry")) {
@@ -465,7 +494,7 @@ def invoice_page(inv: dict) -> str:
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}{extra_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
 <td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
-    table = _lines_panel(inv) + table
+    table = _bank_box(inv) + _lines_panel(inv) + table
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
@@ -520,6 +549,82 @@ def _carry_box(inv: dict, al: dict) -> str:
 {btn("+1h", have + 4 * q)} {btn("Add all", avail)} {btn("−15m", have - q)} {btn("Clear", 0)}</div>
 <p class="hint">Weeks under {esc(al["name"])}'s max have {_hm(c["spare_s"])} spare this month; added hours go into
 those weeks first, one invoice line per week.</p></div>"""
+
+
+def _bank_for_sheet(inv: dict) -> dict | None:
+    """The client's hours in lieu, for the box at the top of its timesheet: what's banked, and this month's weeks
+    with how much room each has under the hours a week."""
+    store, conf = service.open_store(), cfg.load_config()
+    rules = areas.bank_rules(conf, store, inv["client"])
+    banked = areas.bank(store, conf, inv["client"], date.today())["seconds"]
+    if banked <= 0 and not rules["auto"]:
+        return None
+    charged: dict[str, int] = {}
+    worked_by_task: dict[int, int] = {}
+    for g in inv["groups"]:
+        for d in g["days"]:
+            day = date.fromisoformat(d["date"])
+            monday = (day - timedelta(days=day.weekday())).isoformat()
+            charged[monday] = charged.get(monday, 0) + d["billed_s"]
+            for r in d["entries"]:
+                worked_by_task[r["task_id"]] = worked_by_task.get(r["task_id"], 0) + r["seconds"]
+    start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
+    weeks, monday = [], start - timedelta(days=start.weekday())
+    while monday <= end:
+        got = charged.get(monday.isoformat(), 0)
+        # a week that runs into another month is only partly on this sheet, so its spare room can't be told from here
+        whole = monday >= start and monday + timedelta(days=6) <= end or inv["style"] == "week"
+        weeks.append({"monday": monday.isoformat(), "first": max(monday, start).isoformat(), "charged_s": got, "whole": whole,
+                      "spare_s": max(0, rules["limit_seconds"] - got) if rules["limit_seconds"] and whole else 0})
+        monday += timedelta(days=7)
+    tasks = [t for t in store.tasks() if (t["tag"] or "").lower() == inv["client"].lower()]
+    tasks.sort(key=lambda t: (-worked_by_task.get(t["id"], 0), t["name"].lower()))
+    return {"seconds": banked, "limit_seconds": rules["limit_seconds"], "weeks": weeks,
+            "tasks": [{"id": t["id"], "name": t["name"]} for t in tasks]}
+
+
+def _bank_box(inv: dict) -> str:
+    """Hours in lieu at the top of the timesheet, with a way to add some to this month. Not printed."""
+    b = inv.get("bank")
+    if not b:
+        return ""
+    esc = html.escape
+    client = esc(inv["client"])
+    head = f'<div><b>Hours in lieu for {client}: {_hm(max(0, b["seconds"]))} banked</b></div>'
+    if b["seconds"] <= 0:
+        return (f'<div class="carrybox bankbox">{head}<p class="hint">Nothing to add. Hours over the weekly hours go in '
+                f'here by themselves.</p></div>')
+    if inv.get("invoiced"):
+        return (f'<div class="carrybox bankbox">{head}<p class="hint">This month is already invoiced, so add them to a '
+                f'later month. (To add them here, undo or void the invoice first.)</p></div>')
+    short = [w for w in b["weeks"] if w["spare_s"] > 0]
+    fill, plan = b["seconds"], []
+    for w in short:   # what one press of "Fill short weeks" would do: earliest week first, until the bank runs out
+        take = min(fill, w["spare_s"])
+        take -= take % 900 or 0   # whole quarter hours
+        if take > 0:
+            plan.append({"date": w["first"], "seconds": take})
+            fill -= take
+    total = sum(p["seconds"] for p in plan)
+    fill_btn = (f'<button class="primary" id="bankFill" data-plan="{esc(json.dumps(plan))}">Fill short weeks ({_hm(total)})</button>'
+                if total else "")
+    week_opts = "".join(
+        f'<option value="{w["first"]}">Week of {date.fromisoformat(w["monday"]):%a %d %b} · {_hm(w["charged_s"])} charged'
+        f'{" · " + _hm(w["spare_s"]) + " spare" if w["spare_s"] else "" if w["whole"] else " · partly in another month"}</option>'
+        for w in b["weeks"])
+    task_opts = "".join(f'<option value="{t["id"]}">{esc(t["name"])}</option>' for t in b["tasks"])
+    limit = (f' Weeks under {_hm(b["limit_seconds"])} have room: <b>Fill short weeks</b> tops them up, earliest first.'
+             if b["limit_seconds"] and total else "")
+    return f"""<div class="carrybox bankbox" data-client="{client}" data-max="{b["seconds"]}">{head}
+<div class="carrybtns">{fill_btn}</div>
+<div class="bankform">
+<label>Hours<br><input type="number" id="bankHours" min="0.25" step="0.25" max="{b["seconds"] / 3600:.2f}" placeholder="up to {b["seconds"] / 3600:g}"></label>
+<label>Add to<br><select id="bankWhere">{week_opts}<option value="day">A day I choose…</option></select></label>
+<label id="bankDayWrap" style="display:none">Day<br><input type="date" id="bankDay" min="{inv["start"]}" max="{inv["end"]}" value="{inv["start"]}"></label>
+<label>Task<br><select id="bankTask">{task_opts}</select></label>
+<button id="bankAdd">Add to this timesheet</button></div>
+<p class="hint">Added hours come out of the bank straight away and show below as an “added” entry, charged in full.
+Delete that entry to put them back.{limit}</p><p class="err" id="bankErr"></p></div>"""
 
 
 def ledger_page(books: list[dict], today: date) -> str:
@@ -1241,6 +1346,7 @@ def _invoice(q: dict) -> dict:
     inv["invoiced"] = service.open_store().invoiced(client).get(inv["month"])
     inv["paid"] = service.open_store().paid(client).get(inv["month"])
     inv["bill"] = service.open_store().bill_for(client, inv["month"])
+    inv["bank"] = _bank_for_sheet(inv)
     return inv
 
 

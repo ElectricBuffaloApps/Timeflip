@@ -1,5 +1,15 @@
 [
   {
+    "version": 40,
+    "changes": [
+      "Hours in lieu on the timesheet: every monthly timesheet now opens with the client's banked hours and a way to add them, so you don't have to go to the area's page first.",
+      "Fill short weeks: one button tops up this month's weeks that are under the weekly hours, earliest first, until the bank runs out.",
+      "Or add your own amount: type the hours, pick a week of the month or a day, and press Add to this timesheet.",
+      "Added hours come straight out of the bank and appear below as an 'added' entry. Delete the entry to put them back.",
+      "If the month is already invoiced, the box says so instead, because that invoice can't change."
+    ]
+  },
+  {
     "version": 39,
     "changes": [
       "HTB now banks automatically, like your other areas. Any week over its hours a week, the extra goes into its hours in lieu and comes off that week's charge. This works for every client invoiced by the day, not just by the week.",
