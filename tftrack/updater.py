@@ -27,7 +27,8 @@ ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/{BRANCH}"
 
 CODE_DIR = Path(__file__).resolve().parent
 INSTALL_DIR = CODE_DIR.parent
-EXTRA_FILES = ["Uninstall TimeFlip Tracker.command"]
+EXTRA_FILES = ["Uninstall FlipTracker.command"]
+LEGACY_FILES = ["Uninstall TimeFlip Tracker.command"]
 
 
 def version_name(n: int | None) -> str:
@@ -66,7 +67,7 @@ def _find_root(zf: zipfile.ZipFile) -> str:
     for name in zf.namelist():
         if name.endswith("tftrack/__main__.py"):
             return name[: -len("tftrack/__main__.py")]
-    raise RuntimeError("The download doesn't look like TimeFlip Tracker.")
+    raise RuntimeError("The download doesn't look like FlipTracker.")
 
 
 def install_zip(data: bytes, install_dir: Path = INSTALL_DIR) -> int:
@@ -95,6 +96,11 @@ def install_zip(data: bytes, install_dir: Path = INSTALL_DIR) -> int:
                 live.rename(old)
             new_code.rename(live)
             shutil.rmtree(old, ignore_errors=True)
+            for old in LEGACY_FILES:   # files from when the app had another name
+                try:
+                    (install_dir / old).unlink()
+                except OSError:
+                    pass
             for extra in EXTRA_FILES:
                 if (staged / extra).exists():
                     shutil.copyfile(staged / extra, install_dir / extra)

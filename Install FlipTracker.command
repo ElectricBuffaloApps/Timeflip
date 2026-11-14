@@ -1,9 +1,9 @@
 #!/bin/bash
-# Double-click to install (or reinstall) TimeFlip Tracker.
+# Double-click to install (or reinstall) FlipTracker.
 set -u
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/Library/Application Support/TimeFlip Tracker"
-TITLE="TimeFlip Tracker"
+TITLE="FlipTracker"
 
 say_box() {  # say_box "message" [stop|note]
   osascript -e "display dialog \"$1\" with title \"$TITLE\" buttons {\"OK\"} default button \"OK\" with icon ${2:-note}" >/dev/null
@@ -30,13 +30,13 @@ fi
 mkdir -p "$DEST"
 rm -rf "$DEST/tftrack"
 cp -R "$SRC/tftrack" "$DEST/"
-cp "$SRC/Uninstall TimeFlip Tracker.command" "$DEST/" 2>/dev/null
+cp "$SRC/Uninstall FlipTracker.command" "$DEST/" 2>/dev/null
 
 # Updating? Keep the saved account if it still signs in.
 if (cd "$DEST" && "$PY" -m tftrack install --reuse >/dev/null 2>&1); then
   sleep 2
   open "http://127.0.0.1:8765/"
-  say_box "TimeFlip Tracker has been updated and is open in your browser. You can close this window."
+  say_box "FlipTracker has been updated and is open in your browser. You can close this window."
   exit 0
 fi
 
@@ -53,4 +53,4 @@ unset PASSWORD
 
 sleep 2
 open "http://127.0.0.1:8765/"
-say_box "All set. Your tracker is open in your browser, and the TimeFlip Tracker app is in your Applications folder (search Spotlight for it, or drag it into your Dock). Notifications will appear when you get close to a limit. You can close this window."
+say_box "All set. Your tracker is open in your browser, and the FlipTracker app is in your Applications folder (search Spotlight for it, or drag it into your Dock). Notifications will appear when you get close to a limit. You can close this window."

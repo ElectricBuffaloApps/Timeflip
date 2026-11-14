@@ -1,4 +1,4 @@
-"""A small "TimeFlip Tracker" app for Applications, Spotlight and the Dock.
+"""A small "FlipTracker" app for Applications, Spotlight and the Dock.
 
 It is a plain app bundle whose program is a shell script: it makes sure the tracker's web server is running and
 opens the page in the default browser. It is built on the Mac itself (so it carries no download quarantine) and
@@ -15,13 +15,15 @@ from pathlib import Path
 
 from . import config as cfg
 
-APP_NAME = "TimeFlip Tracker.app"
+APP_NAME = "FlipTracker.app"
+BUNDLE_ID = "com.tftrack.app"
+LEGACY_APP_NAMES = ["TimeFlip Tracker.app"]   # what the app was called before it was renamed
 ICON = Path(__file__).parent / "static" / "AppIcon.icns"
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework"
               "/Support/lsregister")
 
 LAUNCHER = f"""#!/bin/bash
-# Opens TimeFlip Tracker, starting its web server first if it isn't running.
+# Opens FlipTracker, starting its web server first if it isn't running.
 URL="http://127.0.0.1:{cfg.PORT}/"
 if ! /usr/bin/curl -s -o /dev/null --max-time 2 "$URL"; then
   /bin/launchctl kickstart "gui/$(/usr/bin/id -u)/com.tftrack.web" >/dev/null 2>&1
@@ -53,9 +55,9 @@ def build_app(target_dir: Path) -> Path:
     (staging / "Contents" / "Resources").mkdir(parents=True)
     with open(staging / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump({
-            "CFBundleName": "TimeFlip Tracker",
-            "CFBundleDisplayName": "TimeFlip Tracker",
-            "CFBundleIdentifier": "com.tftrack.app",
+            "CFBundleName": "FlipTracker",
+            "CFBundleDisplayName": "FlipTracker",
+            "CFBundleIdentifier": BUNDLE_ID,
             "CFBundleExecutable": "launcher",
             "CFBundleIconFile": "AppIcon",
             "CFBundlePackageType": "APPL",
@@ -77,6 +79,7 @@ def ensure_app() -> Path | None:
         return None
     existing = find_app()
     if existing:
+        remove_legacy_apps()
         return existing
     for d in candidate_dirs():
         try:
@@ -85,10 +88,28 @@ def ensure_app() -> Path | None:
         except OSError:
             continue
         subprocess.run([LSREGISTER, "-f", str(app)], capture_output=True)
+        remove_legacy_apps()
         return app
     return None
+
+
+def remove_legacy_apps() -> None:
+    """Remove the app under its old name, now that the renamed one exists. Only ever a bundle this tracker made:
+    it must carry our identifier, so nothing else with the same name is touched."""
+    for d in candidate_dirs():
+        for name in LEGACY_APP_NAMES:
+            old = d / name
+            try:
+                with open(old / "Contents" / "Info.plist", "rb") as f:
+                    ours = plistlib.load(f).get("CFBundleIdentifier") == BUNDLE_ID
+            except (OSError, ValueError, plistlib.InvalidFileException):
+                continue
+            if ours:
+                shutil.rmtree(old, ignore_errors=True)
+                subprocess.run([LSREGISTER, "-u", str(old)], capture_output=True)
 
 
 def remove_app() -> None:
     for d in candidate_dirs():
         shutil.rmtree(d / APP_NAME, ignore_errors=True)
+    remove_legacy_apps()

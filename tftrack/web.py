@@ -764,7 +764,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/remote":
                 return self._send(200, {**remote.status(), "viewer_of": viewer_of})
             if url.path == "/api/export":
-                name = f"timeflip-changes-{_file_name(socket.gethostname())}-{date.today()}.json"
+                name = f"fliptracker-changes-{_file_name(socket.gethostname())}-{date.today()}.json"
                 return self._send(200, json.dumps(merge.export(service.open_store(include_ignored=True),
                                                                cfg.load_config()), indent=1),
                                   "application/json", {"Content-Disposition": f'attachment; filename="{name}"'})
@@ -1071,7 +1071,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Save the business first.")
                     if not b["email"]:
                         raise ValueError("Enter and save this business's email address first.")
-                    subject = f"Test email from TimeFlip Tracker ({b['name']})"
+                    subject = f"Test email from FlipTracker ({b['name']})"
                     text = "If you're reading this, invoices from this business can be emailed."
                     if b["mail_method"] == "smtp":
                         mailer.send(b, mailer.get_password(b["id"]), b["email"], subject, text, [])
@@ -1258,11 +1258,11 @@ def viewer_page(viewer_of: str | None) -> str:
             'tracker and data, as they were when it became a viewer. TimeFlip syncing starts again within 5 minutes.</p>'
             if viewer_of else '<p>This Mac uses its own tracker. <a href="/">Open it</a>.</p>')
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>TimeFlip Tracker – viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>FlipTracker – viewer</title>
 <style>body{{font:15px/1.6 -apple-system,Inter,sans-serif;color:#111827;max-width:560px;margin:40px auto;padding:0 16px}}
 a.btn,button{{font:600 14px -apple-system,sans-serif;padding:9px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;cursor:pointer;text-decoration:none;color:#111827}}
 a.btn{{background:#F97316;border-color:#F97316;color:#fff}} .small{{color:#6B7280;font-size:13px}}</style></head>
-<body><h1>TimeFlip Tracker</h1>{body}
+<body><h1>FlipTracker</h1>{body}
 <script>const b=document.getElementById("stop");if(b)b.onclick=async()=>{{b.disabled=true;
 await fetch("/api/viewer/stop",{{method:"POST",headers:{{"Content-Type":"application/json","X-TFTrack":"1"}},body:"{{}}"}});
 location.href="/";}};</script></body></html>"""
@@ -1568,5 +1568,5 @@ def serve() -> None:
     except Exception as e:
         print(f"Couldn't create the app: {e}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.PORT), Handler)
-    print(f"TimeFlip Tracker running at http://127.0.0.1:{cfg.PORT}")
+    print(f"FlipTracker running at http://127.0.0.1:{cfg.PORT}")
     server.serve_forever()

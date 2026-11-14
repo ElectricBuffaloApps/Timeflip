@@ -84,13 +84,13 @@ def draft(subject: str, body: str, to: str, sender: str, files: list[tuple[str, 
         r = subprocess.run(["osascript", "-e", SCRIPT, subject, body, to, sender, *paths],
                            capture_output=True, text=True, timeout=90)
     except subprocess.TimeoutExpired:
-        raise ValueError("Mail didn't answer. Look on the Mac for a box asking to let TimeFlip Tracker control Mail, "
+        raise ValueError("Mail didn't answer. Look on the Mac for a box asking to let FlipTracker control Mail, "
                          "click OK, then try again.")
     if r.returncode != 0:
         err = (r.stderr or "").strip()
         if "-1743" in err or "Not authorized" in err or "not allowed" in err.lower():
             raise ValueError("macOS is blocking this. On the Mac: System Settings → Privacy & Security → Automation, "
-                             "and switch on Mail for Python (or TimeFlip Tracker). Then try again.")
+                             "and switch on Mail for Python (or FlipTracker). Then try again.")
         raise ValueError(f"Mail couldn't make the draft: {err or 'unknown error'}")
 
 

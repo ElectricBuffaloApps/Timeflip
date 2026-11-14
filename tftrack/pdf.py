@@ -113,7 +113,7 @@ class Document:
             objs.append(f"<< /Length {len(stream)} /Filter /FlateDecode >>\nstream\n".encode() + stream
                         + b"\nendstream")
         title = ("\ufeff" + self.title).encode("utf-16-be").hex()   # PDF text strings: UTF-16 with a byte-order mark
-        objs.append(f"<< /Title <{title}> /Producer (TimeFlip Tracker) >>".encode())
+        objs.append(f"<< /Title <{title}> /Producer (FlipTracker) >>".encode())
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
         for i, body in enumerate(objs, 1):

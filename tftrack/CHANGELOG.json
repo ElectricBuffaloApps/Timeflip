@@ -1,5 +1,13 @@
 [
   {
+    "version": 43,
+    "changes": [
+      "New name: the app is now called FlipTracker. It still works with your TIMEFLIP2 cube in exactly the same way, and none of your data or settings has moved.",
+      "In Applications, the old 'TimeFlip Tracker' app is replaced by 'FlipTracker'. If you kept it in your Dock, drag the new one in.",
+      "On your phone, the home screen icon keeps its old name until you remove it and add it again (Share → Add to Home Screen)."
+    ]
+  },
+  {
     "version": 42,
     "changes": [
       "Version numbers are now shown as 0.42, 0.43 and so on, because the tracker isn't at version 1 yet. Nothing else has changed, and updates work exactly as before."

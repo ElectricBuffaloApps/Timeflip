@@ -215,7 +215,7 @@ class WebTest(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as e:
                 post("/api/limits", {"limits": [{"task": "A", "daily_hours": "-1"}]}, {"X-TFTrack": "1"})
             self.assertEqual(e.exception.code, 400)
-            self.assertIn(b"TimeFlip Tracker", opener.open(base + "/").read())
+            self.assertIn(b"FlipTracker", opener.open(base + "/").read())
         finally:
             server.shutdown()
             cfg.APP_DIR, cfg.CONFIG_PATH, cfg.DB_PATH, cfg.PORT = old
@@ -289,15 +289,15 @@ class UpdaterTest(unittest.TestCase):
             zf.writestr(root + "tftrack/__main__.py", "print('hi')\n")
             zf.writestr(root + "tftrack/VERSION", "7\n")
             zf.writestr(root + "tftrack/static/index.html", "<html></html>")
-            zf.writestr(root + "Uninstall TimeFlip Tracker.command", "#!/bin/bash\n")
+            zf.writestr(root + "Uninstall FlipTracker.command", "#!/bin/bash\n")
             zf.writestr(root + "README.md", "ignored")
         self.assertEqual(updater.install_zip(buf.getvalue(), install), 7)
         self.assertEqual((install / "tftrack" / "VERSION").read_text().strip(), "7")
         self.assertFalse((install / "tftrack" / "stale.py").exists())
         self.assertTrue((install / "tftrack" / "static" / "index.html").exists())
         self.assertFalse((install / "README.md").exists())
-        self.assertTrue(os.access(install / "Uninstall TimeFlip Tracker.command", os.X_OK))
-        self.assertEqual(sorted(p.name for p in install.iterdir()), ["Uninstall TimeFlip Tracker.command", "tftrack"])
+        self.assertTrue(os.access(install / "Uninstall FlipTracker.command", os.X_OK))
+        self.assertEqual(sorted(p.name for p in install.iterdir()), ["Uninstall FlipTracker.command", "tftrack"])
 
     def test_version_file_is_a_number(self):
         from tftrack import updater
@@ -364,7 +364,7 @@ class MacAppTest(unittest.TestCase):
         import subprocess
         from tftrack.macapp import build_app
         app = build_app(Path(tempfile.mkdtemp()))
-        self.assertEqual(app.name, "TimeFlip Tracker.app")
+        self.assertEqual(app.name, "FlipTracker.app")
         info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
         self.assertEqual((info["CFBundleExecutable"], info["CFBundleIconFile"]), ("launcher", "AppIcon"))
         launcher = app / "Contents" / "MacOS" / "launcher"
@@ -1525,3 +1525,69 @@ class VersionNameTest(unittest.TestCase):
         raw = (Path(updater.__file__).parent / "VERSION").read_text().strip()
         self.assertTrue(raw.isdigit(), raw)
         self.assertEqual(updater.current_version(), int(raw))
+
+
+class RenameTest(unittest.TestCase):
+    """The app was renamed from "TimeFlip Tracker" to "FlipTracker". Existing installs must carry on working."""
+
+    def test_old_app_is_replaced_but_only_if_it_is_ours(self):
+        import plistlib
+        from unittest import mock
+        from tftrack import macapp
+        apps = Path(tempfile.mkdtemp())
+
+        def bundle(name, ident):
+            (apps / name / "Contents").mkdir(parents=True)
+            with open(apps / name / "Contents" / "Info.plist", "wb") as f:
+                plistlib.dump({"CFBundleIdentifier": ident}, f)
+
+        bundle("TimeFlip Tracker.app", macapp.BUNDLE_ID)
+        with mock.patch.object(macapp, "candidate_dirs", return_value=[apps]), \
+                mock.patch.object(macapp.sys, "platform", "darwin"), \
+                mock.patch.object(macapp.subprocess, "run"):
+            app = macapp.ensure_app()
+        self.assertEqual(app.name, "FlipTracker.app")
+        self.assertEqual(sorted(p.name for p in apps.iterdir()), ["FlipTracker.app"])     # the old one has gone
+        # something else that happens to have the old name is left alone
+        bundle("TimeFlip Tracker.app", "com.someone.else")
+        with mock.patch.object(macapp, "candidate_dirs", return_value=[apps]), \
+                mock.patch.object(macapp.sys, "platform", "darwin"), \
+                mock.patch.object(macapp.subprocess, "run"):
+            macapp.ensure_app()
+        self.assertEqual(sorted(p.name for p in apps.iterdir()), ["FlipTracker.app", "TimeFlip Tracker.app"])
+
+    def test_update_from_the_old_name_keeps_the_install_where_it_is(self):
+        import io
+        import zipfile
+        from tftrack import updater
+        install = Path(tempfile.mkdtemp()) / "Application Support" / "TimeFlip Tracker"   # the folder keeps its old name
+        (install / "tftrack").mkdir(parents=True)
+        (install / "tftrack" / "VERSION").write_text("42\n")
+        (install / "Uninstall TimeFlip Tracker.command").write_text("#!/bin/bash\n")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            root = "Timeflip-branch/"
+            zf.writestr(root + "tftrack/__main__.py", "print('hi')\n")
+            zf.writestr(root + "tftrack/VERSION", "43\n")
+            zf.writestr(root + "Uninstall FlipTracker.command", "#!/bin/bash\n")
+            zf.writestr(root + "Install FlipTracker.command", "#!/bin/bash\n")
+        self.assertEqual(updater.install_zip(buf.getvalue(), install), 43)
+        self.assertEqual(sorted(p.name for p in install.iterdir()), ["Uninstall FlipTracker.command", "tftrack"])
+        # version 0.42's own updater only knows the old file name: the new download must still install with it
+        with mock_extra_files(updater, ["Uninstall TimeFlip Tracker.command"]):
+            self.assertEqual(updater.install_zip(buf.getvalue(), install), 43)
+        self.assertTrue((install / "tftrack" / "VERSION").exists())
+
+    def test_installer_scripts_are_valid_and_keep_the_install_folder(self):
+        import subprocess
+        root = Path(__file__).resolve().parent.parent
+        for name in ("Install FlipTracker.command", "Uninstall FlipTracker.command"):
+            script = root / name
+            self.assertEqual(subprocess.run(["bash", "-n", str(script)]).returncode, 0, name)
+            self.assertIn('DEST="$HOME/Library/Application Support/TimeFlip Tracker"', script.read_text())
+        self.assertIn('cp "$SRC/Uninstall FlipTracker.command"', (root / "Install FlipTracker.command").read_text())
+
+
+def mock_extra_files(updater, names):
+    from unittest import mock
+    return mock.patch.multiple(updater, EXTRA_FILES=names, LEGACY_FILES=[])

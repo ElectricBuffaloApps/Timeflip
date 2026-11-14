@@ -32,7 +32,7 @@ def _manual_id(rowid: int) -> int:
 def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
     """Merge another Mac's export into this one. Returns (updated settings, report lines)."""
     if data.get("format") != FORMAT:
-        raise ValueError("That isn't a TimeFlip Tracker changes file.")
+        raise ValueError("That isn't a FlipTracker changes file.")
     t = data.get("tables") or {}
     report: list[str] = []
     kept: list[str] = []

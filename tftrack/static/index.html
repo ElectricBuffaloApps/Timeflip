@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TimeFlip Tracker</title>
+<title>FlipTracker</title>
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="TimeFlip">
+<meta name="apple-mobile-web-app-title" content="FlipTracker">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
@@ -495,7 +495,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="brand-mark" aria-hidden="true">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       </div>
-      <h1>TimeFlip <span>Tracker</span></h1>
+      <h1>Flip<span>Tracker</span></h1>
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
@@ -518,11 +518,11 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <button class="primary" id="newsOk">Got it</button>
   </div>
   <div class="banner update hidden" id="reloadBanner">
-    <span>TimeFlip Tracker has been updated. Save what you're changing, then reload to get the new version.</span>
+    <span>FlipTracker has been updated. Save what you're changing, then reload to get the new version.</span>
     <button class="primary" id="reloadBtn">Reload</button>
   </div>
   <div class="banner update hidden" id="updateBanner">
-    <span id="updateText">A new version of TimeFlip Tracker is available.</span>
+    <span id="updateText">A new version of FlipTracker is available.</span>
     <button class="primary" id="updateBtn">Update now</button>
   </div>
 
@@ -918,6 +918,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <div><span class="k">Updates <span class="v" id="updateMsg"></span></span><button id="checkUpdate">Check for updates</button></div>
         <div><span class="k">App <span class="v" id="appPath">not created yet</span></span><button id="revealApp">Show in Finder</button></div>
         <div><span class="v">Signed in to TimeFlip as <span id="email"></span>. To change account, run the installer again.</span></div>
+        <div><span class="v">FlipTracker works with the TIMEFLIP2 cube. It's an independent app, not made by or connected with TimeFlip.</span></div>
       </div>
     </section>
     </div>
@@ -946,7 +947,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         </div>
         <div class="dev-step">
           <div class="lbl">3 · Make this Mac a viewer</div>
-          <p class="sub" id="viewerStatus">On your other Mac: enter the main Mac's address. Its TimeFlip Tracker app will then
+          <p class="sub" id="viewerStatus">On your other Mac: enter the main Mac's address. Its FlipTracker app will then
             open the main tracker, and it stops syncing and alerting on its own. Its data is backed up first.</p>
           <div class="row"><input type="url" id="viewerUrl" placeholder="https://…ts.net:8765/" style="flex:1;min-width:0">
             <button id="viewerCheck">Check</button></div>
@@ -2271,7 +2272,7 @@ async function checkForUpdate(manual) {
     const u = await api("/api/update");
     if (u.error) { if (manual) $("updateMsg").textContent = u.error; return; }
     $("updateBanner").classList.toggle("hidden", !(u.available && u.can_update));
-    $("updateText").textContent = `A new version of TimeFlip Tracker is available (version ${vName(u.latest)}; you have ${vName(u.current)}).`;
+    $("updateText").textContent = `A new version of FlipTracker is available (version ${vName(u.latest)}; you have ${vName(u.current)}).`;
     if (manual) $("updateMsg").textContent = u.available
       ? (u.can_update ? "Available: use Update now at the top." : "Available, but this copy can't update itself.")
       : "You're up to date.";
@@ -2563,7 +2564,7 @@ async function loadRemote() {
   show("remoteUrlBox", !!r.url);
   $("remoteUrl").textContent = r.url || "";
   if (r.viewer_of) {
-    $("viewerStatus").textContent = `This Mac is a viewer of ${r.viewer_of}. Its TimeFlip Tracker app opens that tracker.`;
+    $("viewerStatus").textContent = `This Mac is a viewer of ${r.viewer_of}. Its FlipTracker app opens that tracker.`;
     $("viewerUrl").value = r.viewer_of;
   }
   show("viewerStop", !!r.viewer_of);

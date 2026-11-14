@@ -1,6 +1,6 @@
-# TimeFlip Tracker
+# FlipTracker
 
-TimeFlip Tracker works with your TIMEFLIP2 cube. It:
+FlipTracker works with your TIMEFLIP2 cube. It is an independent app, not made by or connected with TimeFlip (it was called TimeFlip Tracker until version 0.43). It:
 
 - sends you a Mac notification when you near or reach a time limit (daily or weekly, per task or per client)
 - shows charts of where your time went
@@ -9,10 +9,10 @@ TimeFlip Tracker works with your TIMEFLIP2 cube. It:
 ## Install (about 5 minutes, no typing commands)
 
 1. On GitHub, switch the branch drop-down to `claude/modest-wozniak-j8obe2`, then click **Code → Download ZIP**. Open the downloaded ZIP to unzip it.
-2. In the unzipped folder, **right-click `Install TimeFlip Tracker.command` and choose Open**. If macOS warns that it's from an unidentified developer, click **Open**.
+2. In the unzipped folder, **right-click `Install FlipTracker.command` and choose Open**. If macOS warns that it's from an unidentified developer, click **Open**.
 3. If asked, let macOS install Apple's free developer tools, then double-click the installer again.
 4. Enter your TimeFlip email and password when asked. Your account needs an email and password; Apple or Google sign-in won't work here.
-5. Your browser opens the tracker. To reopen it later, open the **TimeFlip Tracker** app (orange clock icon) from Applications, Launchpad or Spotlight. You can drag it into your Dock.
+5. Your browser opens the tracker. To reopen it later, open the **FlipTracker** app (orange clock icon) from Applications, Launchpad or Spotlight. You can drag it into your Dock.
 
 After that, you can delete the downloaded folder.
 
@@ -80,7 +80,7 @@ There's one tracker, on your main Mac, with one set of data. Your phone and othe
 2. **Share it (main Mac):** in **Settings → Phone & other computers**, click **Share with my devices**. The first time, Tailscale may ask you to switch on HTTPS for your account: click the link it gives, approve, then click Share again. You then get an address like `https://your-mac.tailXXXX.ts.net:8765/`. Only devices signed in to your Tailscale account can open it (don't share this Mac with other people's Tailscale accounts).
 3. **Phone:** open that address in Safari, then **Share → Add to Home Screen**.
 4. **Other Mac's changes (if it was used on its own):** on the other Mac, **Settings → Phone & other computers → Download this Mac's changes**. On the main Mac, add that file under **Bring in another Mac's changes**. Anything both Macs did differently keeps the main Mac's version and is listed.
-5. **Other Mac becomes a viewer:** on the other Mac, enter the main Mac's address under **Make this Mac a viewer**, then **Check** and **Make this Mac a viewer**. Its TimeFlip Tracker app then opens the main tracker; its own syncing and alerts stop, and its data is backed up to `~/.tftrack-backup-…`. To undo, open `http://127.0.0.1:8765/viewer` on that Mac and click **Stop being a viewer**.
+5. **Other Mac becomes a viewer:** on the other Mac, enter the main Mac's address under **Make this Mac a viewer**, then **Check** and **Make this Mac a viewer**. Its FlipTracker app then opens the main tracker; its own syncing and alerts stop, and its data is backed up to `~/.tftrack-backup-…`. To undo, open `http://127.0.0.1:8765/viewer` on that Mac and click **Stop being a viewer**.
 
 ## Updating
 
@@ -90,7 +90,7 @@ To update straight away, click **Update now** on the banner at the top of the pa
 
 ## Uninstall
 
-Double-click **Uninstall TimeFlip Tracker.command**, which is in the download folder or in `~/Library/Application Support/TimeFlip Tracker`. Your settings and history stay in `~/.tftrack` until you delete that folder.
+Double-click **Uninstall FlipTracker.command**, which is in the download folder or in `~/Library/Application Support/TimeFlip Tracker`. Your settings and history stay in `~/.tftrack` until you delete that folder.
 
 ## For developers
 
