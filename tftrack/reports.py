@@ -210,6 +210,26 @@ def invoice(store, client: str, year: int, month: int, style: str,
     }
 
 
+def day_weeks(inv: dict) -> list[dict]:
+    """A by-the-day month split into its weeks, Monday to Sunday: [{"monday": date, "days": [...]}].
+
+    Every week that touches the month is there, including one with nothing recorded, so a timesheet shows the
+    whole month week by week and an empty week can be seen to be empty.
+    """
+    start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
+    by_monday: dict[date, list[dict]] = {}
+    for g in inv["groups"]:
+        for d in g["days"]:
+            day = date.fromisoformat(d["date"])
+            by_monday.setdefault(day - timedelta(days=day.weekday()), []).append(d)
+    weeks, monday = [], start - timedelta(days=start.weekday())
+    while monday <= end:
+        weeks.append({"monday": monday, "from": max(monday, start), "to": min(monday + timedelta(days=6), end),
+                      "days": by_monday.get(monday, [])})
+        monday += timedelta(days=7)
+    return weeks
+
+
 def smooth_weeks(inv: dict) -> list[int]:
     """The month's charged time spread evenly over its weeks, in whole blocks, adding up to exactly the same total.
 

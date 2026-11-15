@@ -269,37 +269,42 @@ def invoice_pdf(inv: dict) -> bytes:
         t.row([f"{day:%A %d %B} total", "", "", _hm(d["billed_s"]), f"{d['billed_s'] / 3600:.2f} h"],
               bold=True, fill=TINT, notes={0: (actual, MUTED)} if actual else None)
 
-    for g in inv["groups"]:
+    if inv["style"] == "day":   # the month week by week: a heading, its days, then the week's total
+        from .reports import day_weeks
+        for wk in day_weeks(inv):   # (how short a week is stays on screen: the PDF goes to the client)
+            monday = wk["monday"]
+            t.room(4)
+            t.gap(6)
+            span = (f"{wk['from']:%a %d %b} to {wk['to']:%a %d %b}" if wk["from"] != wk["to"] else f"{wk['from']:%a %d %b}")
+            t.row([f"Week of {monday:%a %d %b}"], bold=True, size=10, rule=False, notes={0: (span, MUTED)})
+            for d in wk["days"]:
+                day_rows(d)
+            if not wk["days"]:
+                t.row(["Nothing recorded this week."], color=MUTED)
+            week_s = sum(d["billed_s"] for d in wk["days"])
+            worked = sum(1 for d in wk["days"] if d["billed_s"] > 0)
+            bits, any_over = [f"{worked} day{'s' * (worked != 1)} worked"], False
+            for al in als:
+                w = next((w for w in al["weeks"] if w["monday"] == monday.isoformat()), None)
+                if not w:
+                    continue
+                over = w["worked_s"] - w["max_s"]
+                any_over = any_over or over > 0
+                extra = next((x["seconds"] for x in al["carry"]["by_week"] if x["monday"] == w["monday"]), 0)
+                bits.append(f"{al['name']} {_hm(w['worked_s'])} of {_hm(w['max_s'])} max"
+                            + (f" · {_hm(over)} over" if over > 0 else "")
+                            + (f" · +{_hm(extra)} carried over" if extra else ""))
+            t.row([f"Week of {monday:%a %d %b} total", "", "", _hm(week_s), f"{week_s / 3600:.2f} h"],
+                  bold=True, fill=GREY_BG, notes={0: ("; ".join(bits), ORANGE_TEXT if any_over else MUTED)})
+    for g in inv["groups"] if inv["style"] != "day" else []:
         if g["label"]:
             t.room(3)
             t.gap(4)
             t.row([g["label"]], bold=True, size=10, rule=False)
         if not g["days"]:
             t.row(["No time recorded."], color=MUTED)
-        week_s = 0
-        for i, d in enumerate(g["days"]):
+        for d in g["days"]:
             day_rows(d)
-            if inv["style"] == "day":
-                day = date.fromisoformat(d["date"])
-                week_s += d["billed_s"]
-                monday = day - timedelta(days=day.weekday())
-                nxt = date.fromisoformat(g["days"][i + 1]["date"]) if i + 1 < len(g["days"]) else None
-                if nxt is None or nxt - timedelta(days=nxt.weekday()) != monday:
-                    bits, any_over = [], False
-                    for al in als:
-                        w = next((w for w in al["weeks"] if w["monday"] == monday.isoformat()), None)
-                        if not w:
-                            continue
-                        over = w["worked_s"] - w["max_s"]
-                        any_over = any_over or over > 0
-                        extra = next((x["seconds"] for x in al["carry"]["by_week"] if x["monday"] == w["monday"]), 0)
-                        bits.append(f"{al['name']} {_hm(w['worked_s'])} of {_hm(w['max_s'])} max"
-                                    + (f" · {_hm(over)} over" if over > 0 else "")
-                                    + (f" · +{_hm(extra)} carried over" if extra else ""))
-                    note = ("; ".join(bits), ORANGE_TEXT if any_over else MUTED) if bits else None
-                    t.row([f"Week of {monday:%a %d %b} total", "", "", _hm(week_s), f"{week_s / 3600:.2f} h"],
-                          bold=True, fill=GREY_BG, notes={0: note} if note else None)
-                    week_s = 0
         if g["label"]:
             banked = ((f"{_hm(g['banked_s'])} over the weekly hours: banked, not charged here", MUTED)
                       if g.get("banked_s") else None)

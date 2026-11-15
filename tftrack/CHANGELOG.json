@@ -4,7 +4,10 @@
     "changes": [
       "New name: the app is now called FlipTracker. It still works with your TIMEFLIP2 cube in exactly the same way, and none of your data or settings has moved.",
       "In Applications, the old 'TimeFlip Tracker' app is replaced by 'FlipTracker'. If you kept it in your Dock, drag the new one in.",
-      "On your phone, the home screen icon keeps its old name until you remove it and add it again (Share → Add to Home Screen)."
+      "On your phone, the home screen icon keeps its old name until you remove it and add it again (Share → Add to Home Screen).",
+      "Timesheets billed by the day are now laid out week by week. Each week has its own heading with its dates, then its days, then a week total showing how many days were worked.",
+      "A week with nothing recorded now appears too, as 'Nothing recorded this week', with a total of 0h. Before, an empty week simply wasn't there.",
+      "On screen, each week's total says how short it is of the weekly hours. That note is left off the PDF, because the PDF goes to your client."
     ]
   },
   {

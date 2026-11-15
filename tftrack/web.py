@@ -17,7 +17,7 @@ from . import config as cfg
 from . import allowance, areas, billing, collect, insights, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, invoice, invoice_lines, money_summary, month_summary, targets_summary,
+from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
                       timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -103,6 +103,9 @@ table{border-collapse:collapse;width:100%} th,td{padding:6px 8px;border-bottom:1
 th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabular-nums}
 tr.sub td{font-weight:600;background:#FFF7ED}
 tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;border-bottom:2px solid #D1D5DB}
+tr.weekhead th{font-family:Sora,Inter,sans-serif;font-size:15px;color:#0b0b0b;padding-top:26px;border-bottom:2px solid #1E2530}
+tr.weekhead th .tag{font-family:Inter,sans-serif;font-weight:400;margin-left:10px} tr.none td{color:#9CA3AF;font-style:italic}
+tr.week .tag{font-family:Inter,sans-serif;font-weight:500}
 .allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
 .allow .warn,.allow a{color:#c2410c}
 tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:normal}
@@ -156,6 +159,8 @@ dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button
  td.keep button.edit,label.roll{margin-left:0} label.ex{font-size:13px}
  tr.sub,tr.week{padding:9px 8px;border-radius:8px;margin:2px 0} tr.week{background:#F3F4F6} tr.sub{background:#FFF7ED}
  tr.sub td,tr.week td{background:none!important} tr.grand{border-top:2px solid #1E2530;border-bottom:none}
+ tr.weekhead{margin-top:18px;padding:6px 2px;border-bottom:2px solid #1E2530} tr.weekhead th{display:block;flex:1 1 100%;font-size:15px;text-align:left}
+ tr.weekhead th .tag{margin-left:0}
  .tag{margin-left:0;display:block} button.copy{margin-left:4px}
  table.labelled tr{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px}
  table.labelled td:first-child{grid-column:1/-1;font-weight:600} table.labelled td.n{margin:0;text-align:left!important;white-space:normal}
@@ -430,36 +435,55 @@ def invoice_page(inv: dict) -> str:
                 f" {inv['block_minutes']} minutes")
     als = inv.get("allowances") or []
     parts = []
-    for g in inv["groups"]:
+    short = {x["monday"]: x["spare_s"] for x in (inv.get("bank") or {}).get("weeks", [])}
+
+    def week_note(monday: date) -> tuple[str, int]:
+        """What to say beside a week's total: each allowance's hours against its max, and how short the week is."""
+        note = ""
+        for al in als:
+            w = next((w for w in al["weeks"] if w["monday"] == monday.isoformat()), None)
+            if not w:
+                continue
+            over = w["worked_s"] - w["max_s"]
+            extra = next((x["seconds"] for x in al["carry"]["by_week"] if x["monday"] == w["monday"]), 0)
+            note += (f' <span class="tag{" adj" if over > 0 else ""}">({esc(al["name"])} {_hm(w["worked_s"])} of '
+                     f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""}'
+                     f'{f" · +{_hm(extra)} carried over" if extra else ""})</span>')
+        gap = short.get(monday.isoformat(), 0)
+        if gap:
+            note += f' <span class="tag adj">{_hm(gap)} short of the weekly hours</span>'
+        return note, gap
+
+    if inv["style"] == "day":   # the month week by week: a heading, its days, then the week's total
         rows = []
-        week_rows = inv["style"] == "day"
-        week_s = 0
+        for wk in day_weeks(inv):
+            monday = wk["monday"]
+            span = (f'{wk["from"]:%a %d %b} to {wk["to"]:%a %d %b}' if wk["from"] != wk["to"] else f'{wk["from"]:%a %d %b}')
+            rows.append(f'<tr class="weekhead"><th colspan=5>Week of {monday:%a %d %b}'
+                        f'<span class="tag">{span}</span></th></tr>')
+            for d in wk["days"]:
+                day = date.fromisoformat(d["date"])
+                rows += [_entry_row(r, day, inv) for r in d["entries"]]
+                rows.append(_day_total(d, day))
+            if not wk["days"]:
+                rows.append('<tr class="none"><td colspan=5>Nothing recorded this week.</td></tr>')
+            week_s = sum(d["billed_s"] for d in wk["days"])
+            worked = sum(1 for d in wk["days"] if d["billed_s"] > 0)
+            note, _ = week_note(monday)
+            rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total'
+                        f'<span class="tag">{worked} day{"s" * (worked != 1)} worked</span>{note}</td>'
+                        f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
+        parts.append("".join(rows))
+    for g in inv["groups"] if inv["style"] != "day" else []:
+        rows = []
         if g["label"]:
             rows.append(f'<tr><th colspan=4 style="padding-top:22px;color:#0b0b0b;font-size:15px">{esc(g["label"])}</th></tr>')
         if not g["days"]:
             rows.append('<tr><td colspan=4>No time recorded.</td></tr>')
-        for i, d in enumerate(g["days"]):
+        for d in g["days"]:
             day = date.fromisoformat(d["date"])
             rows += [_entry_row(r, day, inv) for r in d["entries"]]
             rows.append(_day_total(d, day))
-            if week_rows:
-                week_s += d["billed_s"]
-                monday = day - timedelta(days=day.weekday())
-                nxt = date.fromisoformat(g["days"][i + 1]["date"]) if i + 1 < len(g["days"]) else None
-                if nxt is None or nxt - timedelta(days=nxt.weekday()) != monday:
-                    note = ""
-                    for al in als:
-                        w = next((w for w in al["weeks"] if w["monday"] == monday.isoformat()), None)
-                        if not w:
-                            continue
-                        over = w["worked_s"] - w["max_s"]
-                        extra = next((x["seconds"] for x in al["carry"]["by_week"] if x["monday"] == w["monday"]), 0)
-                        note += (f' <span class="tag{" adj" if over > 0 else ""}">({esc(al["name"])} {_hm(w["worked_s"])} of '
-                                 f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""}'
-                                 f'{f" · +{_hm(extra)} carried over" if extra else ""})</span>')
-                    rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total{note}</td>'
-                                f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
-                    week_s = 0
         if g["label"]:
             banked = (f' <span class="tag">{_hm(g["banked_s"])} over the weekly hours: banked, not charged here</span>'
                       if g.get("banked_s") else "")

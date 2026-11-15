@@ -1591,3 +1591,35 @@ class RenameTest(unittest.TestCase):
 def mock_extra_files(updater, names):
     from unittest import mock
     return mock.patch.multiple(updater, EXTRA_FILES=names, LEGACY_FILES=[])
+
+
+class WeekByWeekTest(unittest.TestCase):
+    def test_by_the_day_timesheet_shows_every_week_including_an_empty_one(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        from tftrack.reports import day_weeks
+        h = 3600
+        at = lambda d, hh: datetime(2026, 10, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": at(1, 9), "duration": 1 * h},      # Thu 1 Oct
+                            {"id": 2, "taskId": 1, "startedAt": at(6, 9), "duration": 2 * h},      # Tue 6 Oct
+                            {"id": 3, "taskId": 1, "startedAt": at(8, 9), "duration": 3 * h},      # Thu 8 Oct
+                            {"id": 4, "taskId": 1, "startedAt": at(20, 9), "duration": 4 * h}],    # Tue 20 Oct
+                           tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])     # nothing in w/c 12 Oct or w/c 26 Oct
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40}}}
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            weeks = day_weeks(inv)
+            self.assertEqual([(w["monday"].isoformat(), len(w["days"])) for w in weeks],
+                             [("2026-09-28", 1), ("2026-10-05", 2), ("2026-10-12", 0), ("2026-10-19", 1), ("2026-10-26", 0)])
+            self.assertEqual((weeks[0]["from"], weeks[-1]["to"]), (date(2026, 10, 1), date(2026, 10, 31)))   # clipped to the month
+            page = web.invoice_page(inv)
+            self.assertEqual(page.count('<tr class="weekhead">'), 5)
+            self.assertEqual(page.count('<tr class="week">'), 5)
+            self.assertEqual(page.count("Nothing recorded this week."), 2)
+            self.assertIn("Week of Mon 05 Oct total<span class=\"tag\">2 days worked</span>", page)
+            self.assertIn("<td class=n>5h 00m</td><td class=n>5.00 h</td>", page)
+            raw = web.pdf.invoice_pdf(inv)
+            self.assertTrue(raw.startswith(b"%PDF"))
