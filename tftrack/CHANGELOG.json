@@ -7,7 +7,11 @@
       "On your phone, the home screen icon keeps its old name until you remove it and add it again (Share → Add to Home Screen).",
       "Timesheets billed by the day are now laid out week by week. Each week has its own heading with its dates, then its days, then a week total showing how many days were worked.",
       "A week with nothing recorded now appears too, as 'Nothing recorded this week', with a total of 0h. Before, an empty week simply wasn't there.",
-      "On screen, each week's total says how short it is of the weekly hours. That note is left off the PDF, because the PDF goes to your client."
+      "On screen, each week's total says how short it is of the weekly hours. That note is left off the PDF, because the PDF goes to your client.",
+      "Under each week's total there are now buttons to top it up. '+ from the bank' adds banked hours up to the weekly hours (or all that's banked, if that's less) in one press.",
+      "'+ Agreed hours' and '+ Mileage' under each week add extra hours you agreed, or mileage, for that week. They're charged in full on the month's invoice and don't count towards the weekly hours. The wording is filled in for you, such as 'Mileage, week of Mon 05 Oct', and you can change it.",
+      "Extras on this invoice: a list under the timesheet of the agreed hours, mileage and expenses waiting to be invoiced, with a total and a Remove button for each. They're also in the copy-ready invoice lines.",
+      "Notes on entries: press Edit on an entry and type a note saying what it was for. It shows under the entry on the timesheet, on the PDF and in the spreadsheet. Adding a note doesn't mark the entry as adjusted."
     ]
   },
   {

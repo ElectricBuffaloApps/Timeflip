@@ -220,15 +220,18 @@ class _Sheet:
 
 
 def _entry_notes(r: dict) -> tuple[str, tuple] | None:
+    """What's printed beside an entry's task: how it was changed, and the user's own note on it."""
+    mine = r.get("comment") or ""
+    also = f" · {mine}" if mine else ""
     if r["excluded"]:
-        return "not charged", MUTED
+        return "not charged" + also, MUTED
     if r.get("rolled"):
-        return "rolled over: carried to a later invoice", ORANGE_TEXT
+        return "rolled over: carried to a later invoice" + also, ORANGE_TEXT
     if r["manual"]:
-        return "added", ORANGE_TEXT
+        return "added" + also, ORANGE_TEXT
     if r["adjusted"]:
-        return f"adjusted · {r['note']}", ORANGE_TEXT
-    return None
+        return f"adjusted · {r['note']}" + also, ORANGE_TEXT
+    return (mine, MUTED) if mine else None
 
 
 def invoice_pdf(inv: dict) -> bytes:

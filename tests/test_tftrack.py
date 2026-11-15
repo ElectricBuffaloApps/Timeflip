@@ -1617,9 +1617,57 @@ class WeekByWeekTest(unittest.TestCase):
             self.assertEqual((weeks[0]["from"], weeks[-1]["to"]), (date(2026, 10, 1), date(2026, 10, 31)))   # clipped to the month
             page = web.invoice_page(inv)
             self.assertEqual(page.count('<tr class="weekhead">'), 5)
-            self.assertEqual(page.count('<tr class="week">'), 5)
+            self.assertEqual(page.count('<tr class="week" id="week-'), 5)
             self.assertEqual(page.count("Nothing recorded this week."), 2)
             self.assertIn("Week of Mon 05 Oct total<span class=\"tag\">2 days worked</span>", page)
+            # under every week: add agreed hours or mileage for it (no bank button here: nothing is banked)
+            self.assertEqual(page.count('class="weekextra" data-kind="mileage" data-week="2026-10-'), 4)
+            self.assertNotIn('<button class="weekfill"', page)
+            # extras show under the timesheet and in the copy-ready lines, and aren't offered once invoiced
+            store.add_extra("HTB", "2026-10", "mileage", "Mileage, week of Mon 05 Oct", 40, 0.45)
+            store.add_extra("HTB", "2026-10", "time", "Additional agreed hours, week of Mon 05 Oct", 2, 40)
+            page = web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"}))
+            self.assertIn("Extras total</td><td></td><td class=n>£98.00", page)       # 18 + 80
+            self.assertIn("40 miles at £0.45", page)
+            self.assertIn("£498.00", page)                                             # the lines total: 10h at £40, plus extras
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 498.0)
+            store.set_invoiced("HTB", "2026-10", 10 * h, 498.0)
+            self.assertNotIn('class="weekextra"', web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"})))
             self.assertIn("<td class=n>5h 00m</td><td class=n>5.00 h</td>", page)
             raw = web.pdf.invoice_pdf(inv)
             self.assertTrue(raw.startswith(b"%PDF"))
+
+
+class EntryNotesTest(unittest.TestCase):
+    def test_notes_show_on_the_timesheet_pdf_and_spreadsheet(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        from tftrack.reports import timesheet_csv, timesheet_rows
+        at = lambda d, hh: datetime(2026, 10, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": at(6, 9), "duration": 3600},
+                            {"id": 2, "taskId": 1, "startedAt": at(7, 9), "duration": 3600}],
+                           tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        store.set_note(1, "  Board meeting prep <draft>  ")
+        self.assertEqual(store.notes(), {1: "Board meeting prep <draft>"})
+        rows = timesheet_rows(store, date(2026, 10, 1), date(2026, 10, 31), "HTB")
+        self.assertEqual([r["comment"] for r in rows], ["Board meeting prep <draft>", ""])
+        self.assertFalse(rows[0]["adjusted"])                              # a note alone doesn't mark the entry as changed
+        self.assertIn(",Board meeting prep <draft>\r\n", timesheet_csv(rows))
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40}}}
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            page = web.invoice_page(inv)
+            self.assertIn('<span class="tag usernote">Board meeting prep &lt;draft&gt;</span>', page)   # escaped
+            self.assertEqual(page.count('class="tag usernote"'), 1)
+            self.assertTrue(web.pdf.invoice_pdf(inv).startswith(b"%PDF"))
+            self.assertEqual(web.pdf._entry_notes(inv["groups"][0]["days"][0]["entries"][0])[0], "Board meeting prep <draft>")
+        store.set_note(1, "")                                              # clearing it removes the note
+        self.assertEqual(store.notes(), {})
+        # a note on an entry you added goes when the entry is deleted
+        new = store.add_manual(datetime(2026, 10, 8, 9).astimezone(), 1800, 1)
+        store.set_note(new, "Agreed call")
+        store.delete_manual(new)
+        self.assertEqual(store.notes(), {})

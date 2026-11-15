@@ -132,6 +132,8 @@ CREATE TABLE IF NOT EXISTS banked_day (
     seconds INTEGER NOT NULL,
     PRIMARY KEY (client, day)
 );
+-- The user's own note on an entry (what the time was for). Kept across syncs; shown on timesheets.
+CREATE TABLE IF NOT EXISTS entry_note (interval_id INTEGER PRIMARY KEY, note TEXT NOT NULL);
 -- "Money to collect" prompts the user has hidden. The key changes when the figures behind a prompt change.
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL);
 -- Time the user added by hand (not tracked on the cube).
@@ -342,6 +344,7 @@ class Store:
             self.db.execute("DELETE FROM manual_entry WHERE id=?", (-entry_id - MANUAL_ID_OFFSET,))
             self.db.execute("DELETE FROM excluded WHERE interval_id=?", (entry_id,))
             self.db.execute("DELETE FROM rollover WHERE interval_id=?", (entry_id,))
+            self.db.execute("DELETE FROM entry_note WHERE interval_id=?", (entry_id,))
 
     def seconds_by_task(self, start: datetime, end: datetime) -> dict[int, int]:
         """Seconds tracked per task id within [start, end), clipping intervals at the edges."""
@@ -546,6 +549,17 @@ class Store:
         row = self.db.execute(f"SELECT COALESCE(SUM(l.seconds), 0) FROM lieu l WHERE lower(l.client) = lower(?) AND {self._LIEU_LIVE}",
                               (client,)).fetchone()
         return int(row[0])
+
+    def notes(self) -> dict[int, str]:
+        """The user's notes on entries: entry id -> note."""
+        return {r[0]: r[1] for r in self.db.execute("SELECT interval_id, note FROM entry_note")}
+
+    def set_note(self, interval_id: int, note: str) -> None:
+        note = (note or "").strip()[:500]
+        with self.db:
+            self.db.execute("DELETE FROM entry_note WHERE interval_id = ?", (interval_id,))
+            if note:
+                self.db.execute("INSERT INTO entry_note VALUES (?, ?)", (interval_id, note))
 
     def lieu_entry_ids(self) -> set[int]:
         """The added entries that came out of a bank (so they aren't counted as freshly worked time)."""

@@ -66,6 +66,7 @@ def build_report(store, start: date, end: date, group: str = "task") -> dict:
 
 def timesheet_rows(store, start: date, end: date, client: str | None = None) -> list[dict]:
     excluded = store.excluded_ids()
+    comments = store.notes()
     rows = []
     for d, seg in segments_by_day(store, start, end):
         seg_client = seg["client"] or NO_CLIENT
@@ -90,6 +91,7 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
             "adjusted": seg["adjusted"],
             "manual": seg["manual"],
             "note": note,
+            "comment": comments.get(seg["id"], ""),   # the user's own note on the entry
             "entry_date": es.date().isoformat(),
             "entry_start": es.strftime("%H:%M"),
             "entry_end": ee.strftime("%H:%M"),
@@ -113,11 +115,11 @@ def timesheet_csv(rows: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Date", "Start", "End", "Client", "Task", "Hours", "Billable", "Rate", "Currency", "Amount",
-                "Excluded", "Note"])
+                "Excluded", "Note", "Your note"])
     for r in rows:
         w.writerow([r["date"], r["start"], r["end"], r["client"], r["task"], f"{r['hours']:.2f}",
                     "Yes" if r["billable"] else "No", "" if r["rate"] is None else r["rate"],
-                    r["currency"], f"{r['amount']:.2f}", "Yes" if r["excluded"] else "", r["note"]])
+                    r["currency"], f"{r['amount']:.2f}", "Yes" if r["excluded"] else "", r["note"], r.get("comment", "")])
     rows = [r for r in rows if not r["excluded"]]
     total_hours = sum(r["hours"] for r in rows)
     currencies = {r["currency"] for r in rows if r["amount"]}

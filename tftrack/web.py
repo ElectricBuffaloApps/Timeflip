@@ -120,6 +120,12 @@ tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:norma
 .bankform input[type=number]{width:110px} .bankbox button{font-size:13px;padding:7px 14px}
 .bankform label{min-width:0} .bankform select{min-width:0;max-width:100%}
 .bankbox button.primary{background:#F97316;border-color:#F97316;color:#fff}
+button.weekfill,button.weekextra{font-size:12px;padding:4px 11px;border-radius:7px}
+button.weekfill{background:#F97316;border-color:#F97316;color:#fff}
+button.weekfill:hover{background:#c2410c;border-color:#c2410c} button.weekfill:disabled{opacity:.5}
+.tag.keepline{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:8px 0 0;font-family:Inter,sans-serif;font-weight:400;font-style:normal;color:#6B7280}
+.tag.keepline .why{margin-right:6px} .xadd{display:flex;flex-wrap:wrap;gap:8px}
+button.xdel{font-size:12px;padding:2px 9px;border-radius:6px}
 label.roll{margin-left:8px} th.section{padding-top:18px;color:#0b0b0b;font-size:15px}
 tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration:none}
 .tag{font-size:12px;color:#6B7280;text-decoration:none;display:inline-block;margin-left:6px}
@@ -142,6 +148,8 @@ button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
 .bar{flex-wrap:wrap} .bar button,.bar a.btn,.bar .done{white-space:nowrap} .bar>span:last-child{flex-basis:100%}
 .bar button.secondary:hover{background:#fff;border-color:#F97316}
 .tag.adj{color:#c2410c;font-style:italic}
+.tag.usernote{display:block;margin:2px 0 0;color:#374151;font-style:normal}
+.tag.usernote::before{content:"Note: ";color:#6B7280}
 dialog{border:none;border-radius:12px;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);min-width:340px}
 dialog::backdrop{background:rgba(15,18,25,.45)}
 dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:4px}
@@ -166,10 +174,11 @@ dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button
  table.labelled td:first-child{grid-column:1/-1;font-weight:600} table.labelled td.n{margin:0;text-align:left!important;white-space:normal}
  table.labelled td[data-label]::before{content:attr(data-label) ": ";color:#6B7280;font-size:11px;font-weight:400}
  .bar{gap:8px} .bar button,.bar a.btn{padding:8px 12px;font-size:13px} .carrybtns button{flex:1 1 auto}
+ .bar .done{white-space:normal;flex:1 1 100%} .bar>*{min-width:0;max-width:100%}
  .bankform label{flex:1 1 100%} .bankform select,.bankform input{width:100%!important;box-sizing:border-box}
  .bankform button{flex:1 1 100%}
  dialog{min-width:0;width:calc(100% - 32px)} dialog input,dialog select{max-width:100%}}
-@media print{.bar,label.ex,.lines,button.edit,.carrybox{display:none} body{margin:0}}
+@media print{.bar,label.ex,.lines,button.edit,button.xdel,.carrybox,.tag.keepline,.xadd{display:none} body{margin:0}}
 """
 
 PAGE_SCRIPT = """<script>
@@ -199,6 +208,7 @@ function openEntry(entry) {
   $f("fDate").value = entry ? entry.date : defaults.date;
   $f("fStart").value = entry ? entry.start : "09:00";
   $f("fEnd").value = entry ? entry.end : "10:00";
+  $f("fNote").value = entry ? (entry.note || "") : "";
   if (entry) $f("fTask").value = String(entry.task_id);
   else if (defaults.client) {
     const match = [...$f("fTask").options].find((o) => o.textContent.endsWith(`(${defaults.client})`));
@@ -217,8 +227,13 @@ async function act(fn) {
 }
 $f("entryForm").addEventListener("submit", (ev) => {
   ev.preventDefault();
-  const body = {date: $f("fDate").value, start: $f("fStart").value, end: $f("fEnd").value, task_id: Number($f("fTask").value)};
-  act(() => editing ? post("/api/entry/adjust", {...body, id: editing.id}) : post("/api/entry/add", body));
+  const body = {date: $f("fDate").value, start: $f("fStart").value, end: $f("fEnd").value, task_id: Number($f("fTask").value),
+                note: $f("fNote").value};
+  // Only the note changed? Then save just that, so the entry isn't marked "adjusted" for nothing.
+  const same = editing && body.date === editing.date && body.start === editing.start && body.end === editing.end
+    && body.task_id === editing.task_id;
+  act(() => same ? post("/api/entry/note", {id: editing.id, note: body.note})
+                 : editing ? post("/api/entry/adjust", {...body, id: editing.id}) : post("/api/entry/add", body));
 });
 $f("fReset").addEventListener("click", () => act(() => post("/api/entry/reset", {id: editing.id})));
 $f("fDelete").addEventListener("click", () => {
@@ -254,6 +269,62 @@ for (const b of document.querySelectorAll("button.paid")) {
     b.disabled = true;
     try { await post("/api/paid", {client: b.dataset.client, month: b.dataset.month, paid: !!b.dataset.paid}); location.reload(); }
     catch (e) { alert(e.message); b.disabled = false; }
+  });
+}
+// After a change the page reloads: come back to the week (or the extras list) you were working on.
+const comeBackTo = (id) => { try { sessionStorage.setItem("comeBack", id); } catch (_) {} location.reload(); };
+{ let id = null; try { id = sessionStorage.getItem("comeBack"); sessionStorage.removeItem("comeBack"); } catch (_) {}
+  // once everything has settled into place (fonts, the phone layout), or the page moves after we've scrolled
+  if (id) window.addEventListener("load", () => setTimeout(() => {
+    const at = document.getElementById(id); if (at) at.scrollIntoView({block: "center"});
+  }, 60)); }
+for (const b of document.querySelectorAll("button.weekfill")) {
+  b.addEventListener("click", async () => {
+    const box = document.querySelector(".bankbox[data-client]");
+    for (const x of document.querySelectorAll("button.weekfill")) x.disabled = true;
+    try {
+      await post("/api/lieu/use", {client: box.dataset.client, task_id: Number($f("bankTask").value), mode: "day",
+                                   date: b.dataset.date, hours: Number(b.dataset.seconds) / 3600});
+      comeBackTo("week-" + b.dataset.week);
+    } catch (e) { alert(e.message); for (const x of document.querySelectorAll("button.weekfill")) x.disabled = false; }
+  });
+}
+const xDlg = $f("extraDialog");
+if (xDlg) {
+  let xWeek = "";
+  const X = {time: ["Hours", "Rate £ per hour", "0.25", "Additional agreed hours"], mileage: ["Miles", "£ per mile", "1", "Mileage"],
+             expense: ["", "Amount £", "1", ""]};
+  const xKind = () => {
+    const [qty, price, step] = X[$f("xKind").value];
+    $f("xQtyWrap").style.display = qty ? "" : "none"; $f("xQtyLabel").textContent = qty; $f("xPriceLabel").textContent = price;
+    $f("xQty").step = step;
+  };
+  let xLabel = "";
+  const xFill = (kind) => {   // the usual wording and price for this kind of extra
+    $f("xKind").value = kind; xKind();
+    $f("xDesc").value = X[kind][3] ? X[kind][3] + (xLabel ? ", week of " + xLabel : "") : "";
+    $f("xQty").value = ""; $f("xErr").textContent = "";
+    $f("xPrice").value = kind === "time" ? xDlg.dataset.rate : kind === "mileage" ? "0.45" : "";
+  };
+  const xOpen = (kind, week, label) => {
+    xWeek = week; xLabel = label; xFill(kind);
+    xDlg.showModal(); (kind === "expense" ? $f("xDesc") : $f("xQty")).focus();
+  };
+  $f("xKind").addEventListener("change", () => xFill($f("xKind").value));
+  for (const b of document.querySelectorAll("button.weekextra")) b.addEventListener("click", () => xOpen(b.dataset.kind, b.dataset.week, b.dataset.label));
+  $f("xCancel").addEventListener("click", () => xDlg.close());
+  $f("extraForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      await post("/api/extra/add", {client: xDlg.dataset.client, month: xDlg.dataset.month, kind: $f("xKind").value,
+                                    description: $f("xDesc").value, quantity: $f("xQty").value, unit_price: $f("xPrice").value});
+      comeBackTo("extras");
+    } catch (e) { $f("xErr").textContent = e.message; }
+  });
+}
+for (const b of document.querySelectorAll("button.xdel")) {
+  b.addEventListener("click", async () => {
+    try { await post("/api/extra/delete", {id: Number(b.dataset.extra)}); comeBackTo("extras"); } catch (e) { alert(e.message); }
   });
 }
 const bankBox = document.querySelector(".bankbox[data-client]");
@@ -314,7 +385,7 @@ def _exclude_cell(r: dict) -> str:
     note = '<span class="tag">not charged</span>' if r["excluded"] else ""
     entry = html.escape(json.dumps({
         "id": r["id"], "date": r["entry_date"], "start": r["entry_start"], "end": r["entry_end"],
-        "task_id": r["task_id"], "adjusted": r["adjusted"], "manual": r["manual"],
+        "task_id": r["task_id"], "adjusted": r["adjusted"], "manual": r["manual"], "note": r.get("comment", ""),
     }))
     return (f'<td class="keep">{note}<label class="ex"><input type="checkbox" data-id="{int(r["id"])}"{checked}> '
             f'Exclude</label><button class="edit" data-entry="{entry}">Edit</button></td>')
@@ -327,6 +398,8 @@ def _task_cell(r: dict) -> str:
         note = ' <span class="tag adj">added</span>'
     elif r["adjusted"]:
         note = f' <span class="tag adj">adjusted · {html.escape(r["note"])}</span>'
+    if r.get("comment"):
+        note += f' <span class="tag usernote">{html.escape(r["comment"])}</span>'
     return f"<td>{html.escape(r['task'])}{note}</td>"
 
 
@@ -348,6 +421,8 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 <label>Start<br><input type="time" id="fStart" required></label>
 <label>End<br><input type="time" id="fEnd" required></label></div>
 <label style="display:block;margin-top:10px">Task<br><select id="fTask">{_task_options()}</select></label>
+<label style="display:block;margin-top:10px">Note <span style="font-weight:400;color:#6B7280">(optional: what it was for; shown on the timesheet)</span><br>
+<textarea id="fNote" rows="2" maxlength="500" style="width:100%;box-sizing:border-box;font:inherit;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:4px"></textarea></label>
 <p class="err" id="fErr"></p>
 <div class="dlg-buttons">
 <button type="button" id="fDelete" class="danger">Delete</button>
@@ -452,7 +527,28 @@ def invoice_page(inv: dict) -> str:
         gap = short.get(monday.isoformat(), 0)
         if gap:
             note += f' <span class="tag adj">{_hm(gap)} short of the weekly hours</span>'
-        return note, gap
+        return note + week_actions(monday, gap), gap
+
+    banked = max(0, (inv.get("bank") or {}).get("seconds", 0))
+    first_day = {x["monday"]: x["first"] for x in (inv.get("bank") or {}).get("weeks", [])}
+
+    def week_actions(monday: date, gap: int) -> str:
+        """Under each week's total: top it up from the bank (to the weekly hours, or as far as the bank goes), and
+        add agreed extra hours or mileage for that week to the invoice. Not shown once the month is invoiced."""
+        if inv.get("invoiced"):
+            return ""
+        week = f"{monday:%a %d %b}"
+        out = ""
+        take = min(gap, banked)
+        take -= take % 900   # whole quarter hours
+        if take > 0:
+            full = "to the weekly hours" if take == gap else "all that's banked"
+            out += (f'<button class="weekfill" data-week="{monday.isoformat()}" '
+                    f'data-date="{first_day.get(monday.isoformat(), monday.isoformat())}" data-seconds="{take}">'
+                    f'+ {_hm(take)} from the bank</button><span class="why">{full} · {_hm(banked)} banked</span>')
+        out += (f'<button class="weekextra" data-kind="time" data-week="{monday.isoformat()}" data-label="{week}">+ Agreed hours</button>'
+                f'<button class="weekextra" data-kind="mileage" data-week="{monday.isoformat()}" data-label="{week}">+ Mileage</button>')
+        return f' <span class="tag keepline">{out}</span>'
 
     if inv["style"] == "day":   # the month week by week: a heading, its days, then the week's total
         rows = []
@@ -470,7 +566,7 @@ def invoice_page(inv: dict) -> str:
             week_s = sum(d["billed_s"] for d in wk["days"])
             worked = sum(1 for d in wk["days"] if d["billed_s"] > 0)
             note, _ = week_note(monday)
-            rows.append(f'<tr class="week"><td colspan=3>Week of {monday:%a %d %b} total'
+            rows.append(f'<tr class="week" id="week-{monday.isoformat()}"><td colspan=3>Week of {monday:%a %d %b} total'
                         f'<span class="tag">{worked} day{"s" * (worked != 1)} worked</span>{note}</td>'
                         f'<td class=n>{_hm(week_s)}</td><td class=n>{week_s / 3600:.2f} h</td></tr>')
         parts.append("".join(rows))
@@ -485,9 +581,14 @@ def invoice_page(inv: dict) -> str:
             rows += [_entry_row(r, day, inv) for r in d["entries"]]
             rows.append(_day_total(d, day))
         if g["label"]:
-            banked = (f' <span class="tag">{_hm(g["banked_s"])} over the weekly hours: banked, not charged here</span>'
-                      if g.get("banked_s") else "")
-            rows.append(f'<tr class="sub"><td colspan=3>Week total{banked}</td><td class=n>{_hm(g["billed_s"])}</td>'
+            held = (f' <span class="tag">{_hm(g["banked_s"])} over the weekly hours: banked, not charged here</span>'
+                    if g.get("banked_s") else "")
+            gap = short.get(g.get("monday"), 0)
+            if gap:
+                held += f' <span class="tag adj">{_hm(gap)} short of the weekly hours</span>'
+            if g.get("monday"):
+                held += week_actions(date.fromisoformat(g["monday"]), gap)
+            rows.append(f'<tr class="sub" id="week-{g.get("monday", "")}"><td colspan=3>Week total{held}</td><td class=n>{_hm(g["billed_s"])}</td>'
                         f'<td class=n>{g["billed_s"] / 3600:.2f} h</td></tr>')
         parts.append("".join(rows))
     month = date.fromisoformat(inv["month"] + "-01")
@@ -519,7 +620,7 @@ def invoice_page(inv: dict) -> str:
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}{extra_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
 <td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
-    table = _bank_box(inv) + _lines_panel(inv) + table
+    table = _bank_box(inv) + _lines_panel(inv) + table + _extras_box(inv)
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
@@ -574,6 +675,43 @@ def _carry_box(inv: dict, al: dict) -> str:
 {btn("+1h", have + 4 * q)} {btn("Add all", avail)} {btn("−15m", have - q)} {btn("Clear", 0)}</div>
 <p class="hint">Weeks under {esc(al["name"])}'s max have {_hm(c["spare_s"])} spare this month; added hours go into
 those weeks first, one invoice line per week.</p></div>"""
+
+
+def _extras_box(inv: dict) -> str:
+    """Agreed extra hours, mileage and expenses waiting to go on this month's invoice, under the timesheet."""
+    esc = html.escape
+    extras = inv.get("extras") or []
+    if not extras and inv.get("invoiced"):
+        return ""
+    rows = ""
+    for e, l in zip(extras, billing.extra_lines(extras)):
+        qty = billing.quantity_text(l)
+        each = f' at £{e["unit_price"]:,.2f}' if e["kind"] != "expense" else ""
+        rows += (f'<tr><td>{esc(e["description"])}</td><td class=n>{qty}{each}</td><td class=n>£{l["amount"]:,.2f}</td>'
+                 f'<td class="keep"><button class="xdel" data-extra="{int(e["id"])}">Remove</button></td></tr>')
+    total = sum(l["amount"] for l in billing.extra_lines(extras))
+    body = (f'<table><tbody>{rows}</tbody><tfoot><tr class="grand"><td>Extras total</td><td></td>'
+            f'<td class=n>£{total:,.2f}</td><td></td></tr></tfoot></table>' if extras else
+            '<p>None yet. Use <b>+ Agreed hours</b> or <b>+ Mileage</b> under a week, or the button here.</p>')
+    add = ("" if inv.get("invoiced") else
+           '<p class="xadd"><button class="weekextra" data-kind="time" data-week="" data-label="">+ Agreed hours</button>'
+           '<button class="weekextra" data-kind="mileage" data-week="" data-label="">+ Mileage</button>'
+           '<button class="weekextra" data-kind="expense" data-week="" data-label="">+ Expense</button></p>')
+    rate = inv.get("rate")
+    return f"""<h2 id="extras">Extras on this invoice</h2>
+<p>Hours you agreed on top of the tracked time, mileage and expenses. They're charged in full on this month's invoice,
+after the time, and don't count towards the weekly hours.</p>{body}{add}
+<dialog id="extraDialog" data-client="{esc(inv["client"])}" data-month="{inv["month"]}" data-rate="{rate if rate else ""}">
+<form method="dialog" id="extraForm"><h2 id="xTitle" style="margin-top:0">Add to the invoice</h2>
+<label>What<br><select id="xKind"><option value="time">Agreed extra hours</option><option value="mileage">Mileage</option>
+<option value="expense">Expense</option></select></label>
+<label style="display:block;margin-top:10px">On the invoice as<br><input id="xDesc" style="width:100%;box-sizing:border-box" required></label>
+<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+<label id="xQtyWrap"><span id="xQtyLabel">Hours</span><br><input type="number" id="xQty" min="0" step="0.25" style="width:110px"></label>
+<label><span id="xPriceLabel">Rate £ per hour</span><br><input type="number" id="xPrice" min="0" step="0.01" style="width:110px" required></label></div>
+<p class="err" id="xErr"></p>
+<div class="dlg-buttons"><span style="flex:1"></span><button type="button" id="xCancel">Cancel</button>
+<button type="submit" class="primary">Add to invoice</button></div></form></dialog>"""
 
 
 def _bank_for_sheet(inv: dict) -> dict | None:
@@ -722,6 +860,13 @@ def _lines_panel(inv: dict) -> str:
     total_hours = sum(l["hours"] for l in lines)
     total_amount = sum(l["amount"] or 0 for l in lines)
     all_text = "\n".join(f"{l['description']}\t{l['hours']:.2f}" + (f"\t{rate:.2f}" if rate else "") for l in lines)
+    for x in billing.extra_lines(inv.get("extras") or []):   # agreed hours, mileage, expenses: after the time
+        qty = f"{x['hours']:g}"
+        rows += (f"<tr><td>{esc(x['description'])} {btn('Copy', x['description'])}</td>"
+                 f"<td class=n>{billing.quantity_text(x) or '1'} {btn('Copy', qty)}</td>"
+                 f"<td class=n>£{x['rate']:.2f}</td><td class=n>£{x['amount']:.2f}</td></tr>")
+        total_amount += x["amount"]
+        all_text += f"\n{x['description']}\t{qty}\t{x['rate']:.2f}"
     rate_note = ("" if rate else
                  ' Add an hourly rate for this client in <b>Settings → How each client is invoiced</b> to see amounts.')
     smooth_box = ""
@@ -975,9 +1120,15 @@ class Handler(BaseHTTPRequestHandler):
                     if task_id not in {t["id"] for t in store.tasks()}:
                         raise ValueError("Choose a task.")
                     if self.path.endswith("add"):
-                        store.add_manual(start, seconds, task_id)
+                        entry_id = store.add_manual(start, seconds, task_id)
                     else:
-                        store.set_adjustment(int(body["id"]), start, seconds, task_id)
+                        entry_id = int(body["id"])
+                        store.set_adjustment(entry_id, start, seconds, task_id)
+                    if "note" in body:
+                        store.set_note(entry_id, str(body.get("note") or ""))
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/entry/note":
+                    service.open_store().set_note(int(body["id"]), str(body.get("note") or ""))
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/entry/reset":
                     service.open_store().clear_adjustment(int(body["id"]))
@@ -1373,6 +1524,7 @@ def _invoice(q: dict) -> dict:
     inv["paid"] = service.open_store().paid(client).get(inv["month"])
     inv["bill"] = service.open_store().bill_for(client, inv["month"])
     inv["bank"] = _bank_for_sheet(inv)
+    inv["extras"] = service.open_store().extras(client, inv["month"])
     return inv
 
 

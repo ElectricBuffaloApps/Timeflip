@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from .store import MANUAL_ID_OFFSET
 
 FORMAT = "timeflip-tracker-changes/1"
-_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed", "bill", "extra", "lieu", "banked_week", "banked_day")
+_TABLES = ("excluded", "adjustment", "manual_entry", "rollover", "carry_added", "invoiced", "paid", "dismissed", "bill", "extra", "lieu", "banked_week", "banked_day", "entry_note")
 # Settings worth carrying over; the TimeFlip account, update and viewer settings stay with each Mac.
 _SETTINGS = ("clients", "limits", "targets", "monthly_income", "ignored_tasks", "smooth_weeks", "week_starts",
              "payment_terms_days", "businesses", "client_details", "areas")
@@ -146,6 +146,11 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
                 n += 1
         if n:
             report.append(f"{n} change{'s' * (n != 1)} to hours in lieu")
+        n = 0
+        for x in t.get("entry_note", []):
+            n += db.execute("INSERT OR IGNORE INTO entry_note VALUES (?, ?)", (entry(x["interval_id"]), x["note"])).rowcount
+        if n:
+            report.append(f"{n} note{'s' * (n != 1)} on entries")
         for w in t.get("banked_day", []):
             db.execute("INSERT OR IGNORE INTO banked_day VALUES (?, ?, ?, ?)", (w["client"], w["month"], w["day"], w["seconds"]))
         for w in t.get("banked_week", []):
