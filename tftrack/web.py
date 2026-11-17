@@ -1,6 +1,7 @@
 """Local web page for limits, charts and timesheets. Listens on 127.0.0.1 only."""
 from __future__ import annotations
 
+import base64
 import html
 import io
 import socket
@@ -14,7 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import config as cfg
-from . import allowance, areas, billing, collect, insights, mailer, merge, pdf, remote, service, updater
+from . import allowance, areas, billing, collect, insights, logo, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
 from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
@@ -1130,6 +1131,17 @@ class Handler(BaseHTTPRequestHandler):
                 to = billing.client_details(conf, bill["client"])["email"] or bill["data"]["client"].get("email") or ""
                 return self._send(200, billing.bill_page(bill, paid_at, date.today(), store.get_meta(f"bill_emailed:{bill['id']}"),
                                                          sends.get("mail_method") == "smtp", to), "text/html; charset=utf-8")
+            if url.path == "/logo":
+                found = logo.original(q.get("key") or "")
+                if not found:
+                    return self._send(404, "No such logo.", "text/plain; charset=utf-8")
+                return self._send(200, found[0], found[1])
+            if url.path == "/sample.pdf":   # a made-up invoice in a business's look, to check the logo and colour
+                b = next((x for x in billing.businesses(cfg.load_config()) if x["id"] == q.get("business")), None)
+                if not b:
+                    return self._send(404, "No such business.", "text/plain; charset=utf-8")
+                return self._send(200, billing.bill_pdf(billing.sample_bill(b, date.today())), "application/pdf",
+                                  {"Content-Disposition": 'inline; filename="Sample invoice.pdf"'})
             if url.path == "/sheet.pdf":
                 raw, name = _sheet_pdf(q.get("client") or "", q.get("month") or "")
                 return self._send(200, raw, "application/pdf", {"Content-Disposition": f'attachment; filename="{name}"'})
@@ -1186,7 +1198,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/invoice.pdf":
                 inv = _invoice(q)
                 month = date.fromisoformat(inv["month"] + "-01")
-                return self._send(200, pdf.invoice_pdf(inv), "application/pdf",
+                return self._send(200, pdf.invoice_pdf(inv, _brand_for(inv["client"])), "application/pdf",
                                   {"Content-Disposition": f'attachment; filename="{_file_name(inv["client"])}'
                                                           f'-{month:%B-%Y}.pdf"'})
             if url.path in ("/timesheet", "/timesheet.csv", "/timesheet.pdf"):
@@ -1198,7 +1210,7 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path == "/timesheet":
                     return self._send(200, timesheet_page(rows, start, end, client), "text/html; charset=utf-8")
                 if url.path == "/timesheet.pdf":
-                    return self._send(200, pdf.timesheet_pdf(rows, start, end, client), "application/pdf",
+                    return self._send(200, pdf.timesheet_pdf(rows, start, end, client, _brand_for(client)), "application/pdf",
                                       {"Content-Disposition": f'attachment; filename="Timesheet-'
                                                               f'{_file_name(client or "all")}-{start}-to-{end}.pdf"'})
                 name = f"timesheet-{(client or 'all').replace(' ', '-')}-{start}-to-{end}.csv"
@@ -1372,12 +1384,30 @@ class Handler(BaseHTTPRequestHandler):
                     cleaned = billing.clean_businesses(raw)
                     for b, given in zip(cleaned, raw):
                         b["smtp_password_saved"] = bool(before.get(b["id"], {}).get("smtp_password_saved"))
+                        b["logo"] = before.get(b["id"], {}).get("logo", "")   # set by its own upload, kept here
                         if given.get("smtp_password"):   # typed just now: into the Keychain, never the settings file
                             mailer.save_password(b["id"], str(given["smtp_password"]))
                             b["smtp_password_saved"] = True
                     for gone in set(before) - {b["id"] for b in cleaned}:
                         mailer.delete_password(gone)
                     conf["businesses"] = cleaned
+                    conf.pop("business", None)
+                    cfg.save_config(conf)
+                elif self.path == "/api/business/logo":
+                    conf = cfg.load_config()
+                    every = billing.businesses(conf)
+                    b = next((x for x in every if x["id"] == body.get("id")), None)
+                    if not b:
+                        raise ValueError("Click Save business details first, then add the logo.")
+                    if body.get("remove"):
+                        b["logo"] = ""
+                    else:
+                        try:
+                            raw = base64.b64decode(str(body.get("data") or ""), validate=True)
+                        except ValueError:
+                            raise ValueError("That file couldn't be read. Try choosing it again.")
+                        b["logo"] = logo.save(raw)
+                    conf["businesses"] = every
                     conf.pop("business", None)
                     cfg.save_config(conf)
                 elif self.path == "/api/business/test-email":
@@ -1809,10 +1839,18 @@ def _sheet_pdf(client: str, month: str) -> tuple[bytes, str]:
     """The timesheet that backs up an invoice, as a PDF."""
     c = _client_settings(cfg.load_config(), client)
     name = f"Timesheet {_file_name(client)} {billing.month_title(month)}.pdf"
+    look = _brand_for(client)
     if c.get("billing") in ("day", "week"):
-        return pdf.invoice_pdf(_invoice({"client": client, "month": month})), name
+        return pdf.invoice_pdf(_invoice({"client": client, "month": month}), look), name
     first, last = _month_dates(month)
-    return pdf.timesheet_pdf(timesheet_rows(service.open_store(), first, last, client), first, last, client), name
+    return pdf.timesheet_pdf(timesheet_rows(service.open_store(), first, last, client), first, last, client, look), name
+
+
+def _brand_for(client: str | None) -> pdf.Brand:
+    """The look of the business that invoices this client: its logo and colour, for the client's timesheets."""
+    if not client:
+        return pdf.Brand()
+    return billing.brand(billing.business_for(cfg.load_config(), client))
 
 
 def bills_overview(today: date) -> dict:

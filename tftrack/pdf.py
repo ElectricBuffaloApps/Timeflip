@@ -64,15 +64,43 @@ def fit(s: str, width: float, size: float, bold: bool = False) -> str:
     return s.rstrip() + "…"
 
 
+class Brand:
+    """How a business's PDFs look: its logo (ready for the PDF writer, or None), its colour and a pale tint of it.
+    With nothing given it's the tracker's own orange and no logo."""
+
+    def __init__(self, logo: dict | None = None, accent=None, name: str = "", website: str = ""):
+        self.logo, self.name, self.website = logo, name, website
+        self.accent = accent or ACCENT
+        self.tint = tuple(x + (1 - x) * 0.9 for x in self.accent) if accent else TINT
+
+
 class Document:
     def __init__(self, title: str):
         self.title = title
         self.pages: list[list[str]] = []
+        self.images: list[dict] = []          # pictures used, in the order first placed
+        self.page_images: list[set[int]] = [] # which pictures each page uses
         self.new_page()
 
     def new_page(self) -> None:
         self.ops: list[str] = []
         self.pages.append(self.ops)
+        self.page_images.append(set())
+
+    def image(self, img: dict, x: float, top: float, max_w: float, max_h: float, align: str = "left") -> tuple[float, float]:
+        """Place a picture inside a box, keeping its shape, as large as fits. `top` is the box's top edge and `x` its
+        left edge (or its right edge with align="right"). Returns the size drawn."""
+        scale = min(max_w / img["w"], max_h / img["h"])
+        w, h = img["w"] * scale, img["h"] * scale
+        if align == "right":
+            x -= w
+        n = next((i for i, known in enumerate(self.images) if known is img), None)
+        if n is None:
+            n = len(self.images)
+            self.images.append(img)
+        self.page_images[-1].add(n)
+        self.ops.append(f"q {w:.2f} 0 0 {h:.2f} {x:.2f} {top - h:.2f} cm /Im{n} Do Q")
+        return w, h
 
     @staticmethod
     def _rgb(c, stroke=False) -> str:
@@ -101,6 +129,11 @@ class Document:
         objs.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(self.pages)} >>".encode())
         objs.append(font("Helvetica"))
         objs.append(font("Helvetica-Bold"))
+        # Pictures come after the pages: work out their object numbers first, so pages can point at them.
+        img_obj, nxt = [], 5 + 2 * len(self.pages)
+        for img in self.images:
+            img_obj.append(nxt)
+            nxt += 2 if img.get("alpha") else 1
         for n, ops in enumerate(self.pages, 1):
             footer = Document.__new__(Document)
             footer.ops = []
@@ -108,10 +141,21 @@ class Document:
             footer.text(PAGE_W - MARGIN, 22, f"Page {n} of {len(self.pages)}", 8, color=FAINT, align="right")
             stream = zlib.compress("\n".join(ops + footer.ops).encode("latin-1"))
             idx = len(objs) + 1
+            used = " ".join(f"/Im{i} {img_obj[i]} 0 R" for i in sorted(self.page_images[n - 1]))
+            xobjects = f" /XObject << {used} >>" if used else ""
             objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] "
-                        f"/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {idx + 1} 0 R >>".encode())
+                        f"/Resources << /Font << /F1 3 0 R /F2 4 0 R >>{xobjects} >> /Contents {idx + 1} 0 R >>".encode())
             objs.append(f"<< /Length {len(stream)} /Filter /FlateDecode >>\nstream\n".encode() + stream
                         + b"\nendstream")
+        for i, img in enumerate(self.images):
+            mask = f" /SMask {img_obj[i] + 1} 0 R" if img.get("alpha") else ""
+            head = (f"<< /Type /XObject /Subtype /Image /Width {img['w']} /Height {img['h']} /ColorSpace /{img['space']} "
+                    f"/BitsPerComponent 8 /Filter /{img['filter']}{mask} /Length {len(img['data'])} >>\nstream\n")
+            objs.append(head.encode() + img["data"] + b"\nendstream")
+            if img.get("alpha"):   # see-through parts: a second, grey picture saying how solid each pixel is
+                head = (f"<< /Type /XObject /Subtype /Image /Width {img['w']} /Height {img['h']} /ColorSpace /DeviceGray "
+                        f"/BitsPerComponent 8 /Filter /FlateDecode /Length {len(img['alpha'])} >>\nstream\n")
+                objs.append(head.encode() + img["alpha"] + b"\nendstream")
         title = ("\ufeff" + self.title).encode("utf-16-be").hex()   # PDF text strings: UTF-16 with a byte-order mark
         objs.append(f"<< /Title <{title}> /Producer (FlipTracker) >>".encode())
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
@@ -136,15 +180,25 @@ class _Sheet:
     """A table that flows over pages, repeating its column headings."""
     ROW = 15
 
-    def __init__(self, doc: Document, title: str, subtitle: str, columns: list[tuple[str, float, str]]):
+    def __init__(self, doc: Document, title: str, subtitle: str, columns: list[tuple[str, float, str]],
+                 brand: Brand | None = None):
         self.doc, self.columns = doc, columns   # (heading, x, align)
+        self.brand = brand or Brand()
         self.y = PAGE_H - MARGIN
-        doc.rect(MARGIN, self.y - 3, 28, 2.5, ACCENT)
+        room = PAGE_W - 2 * MARGIN
+        if self.brand.logo:   # top right, level with the title
+            w, _ = doc.image(self.brand.logo, PAGE_W - MARGIN, self.y + 4, 130, 46, align="right")
+            room -= w + 16
+        doc.rect(MARGIN, self.y - 3, 28, 2.5, self.brand.accent)
         self.y -= 26
-        doc.text(MARGIN, self.y, title, 18, bold=True)
+        doc.text(MARGIN, self.y, fit(title, room, 18, True), 18, bold=True)
         self.y -= 16
-        doc.text(MARGIN, self.y, fit(subtitle, PAGE_W - 2 * MARGIN, 9), 9, color=MUTED)
+        doc.text(MARGIN, self.y, fit(subtitle, room, 9), 9, color=MUTED)
         self.y -= 14
+        if self.brand.name:   # who it's from, under the dates
+            who = self.brand.name + (f" · {self.brand.website}" if self.brand.website else "")
+            doc.text(MARGIN, self.y, fit(who, room, 8.5), 8.5, color=MUTED)
+            self.y -= 14
 
     def note(self, s: str, bold_part: str = "") -> None:
         """A tinted box above the table (e.g. the allowance line), wrapped over as many lines as it needs."""
@@ -160,7 +214,7 @@ class _Sheet:
                 line = trial
         lines.append(line)
         h = 12 * len(lines) + 10
-        self.doc.rect(MARGIN, self.y - h, PAGE_W - 2 * MARGIN, h, TINT)
+        self.doc.rect(MARGIN, self.y - h, PAGE_W - 2 * MARGIN, h, self.brand.tint)
         y = self.y - 15
         for n, text in enumerate(lines):
             x = MARGIN + 8
@@ -236,7 +290,7 @@ def _entry_notes(r: dict) -> tuple[str, tuple] | None:
     return (mine, MUTED) if mine else None
 
 
-def invoice_pdf(inv: dict) -> bytes:
+def invoice_pdf(inv: dict, brand: Brand | None = None) -> bytes:
     """The monthly sheet for a client billed by the day or by the week, as on the timesheet page."""
     month = date.fromisoformat(inv["month"] + "-01")
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
@@ -248,7 +302,8 @@ def invoice_pdf(inv: dict) -> bytes:
     doc = Document(f"{inv['client']} – {month:%B %Y}")
     cols = [("Date", MARGIN + 4, "left"), ("Time", MARGIN + 74, "left"), ("Task", MARGIN + 150, "left"),
             ("Duration", PAGE_W - MARGIN - 70, "right"), ("Hours", PAGE_W - MARGIN - 4, "right")]
-    t = _Sheet(doc, title, f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", cols)
+    t = _Sheet(doc, title, f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", cols, brand)
+    TINT = t.brand.tint   # day and week totals take the business's colour
     als = inv.get("allowances") or []
     for al in als:
         over = al["charging_s"] - al["max_s"]
@@ -346,13 +401,13 @@ def invoice_pdf(inv: dict) -> bytes:
     return doc.to_bytes()
 
 
-def timesheet_pdf(rows: list[dict], start: date, end: date, client: str | None) -> bytes:
+def timesheet_pdf(rows: list[dict], start: date, end: date, client: str | None, brand: Brand | None = None) -> bytes:
     """The plain list of entries (clients billed by the hour, or all clients)."""
     who = client or "All clients"
     doc = Document(f"Timesheet – {who}")
     cols = [("Date", MARGIN + 4, "left"), ("Time", MARGIN + 70, "left"), ("Client", MARGIN + 142, "left"),
             ("Task", MARGIN + 222, "left"), ("Hours", PAGE_W - MARGIN - 70, "right"), ("Amount", PAGE_W - MARGIN - 4, "right")]
-    t = _Sheet(doc, f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", cols)
+    t = _Sheet(doc, f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", cols, brand)
     t.head()
     if not rows:
         t.row(["No time recorded in this period."], color=MUTED)

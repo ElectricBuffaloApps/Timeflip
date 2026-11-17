@@ -1824,3 +1824,70 @@ class DatedExtrasTest(unittest.TestCase):
                          "Additional agreed hours, Wed 07 Oct 2026")
         old = Store(tmp)      # opening twice mustn't try to add the column twice
         self.assertEqual([(e["description"], e["day"]) for e in old.extras()], [("Old mileage", None)])
+
+
+def _tiny_png(w, h, rgba, filter_type=0):
+    """A PNG built by hand (no image library needed): `rgba` gives each pixel's (r, g, b, a)."""
+    import struct
+    import zlib
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)
+        for x in range(w):
+            raw += bytes(rgba(x, y))
+    chunk = lambda k, d: struct.pack(">I", len(d)) + k + d + struct.pack(">I", zlib.crc32(k + d))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b""))
+
+
+class LogoTest(unittest.TestCase):
+    def test_logo_goes_into_the_pdfs_with_the_business_colour(self):
+        import zlib
+        from datetime import date
+        from unittest import mock
+        from tftrack import billing, logo, pdf
+        home = Path(tempfile.mkdtemp())
+        png = _tiny_png(40, 10, lambda x, y: (x * 6, 100, 200, 255 if x < 20 else 0))    # right half see-through
+        with mock.patch.object(logo.cfg, "APP_DIR", home):
+            key = logo.save(png)
+            self.assertTrue(key.endswith(".png"))
+            self.assertEqual(logo.save(png), key)                                        # same file, same key
+            img = logo.for_pdf(key)
+            self.assertEqual((img["w"], img["h"], img["filter"], img["space"]), (40, 10, "FlateDecode", "DeviceRGB"))
+            rgb, alpha = zlib.decompress(img["data"]), zlib.decompress(img["alpha"])
+            self.assertEqual((rgb[:3], rgb[3:6], len(rgb)), (bytes((0, 100, 200)), bytes((6, 100, 200)), 40 * 10 * 3))
+            self.assertEqual((alpha[0], alpha[39], len(alpha)), (255, 0, 400))
+            self.assertEqual(logo.original(key), (png, "image/png"))
+            # a huge logo is shrunk when it's uploaded, so PDFs stay small
+            big = logo.for_pdf(logo.save(_tiny_png(2000, 20, lambda x, y: (10, 20, 30, 255))))
+            self.assertEqual((big["w"], big["h"]), (666, 6))
+            for bad, why in ((b"GIF89a", "PNG or JPG"), (b"\x89PNG\r\n\x1a\n" + b"0" * (5 << 20), "too big")):
+                with self.assertRaisesRegex(ValueError, why):
+                    logo.save(bad)
+            self.assertIsNone(logo.for_pdf("../config.json"))                            # only its own files
+            self.assertIsNone(logo.original("..%2Fsecret.png/../x.png"))
+            b = billing.clean_business({"name": "Me Ltd", "address": "1 Road", "payment": "Sort 00-00-00",
+                                        "colour": "#0D9488", "website": "www.example.co.uk"})
+            self.assertEqual(b["colour"], "#0d9488")
+            with self.assertRaisesRegex(ValueError, "colour picker"):
+                billing.clean_business({"name": "Me", "colour": "teal"})
+            b["logo"] = key
+            raw = billing.bill_pdf(billing.sample_bill(b, date(2026, 11, 17)))
+            self.assertTrue(raw.startswith(b"%PDF-1.4") and raw.rstrip().endswith(b"%%EOF"))
+            self.assertEqual(raw.count(b"/Subtype /Image"), 2)                          # the logo and its see-through mask
+            self.assertIn(b"/SMask", raw)
+            self.assertIn(b"/XObject << /Im0", raw)
+            look = billing.brand(b)
+            self.assertEqual(tuple(round(x, 3) for x in look.accent), (0.051, 0.580, 0.533))
+            sheet = pdf.timesheet_pdf([], date(2026, 10, 1), date(2026, 10, 31), "HTB", look)
+            self.assertIn(b"/Subtype /Image", sheet)
+            # the same logo used on two pages is stored once
+            doc = pdf.Document("t")
+            doc.image(img, 40, 800, 100, 40)
+            doc.new_page()
+            doc.image(img, 40, 800, 100, 40)
+            self.assertEqual(doc.to_bytes().count(b"/Subtype /Image"), 2)
+        # no logo and no colour: exactly the old look, with no picture in the file
+        plain = billing.bill_pdf(billing.sample_bill(billing.clean_business({"name": "Me"}), date(2026, 11, 17)))
+        self.assertNotIn(b"/Subtype /Image", plain)
+        self.assertEqual(billing.brand({}).accent, pdf.ACCENT)

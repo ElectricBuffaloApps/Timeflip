@@ -1,5 +1,16 @@
 [
   {
+    "version": 46,
+    "changes": [
+      "Your own look on invoices and timesheets: each business can have a logo, a brand colour and a website. Set them in Settings → Your businesses → Logo and colour.",
+      "The invoice PDF now leads with your logo, uses your colour for the headings, table and the 'Total due' panel, and lists your website with your details. The timesheet PDF carries the same logo and colour, so the two match.",
+      "'See a sample invoice' in Settings shows a made-up invoice in that business's look, so you can check it before sending a real one.",
+      "Logos are PNG or JPG. A PNG with a see-through background looks best. A very large logo is shrunk when you add it.",
+      "An invoice keeps the logo and colour it was made with. Changing them later doesn't alter invoices already sent.",
+      "Businesses without a logo or colour look exactly as before."
+    ]
+  },
+  {
     "version": 45,
     "changes": [
       "Edit and Remove on extras: agreed hours, mileage and expenses now have Edit and Remove buttons on their row inside the week, and in the list at the bottom of the timesheet.",

@@ -288,6 +288,16 @@ textarea { width: 100%; resize: vertical; line-height: 1.45; }
 @media (max-width: 700px) { .formgrid { grid-template-columns: 1fr; } }
 .field .hint { font-weight: 400; }
 .bizbar { margin-bottom: 16px; flex-wrap: wrap; }
+.form .brandrow { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.brandbox { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; margin-top: 6px; }
+.logobox { width: 200px; height: 76px; border: 1px dashed var(--axis); border-radius: 12px; display: grid; place-items: center; background: #fff;
+  color: #9CA3AF; font-size: 12px; font-weight: 400; overflow: hidden; }
+.logobox img { max-width: 184px; max-height: 60px; }
+.brandbtns { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-weight: 400; color: var(--ink); }
+.filebtn { font: 600 13px Sora, Inter, sans-serif; padding: 7px 11px; border-radius: 9px; border: 1px solid var(--axis); background: var(--surface); cursor: pointer; }
+.filebtn:hover { border-color: var(--accent); } .filebtn input { display: none; }
+.colourpick { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+.colourpick input[type=color] { width: 38px; height: 30px; padding: 2px; }
 .bizbar select { min-width: 200px; max-width: 100%; }
 .xform { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
 .xform .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
@@ -787,6 +797,19 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="form formgrid">
         <label class="field">Business name<input id="bName" autocomplete="organization"></label>
         <label class="field">Email <span class="hint">(invoices are sent from this address)</span><input id="bEmail" type="email"></label>
+        <label class="field">Website <span class="hint">(optional, shown under your details)</span><input id="bWebsite" autocapitalize="off" placeholder="e.g. www.example.co.uk"></label>
+        <div class="field brandrow wide">Logo and colour <span class="hint">(on this business's invoices and timesheets)</span>
+          <div class="brandbox">
+            <div class="logobox" id="bLogoBox"><span id="bLogoNone">No logo yet</span><img id="bLogoImg" class="hidden" alt="Logo"></div>
+            <div class="brandbtns">
+              <label class="filebtn">Choose a logo…<input type="file" id="bLogoFile" accept="image/png,image/jpeg"></label>
+              <button class="link hidden" id="bLogoRemove">Remove logo</button>
+              <label class="colourpick"><input type="color" id="bColour"> Brand colour <button class="link" id="bColourReset">Use the default</button></label>
+              <a class="btnlink hidden" id="bSample" target="_blank">See a sample invoice</a>
+            </div>
+          </div>
+          <span class="hint" id="bLogoMsg">A PNG or JPG. A PNG with a see-through background looks best.</span>
+        </div>
         <label class="field wide">Address<textarea id="bAddress" rows="3"></textarea></label>
         <label class="field">Phone <span class="hint">(optional)</span><input id="bPhone"></label>
         <label class="field">Company number <span class="hint">(limited companies only)</span><input id="bCompany"></label>
@@ -2030,12 +2053,49 @@ const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bAddress", "addres
                     ["bPayment", "payment"], ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
                     ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
                     ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
-                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"]];
+                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"]];
+const DEFAULT_COLOUR = "#f97316";
 function bizStash() {   // keep what's typed for the business on screen
   const b = bizList[bizAt]; if (!b) return;
   for (const [id, key] of BIZ_FIELDS) b[key] = $(id).value;
   b.vat_registered = $("bVat").checked;
+  b.colour = $("bColour").dataset.set === "1" ? $("bColour").value : "";
 }
+function brandShow() {   // the logo, colour and sample link for the business on screen
+  const b = bizList[bizAt];
+  $("bColour").value = b.colour || DEFAULT_COLOUR; $("bColour").dataset.set = b.colour ? "1" : "";
+  $("bColourReset").classList.toggle("hidden", !b.colour);
+  $("bLogoImg").classList.toggle("hidden", !b.logo); $("bLogoNone").classList.toggle("hidden", !!b.logo);
+  $("bLogoRemove").classList.toggle("hidden", !b.logo);
+  if (b.logo) $("bLogoImg").src = `/logo?key=${encodeURIComponent(b.logo)}`;
+  $("bSample").classList.toggle("hidden", !b.id);
+  if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}`;
+}
+$("bColour").oninput = () => { $("bColour").dataset.set = "1"; $("bColourReset").classList.remove("hidden"); };
+$("bColourReset").onclick = (ev) => {
+  ev.preventDefault(); $("bColour").value = DEFAULT_COLOUR; $("bColour").dataset.set = ""; $("bColourReset").classList.add("hidden");
+  $("businessMsg").textContent = "Unsaved changes: click Save business details.";
+};
+async function sendLogo(body) {
+  const b = bizList[bizAt];
+  if (!b.id) { $("bLogoMsg").textContent = "Click Save business details first, then add the logo."; return; }
+  $("bLogoMsg").textContent = body.remove ? "Removing…" : "Adding your logo…";
+  try {
+    const s = await api("/api/business/logo", { id: b.id, ...body });
+    b.logo = (s.businesses.find((x) => x.id === b.id) || {}).logo || "";   // only the logo: anything half-typed stays
+    state = s; brandShow();
+    $("bLogoMsg").textContent = b.logo ? "Logo saved. Press See a sample invoice to check it." : "Logo removed.";
+  } catch (e) { $("bLogoMsg").textContent = e.message; }
+}
+$("bLogoFile").onchange = () => {
+  const f = $("bLogoFile").files[0]; $("bLogoFile").value = "";
+  if (!f) return;
+  if (f.size > 4 * 1024 * 1024) { $("bLogoMsg").textContent = "That file is too big for a logo (over 4 MB). Use a smaller version."; return; }
+  const reader = new FileReader();
+  reader.onload = () => sendLogo({ data: String(reader.result).split(",")[1] });
+  reader.readAsDataURL(f);
+};
+$("bLogoRemove").onclick = (ev) => { ev.preventDefault(); sendLogo({ remove: true }); };
 function bizShow() {
   const b = bizList[bizAt];
   for (const [id, key] of BIZ_FIELDS) $(id).value = b[key] ?? "";
@@ -2044,6 +2104,7 @@ function bizShow() {
   $("bPick").value = String(bizAt);
   $("bPick").classList.toggle("hidden", bizList.length < 2);
   $("bRemove").classList.toggle("hidden", bizList.length < 2);
+  brandShow();
   businessPreview();
 }
 function renderBusiness(s) {
@@ -2086,11 +2147,11 @@ $("bTest").onclick = async () => {
   $("bTest").disabled = false;
 };
 $("businessTile").addEventListener("change", (ev) => {
-  if (ev.target.id === "bPick") return;
+  if (ev.target.id === "bPick" || ev.target.id === "bLogoFile") return;
   businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
 });
 $("businessTile").addEventListener("input", (ev) => {
-  if (ev.target.id === "bPick") return;
+  if (ev.target.id === "bPick" || ev.target.id === "bLogoFile") return;
   businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
 });
 $("saveBusiness").onclick = async () => {

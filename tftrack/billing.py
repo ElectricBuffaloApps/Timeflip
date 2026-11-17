@@ -11,17 +11,21 @@ import json
 from datetime import date, timedelta
 from urllib.parse import quote
 
+from . import logo as logos
 from . import pdf
 from .pdf import ACCENT, FAINT, GREY_BG, INK, MARGIN, MUTED, PAGE_H, PAGE_W, Document, fit, text_width
 
-BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix")
+BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix",
+                 "website")
 DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "company_number": "", "vat_registered": False,
                     "vat_number": "", "vat_rate": 20.0, "payment": "", "footer": "", "prefix": "INV-", "digits": 4,
                     "next_number": 1,
                     # how invoices are emailed: "mail" (a draft in Apple Mail) or "smtp" (your email provider, sent
                     # straight away; the password lives in the Keychain, never in this file)
                     "mail_method": "mail", "smtp_host": "", "smtp_port": 587, "smtp_security": "starttls",
-                    "smtp_user": "", "smtp_password_saved": False}
+                    "smtp_user": "", "smtp_password_saved": False,
+                    # how its invoices and timesheets look: a logo (kept by logo.py, named here), a colour, a website
+                    "logo": "", "colour": "", "website": ""}
 CLIENT_TEXT = ("name", "address", "email", "reference")
 
 
@@ -31,6 +35,13 @@ def businesses(conf: dict) -> list[dict]:
     if not saved and conf.get("business"):   # version 30 had a single business
         saved = [{**conf["business"], "id": "b1"}]
     return [{**DEFAULT_BUSINESS, **b} for b in saved] if saved else [{**DEFAULT_BUSINESS, "id": "b1"}]
+
+
+def brand(b: dict | None) -> pdf.Brand:
+    """How a business's PDFs look, from its settings (or from the copy of them kept on an invoice)."""
+    b = b or {}
+    return pdf.Brand(logos.for_pdf(b.get("logo")), logos.colour(b.get("colour"), None) if b.get("colour") else None,
+                     b.get("name") or "", b.get("website") or "")
 
 
 def business_for(conf: dict, client: str | None) -> dict:
@@ -83,6 +94,7 @@ def clean_business(raw: dict) -> dict:
         raise ValueError("The next invoice number must be 1 or more.")
     if out["vat_registered"] and not out["vat_number"]:
         raise ValueError("Enter your VAT number, or untick VAT registered.")
+    out["colour"] = logos.clean_colour(raw.get("colour"))
     out["mail_method"] = "smtp" if raw.get("mail_method") == "smtp" else "mail"
     out["smtp_host"] = str(raw.get("smtp_host") or "").strip()[:200]
     out["smtp_user"] = str(raw.get("smtp_user") or "").strip()[:200]
@@ -211,7 +223,7 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
         "seconds": seconds, "net": net, "vat": vat, "total": round(net + vat, 2),
         "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": terms,
                  "business": {k: b[k] for k in ("name", "address", "email", "phone", "company_number", "vat_number",
-                                                "payment", "footer")},
+                                                "payment", "footer", "logo", "colour", "website")},
                  "client": {k: details[k] for k in CLIENT_TEXT}},
     }
     bill["id"] = store.add_bill(bill)
@@ -221,6 +233,27 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
     conf["businesses"] = [{**x, "next_number": n + 1} if x["id"] == b["id"] else x for x in businesses(conf)]
     conf.pop("business", None)
     return bill, conf
+
+
+def sample_bill(b: dict, today: date) -> dict:
+    """A made-up invoice from a business, to see how its logo, colour and details look before sending a real one."""
+    rate = 40.0
+    lines = [{"description": f"Example client – week commencing Mon {d:02d} Oct 2026", "hours": h, "rate": rate,
+              "amount": round(h * rate, 2)} for d, h in ((5, 6.0), (12, 5.5), (19, 6.0), (26, 4.25))]
+    lines += extra_lines([{"description": "Additional agreed hours, Thu 22 Oct 2026", "quantity": 2, "unit_price": rate,
+                           "kind": "time"},
+                          {"description": "Mileage, Thu 08 Oct 2026", "quantity": 40, "unit_price": 0.45, "kind": "mileage"}])
+    net = round(sum(l["amount"] for l in lines), 2)
+    vat_rate = b.get("vat_rate") if b.get("vat_registered") else None
+    vat = round(net * vat_rate / 100, 2) if vat_rate else 0.0
+    return {"number": format_number(b, int(b.get("next_number") or 1)), "client": "Example client", "month": "2026-10",
+            "issued_on": today.isoformat(), "due_on": (today + timedelta(days=30)).isoformat(),
+            "net": net, "vat": vat, "total": round(net + vat, 2),
+            "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": 30,
+                     "business": {k: b.get(k, "") for k in ("name", "address", "email", "phone", "company_number",
+                                                             "vat_number", "payment", "footer", "logo", "colour", "website")},
+                     "client": {"name": "Example Client Ltd", "address": "1 Example Street\nBrighton\nBN1 1AA", "email": "",
+                                "reference": "PO 1234"}}}
 
 
 def summary(bill: dict, paid_at: str | None, today: date) -> dict:
@@ -282,24 +315,36 @@ def bill_pdf(bill: dict) -> bytes:
     data = bill["data"]
     b, c = data["business"], data["client"]
     doc = Document(f"Invoice {bill['number']} – {b['name']}")
+    look = brand(b)   # the logo and colour this invoice was made with
     left, right = MARGIN, PAGE_W - MARGIN
     y = PAGE_H - MARGIN
-    doc.rect(left, y - 3, 28, 2.5, ACCENT)
+    doc.rect(left, y - 3, right - left if look.logo else 28, 2.5, look.accent)
 
     # who it's from (left) and the invoice's own details (right)
-    doc.text(right, y - 28, "INVOICE", 22, bold=True, align="right")
-    ry = y - 48
+    doc.text(right, y - 30, "INVOICE", 22, bold=True, color=look.accent if look.logo or b.get("colour") else INK, align="right")
+    ry = y - 50
     for label, value in (("Invoice number", bill["number"]), ("Invoice date", _d(bill["issued_on"])),
                          ("Payment due", _d(bill["due_on"])), ("For", month_title(bill["month"]))):
         doc.text(right - 90, ry, label, 8.5, color=MUTED, align="right")
         doc.text(right, ry, value, 9, bold=True, align="right")
         ry -= 14
     ly = y - 26
-    for line in _wrap(b["name"], 280, 15, True):
-        doc.text(left, ly, line, 15, bold=True)
-        ly -= 18
-    ly += 4
-    extra = [x for x in (b["email"], b["phone"]) if x]
+    if look.logo:   # the logo leads; the name sits under it, smaller
+        _, lh = doc.image(look.logo, left, y - 14, 190, 62)
+        ly = y - 14 - lh - 16
+        for line in _wrap(b["name"], 280, 11, True):
+            doc.text(left, ly, line, 11, bold=True)
+            ly -= 14
+    else:
+        for line in _wrap(b["name"], 280, 15, True):
+            doc.text(left, ly, line, 15, bold=True)
+            ly -= 18
+        ly += 4
+    if b.get("website"):
+        extra_first = [b["website"]]
+    else:
+        extra_first = []
+    extra = [x for x in (b["email"], b["phone"]) if x] + extra_first
     if b["company_number"]:
         extra.append(f"Company number {b['company_number']}")
     if data["vat_rate"] is not None and b["vat_number"]:
@@ -309,7 +354,7 @@ def bill_pdf(bill: dict) -> bytes:
         ly -= 12
     y = min(ly, ry) - 16
 
-    doc.text(left, y, "BILL TO", 7.5, bold=True, color=MUTED)
+    doc.text(left, y, "BILL TO", 7.5, bold=True, color=look.accent)
     y -= 15
     doc.text(left, y, fit(c["name"], 300, 11, True), 11, bold=True)
     y -= 14
@@ -326,10 +371,11 @@ def bill_pdf(bill: dict) -> bytes:
 
     def head() -> None:
         nonlocal y
-        doc.rect(left, y - 18, right - left, 18, GREY_BG)
+        doc.rect(left, y - 18, right - left, 18, look.tint if b.get("colour") else GREY_BG)
         for label, x, align in cols:
             doc.text(x, y - 12, label, 8, bold=True, color=MUTED, align=align)
         y -= 18
+        doc.line(left, y, right, y, 0.8, look.accent)
 
     def room(height: float) -> None:
         nonlocal y
@@ -359,15 +405,17 @@ def bill_pdf(bill: dict) -> bytes:
         doc.text(right - 110, y - 10, label, 9, color=MUTED, align="right")
         doc.text(right - 6, y - 10, value, 9, align="right")
         y -= 16
-    doc.line(right - 220, y, right, y, 1.2, INK)
-    doc.text(right - 110, y - 16, "Total due", 11, bold=True, align="right")
-    doc.text(right - 6, y - 16, _gbp(bill["total"]), 13, bold=True, align="right")
-    y -= 40
+    y -= 4   # the amount to pay, in a panel of the business's colour
+    doc.rect(right - 230, y - 28, 230, 28, look.tint)
+    doc.rect(right - 230, y - 28, 3, 28, look.accent)
+    doc.text(right - 110, y - 18, "Total due", 11, bold=True, align="right")
+    doc.text(right - 8, y - 19, _gbp(bill["total"]), 14, bold=True, align="right")
+    y -= 50
 
     if pay:
         box = 12 * len(pay) + 34
         room(box + 10)
-        doc.rect(left, y - box, right - left, box, (1.0, 0.97, 0.93))
+        doc.rect(left, y - box, right - left, box, look.tint)
         doc.text(left + 10, y - 16, f"HOW TO PAY · due by {_d(bill['due_on'])}", 7.5, bold=True, color=MUTED)
         py = y - 32
         for line in pay:
@@ -401,7 +449,8 @@ button.danger{color:#c62f2f;margin-left:auto}
 .sheet{max-width:820px;margin:0 auto;background:#fff;border-radius:12px;padding:44px 48px;box-shadow:0 2px 14px rgba(0,0,0,.08)}
 .sheet.void{opacity:.55}
 .top{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.top::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:#F97316;position:absolute;margin-top:-16px}
+.top::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:var(--accent,#F97316);position:absolute;margin-top:-16px}
+img.logo{display:block;max-width:220px;max-height:72px;margin:0 0 12px}h2{color:var(--accent,#6B7280)!important}
 .from b{font:700 20px Sora,Inter,sans-serif;display:block;margin-bottom:4px}.muted,.from{color:#6B7280;white-space:pre-line}
 .from b{color:#111827}.meta{text-align:right}.meta .big{font-size:28px;font-weight:700;margin:0 0 6px}
 .meta table{margin-left:auto}.meta td{padding:1px 0 1px 16px;text-align:right}.meta td:first-child{color:#6B7280}
@@ -412,8 +461,10 @@ table.lines{border-collapse:collapse;width:100%;margin-top:24px}
 .lines th{background:#F3F4F6;color:#6B7280;font-size:12px;text-align:left;padding:7px 8px}
 .lines td{padding:7px 8px;border-bottom:1px solid #E5E7EB}.n{text-align:right!important;font-variant-numeric:tabular-nums}
 .totals{margin:14px 0 0 auto;border-collapse:collapse}.totals td{padding:3px 8px;text-align:right}
-.totals td:first-child{color:#6B7280}.totals tr.due td{font:700 17px Sora,Inter,sans-serif;color:#111827;border-top:2px solid #111827;padding-top:8px}
-.pay{background:#FFF7ED;border-radius:10px;padding:14px 18px;margin-top:28px;white-space:pre-line}
+.totals td:first-child{color:#6B7280}.totals tr.due td{font:700 17px Sora,Inter,sans-serif;color:#111827;background:var(--tint,#FFF7ED);padding:9px 8px}
+.totals tr.due td:first-child{border-left:3px solid var(--accent,#F97316);color:#111827}
+.pay{background:var(--tint,#FFF7ED);border-radius:10px;padding:14px 18px;margin-top:28px;white-space:pre-line}
+.pay h2{color:#6B7280!important}
 .pay h2{margin:0 0 6px}.foot{color:#9CA3AF;font-size:12px;margin-top:20px;white-space:pre-line}
 .hint{max-width:820px;margin:14px auto 0;color:#6B7280;font-size:13px}
 a.back{margin-right:4px}
@@ -496,16 +547,24 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
            if data["vat_rate"] is not None else "")
     pay = (f'<div class="pay"><h2>HOW TO PAY · DUE BY {_d(bill["due_on"])}</h2>{esc(b["payment"])}</div>'
            if b["payment"] else "")
+    logo_img = (f'<img class="logo" src="/logo?key={quote(b["logo"])}" alt="{esc(b["name"])} logo">'
+                if b.get("logo") and logos.original(b["logo"]) else "")
+    accent = logos.clean_colour(b.get("colour")) or "#F97316"
+    r, g, bl = logos.tint(logos.colour(accent, (0.98, 0.45, 0.09)))
+    tint = "#{:02x}{:02x}{:02x}".format(round(r * 255), round(g * 255), round(bl * 255))
+    if b.get("website"):
+        extra.append(esc(b["website"]))
     info = esc(json.dumps({"id": bill["id"], "number": bill["number"], "client": bill["client"], "month": bill["month"],
                            "direct": direct, "to": to}))
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invoice {esc(bill['number'])} – {esc(bill['client'])}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap">
-<style>{STYLE}</style></head><body data-bill="{info}">
+<style>{STYLE}
+:root{{--accent:{accent};--tint:{tint}}}</style></head><body data-bill="{info}">
 <div class="bar">{BACK_LINK}<span class="state {s['status']}">{state}</span>{buttons}</div>
 <div class="sheet {s['status']}">
-<div class="top"><div class="from"><b>{esc(b['name'])}</b>{esc(b['address'])}{''.join('<br>' + x for x in extra)}</div>
+<div class="top"><div class="from">{logo_img}<b>{esc(b['name'])}</b>{esc(b['address'])}{''.join('<br>' + x for x in extra)}</div>
 <div class="meta"><p class="big">Invoice</p><table>
 <tr><td>Invoice number</td><td>{esc(bill['number'])}</td></tr>
 <tr><td>Invoice date</td><td>{_d(bill['issued_on'])}</td></tr>
