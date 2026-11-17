@@ -1759,3 +1759,50 @@ class SplitWeekTest(unittest.TestCase):
             self.assertEqual((w["here_s"] // m, w["elsewhere_s"] // m, w["other_month"]), (255, 90, "October"))
             self.assertEqual(web._week_charged(w), "4h 15m here + 1h 30m in October = 5h 45m charged")
             self.assertIn("Whole week, with October: 5h 45m (1h 30m is on October's timesheet)", web.invoice_page(nov))
+
+
+class DatedExtrasTest(unittest.TestCase):
+    def test_agreed_hours_and_mileage_carry_the_day_they_were_done(self):
+        import sqlite3
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        h = 3600
+        at = lambda d, hh: datetime(2026, 10, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": at(6, 9), "duration": 2 * h},
+                            {"id": 2, "taskId": 1, "startedAt": at(20, 9), "duration": 4 * h}],
+                           tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "none", "block_minutes": 15, "rate": 40}}}
+        store.add_extra("HTB", "2026-10", "mileage", "Mileage, Thu 22 Oct 2026", 40, 0.45, "2026-10-22")
+        store.add_extra("HTB", "2026-10", "time", "Additional agreed hours, Wed 07 Oct 2026", 2, 40, "2026-10-07")
+        store.add_extra("HTB", "2026-10", "expense", "Parking", 1, 6.0)                       # no day given
+        # in the order they happened, anything without a day last
+        self.assertEqual([e["day"] for e in store.extras("HTB", "2026-10")], ["2026-10-07", "2026-10-22", None])
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            page = web.invoice_page(inv)
+            # each sits in its own week on the sheet, on its day
+            wk1, wk3 = page.index('id="week-2026-10-05"'), page.index('id="week-2026-10-19"')
+            hours, miles = page.index('<td>Wed 07 Oct</td><td><span class="tag">extra</span>'), \
+                page.index('<td>Thu 22 Oct</td><td><span class="tag">extra</span>')
+            self.assertTrue(page.index('id="week-2026-09-28"') < hours < wk1 < miles < wk3)
+            self.assertEqual(page.count('<tr class="extra">'), 2)                              # Parking has no day: list only
+            self.assertIn("Wed 07 Oct · Additional agreed hours, Wed 07 Oct 2026", page)       # and the list shows the day
+            self.assertEqual(inv["total_billed_s"], 6 * h)                                     # tracked time is unchanged
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 240 + 80 + 18 + 6)
+            self.assertTrue(web.pdf.invoice_pdf(inv).startswith(b"%PDF"))
+        # a database from before extras had a day gains the column, keeping what was there
+        tmp = Path(tempfile.mkdtemp()) / "old.sqlite"
+        db = sqlite3.connect(str(tmp))
+        db.execute("""CREATE TABLE extra (id INTEGER PRIMARY KEY AUTOINCREMENT, client TEXT NOT NULL, month TEXT NOT NULL,
+                      kind TEXT NOT NULL, description TEXT NOT NULL, quantity REAL NOT NULL, unit_price REAL NOT NULL,
+                      created_at TEXT NOT NULL, bill_id INTEGER)""")
+        db.execute("INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at) "
+                   "VALUES ('HTB', '2026-10', 'mileage', 'Old mileage', 10, 0.45, 'x')")
+        db.commit()
+        db.close()
+        old = Store(tmp)
+        old = Store(tmp)      # opening twice mustn't try to add the column twice
+        self.assertEqual([(e["description"], e["day"]) for e in old.extras()], [("Old mileage", None)])

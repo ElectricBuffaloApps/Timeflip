@@ -107,6 +107,7 @@ tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;
 tr.weekhead th{font-family:Sora,Inter,sans-serif;font-size:15px;color:#0b0b0b;padding-top:26px;border-bottom:2px solid #1E2530}
 tr.weekhead th .tag{font-family:Inter,sans-serif;font-weight:400;margin-left:10px} tr.none td{color:#9CA3AF;font-style:italic}
 tr.week .tag{font-family:Inter,sans-serif;font-weight:500}
+tr.extra td{background:#F0F9FF} tr.extra .tag{margin-left:0;color:#0369A1;font-weight:600}
 .allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
 .allow .warn,.allow a{color:#c2410c}
 tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:normal}
@@ -167,7 +168,8 @@ dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button
  td.keep{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:4px}
  td.keep button.edit,label.roll{margin-left:0} label.ex{font-size:13px}
  tr.sub,tr.week{padding:9px 8px;border-radius:8px;margin:2px 0} tr.week{background:#F3F4F6} tr.sub{background:#FFF7ED}
- tr.sub td,tr.week td{background:none!important} tr.grand{border-top:2px solid #1E2530;border-bottom:none}
+ tr.sub td,tr.week td,tr.extra td{background:none!important} tr.grand{border-top:2px solid #1E2530;border-bottom:none}
+ tr.extra{background:#F0F9FF;padding:9px 8px;border-radius:8px;margin:2px 0} tr.extra td:nth-child(3){flex:1 1 100%}
  tr.weekhead{margin-top:18px;padding:6px 2px;border-bottom:2px solid #1E2530} tr.weekhead th{display:block;flex:1 1 100%;font-size:15px;text-align:left}
  tr.weekhead th .tag{margin-left:0}
  .tag{margin-left:0;display:block} button.copy{margin-left:4px}
@@ -300,26 +302,48 @@ if (xDlg) {
     $f("xQtyWrap").style.display = qty ? "" : "none"; $f("xQtyLabel").textContent = qty; $f("xPriceLabel").textContent = price;
     $f("xQty").step = step;
   };
-  let xLabel = "";
+  const month = xDlg.dataset.month;
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const lastOfMonth = (() => { const [y, m] = month.split("-").map(Number); return iso(new Date(y, m, 0)); })();
+  $f("xDay").min = `${month}-01`; $f("xDay").max = lastOfMonth;
+  const dayText = () => {
+    const d = new Date(`${$f("xDay").value}T12:00:00`);
+    if (isNaN(d)) return "";   // "Thu 22 Oct 2026", built in two parts so there's no comma after the day name
+    return d.toLocaleDateString("en-GB", {weekday: "short"}) + " " + d.toLocaleDateString("en-GB", {day: "2-digit", month: "short", year: "numeric"});
+  };
+  let xAuto = "";   // the wording we filled in: replaced when the day changes, unless you've typed your own
+  const xWord = () => {
+    const kind = $f("xKind").value;
+    if ($f("xDesc").value !== xAuto) return;
+    xAuto = X[kind][3] ? X[kind][3] + (dayText() ? ", " + dayText() : "") : "";
+    $f("xDesc").value = xAuto;
+  };
   const xFill = (kind) => {   // the usual wording and price for this kind of extra
     $f("xKind").value = kind; xKind();
-    $f("xDesc").value = X[kind][3] ? X[kind][3] + (xLabel ? ", week of " + xLabel : "") : "";
+    xAuto = $f("xDesc").value = ""; xWord();
     $f("xQty").value = ""; $f("xErr").textContent = "";
     $f("xPrice").value = kind === "time" ? xDlg.dataset.rate : kind === "mileage" ? "0.45" : "";
   };
   const xOpen = (kind, week, label) => {
-    xWeek = week; xLabel = label; xFill(kind);
-    xDlg.showModal(); (kind === "expense" ? $f("xDesc") : $f("xQty")).focus();
+    xWeek = week;
+    // start on the week's first day that's in this month; from the bottom of the sheet, today if it's in the month
+    let day = week && week > `${month}-01` ? week : `${month}-01`;
+    if (!week) { const t = iso(new Date()); if (t >= `${month}-01` && t <= lastOfMonth) day = t; }
+    $f("xDay").value = day; xFill(kind);
+    xDlg.showModal(); $f("xDay").focus();
   };
   $f("xKind").addEventListener("change", () => xFill($f("xKind").value));
+  $f("xDay").addEventListener("change", xWord);
   for (const b of document.querySelectorAll("button.weekextra")) b.addEventListener("click", () => xOpen(b.dataset.kind, b.dataset.week, b.dataset.label));
   $f("xCancel").addEventListener("click", () => xDlg.close());
   $f("extraForm").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     try {
       await post("/api/extra/add", {client: xDlg.dataset.client, month: xDlg.dataset.month, kind: $f("xKind").value,
-                                    description: $f("xDesc").value, quantity: $f("xQty").value, unit_price: $f("xPrice").value});
-      comeBackTo("extras");
+                                    description: $f("xDesc").value, quantity: $f("xQty").value, unit_price: $f("xPrice").value,
+                                    day: $f("xDay").value});
+      const d = new Date(`${$f("xDay").value}T12:00:00`); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      comeBackTo("week-" + iso(d));   // back to the week it went into
     } catch (e) { $f("xErr").textContent = e.message; }
   });
 }
@@ -526,6 +550,19 @@ def invoice_page(inv: dict) -> str:
 
     split = {x["monday"]: x for x in (inv.get("bank") or {}).get("weeks", []) if x["split"]}
 
+    def extra_rows(monday: date) -> list[str]:
+        """Agreed hours, mileage and expenses done in this week, on the day they were done. They sit apart from the
+        tracked time: charged on the invoice, not part of the week's total."""
+        out = []
+        for e, l in zip(inv.get("extras") or [], billing.extra_lines(inv.get("extras") or [])):
+            if not e.get("day") or not monday <= date.fromisoformat(e["day"]) <= monday + timedelta(days=6):
+                continue
+            day = date.fromisoformat(e["day"])
+            out.append(f'<tr class="extra"><td>{day:%a %d %b}</td><td><span class="tag">extra</span></td>'
+                       f'<td>{esc(e["description"])}</td><td class=n>{billing.quantity_text(l) or "expense"}</td>'
+                       f'<td class=n>£{l["amount"]:,.2f}</td></tr>')
+        return out
+
     def week_note(monday: date) -> tuple[str, int]:
         """What to say beside a week's total: each allowance's hours against its max, and how short the week is."""
         note = ""
@@ -582,6 +619,7 @@ def invoice_page(inv: dict) -> str:
                 rows.append(_day_total(d, day))
             if not wk["days"]:
                 rows.append('<tr class="none"><td colspan=5>Nothing recorded this week.</td></tr>')
+            rows += extra_rows(monday)
             week_s = sum(d["billed_s"] for d in wk["days"])
             worked = sum(1 for d in wk["days"] if d["billed_s"] > 0)
             note, _ = week_note(monday)
@@ -599,6 +637,8 @@ def invoice_page(inv: dict) -> str:
             day = date.fromisoformat(d["date"])
             rows += [_entry_row(r, day, inv) for r in d["entries"]]
             rows.append(_day_total(d, day))
+        if g.get("monday"):
+            rows += extra_rows(date.fromisoformat(g["monday"]))
         if g["label"]:
             held = (f' <span class="tag">{_hm(g["banked_s"])} over the weekly hours: banked, not charged here</span>'
                     if g.get("banked_s") else "")
@@ -706,7 +746,8 @@ def _extras_box(inv: dict) -> str:
     for e, l in zip(extras, billing.extra_lines(extras)):
         qty = billing.quantity_text(l)
         each = f' at £{e["unit_price"]:,.2f}' if e["kind"] != "expense" else ""
-        rows += (f'<tr><td>{esc(e["description"])}</td><td class=n>{qty}{each}</td><td class=n>£{l["amount"]:,.2f}</td>'
+        when = f'{date.fromisoformat(e["day"]):%a %d %b} · ' if e.get("day") else ""
+        rows += (f'<tr><td>{when}{esc(e["description"])}</td><td class=n>{qty}{each}</td><td class=n>£{l["amount"]:,.2f}</td>'
                  f'<td class="keep"><button class="xdel" data-extra="{int(e["id"])}">Remove</button></td></tr>')
     total = sum(l["amount"] for l in billing.extra_lines(extras))
     body = (f'<table><tbody>{rows}</tbody><tfoot><tr class="grand"><td>Extras total</td><td></td>'
@@ -720,10 +761,12 @@ def _extras_box(inv: dict) -> str:
     return f"""<h2 id="extras">Extras on this invoice</h2>
 <p>Hours you agreed on top of the tracked time, mileage and expenses. They're charged in full on this month's invoice,
 after the time, and don't count towards the weekly hours.</p>{body}{add}
-<dialog id="extraDialog" data-client="{esc(inv["client"])}" data-month="{inv["month"]}" data-rate="{rate if rate else ""}">
+<dialog id="extraDialog" data-client="{esc(inv["client"])}" data-month="{inv["month"]}" data-rate="{rate if rate else ""}"
+ data-start="{inv["start"]}" data-end="{inv["end"]}">
 <form method="dialog" id="extraForm"><h2 id="xTitle" style="margin-top:0">Add to the invoice</h2>
 <label>What<br><select id="xKind"><option value="time">Agreed extra hours</option><option value="mileage">Mileage</option>
 <option value="expense">Expense</option></select></label>
+<label style="display:block;margin-top:10px">Day it was done<br><input type="date" id="xDay" required></label>
 <label style="display:block;margin-top:10px">On the invoice as<br><input id="xDesc" style="width:100%;box-sizing:border-box" required></label>
 <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
 <label id="xQtyWrap"><span id="xQtyLabel">Hours</span><br><input type="number" id="xQty" min="0" step="0.25" style="width:110px"></label>
@@ -1374,7 +1417,17 @@ class Handler(BaseHTTPRequestHandler):
                     if store.bill_for(client, f"{y}-{m:02d}"):
                         raise ValueError(f"{client} has already been invoiced for that month. Pick the next month, "
                                          "or void that invoice first.")
-                    store.add_extra(client, f"{y}-{m:02d}", e["kind"], e["description"], e["quantity"], e["unit_price"])
+                    day = None
+                    if body.get("day"):
+                        try:
+                            day = date.fromisoformat(str(body["day"]))
+                        except ValueError:
+                            raise ValueError("Choose the day it was done.")
+                        if (day.year, day.month) != (y, m):
+                            raise ValueError(f"That day isn't in {billing.month_title(f'{y}-{m:02d}')}. Pick a day in the "
+                                             "month this goes on the invoice for.")
+                    store.add_extra(client, f"{y}-{m:02d}", e["kind"], e["description"], e["quantity"], e["unit_price"],
+                                    day.isoformat() if day else None)
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/extra/delete":
                     service.open_store().delete_extra(int(body.get("id")))

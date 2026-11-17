@@ -274,6 +274,16 @@ def invoice_pdf(inv: dict) -> bytes:
         t.row([f"{day:%A %d %B} total", "", "", _hm(d["billed_s"]), f"{d['billed_s'] / 3600:.2f} h"],
               bold=True, fill=TINT, notes={0: (actual, MUTED)} if actual else None)
 
+    def extra_rows(monday: date) -> None:
+        """Agreed hours, mileage and expenses done in this week, on their day: on the invoice, not in the week's total."""
+        from .billing import extra_lines, quantity_text
+        extras = inv.get("extras") or []
+        for e, l in zip(extras, extra_lines(extras)):
+            if e.get("day") and monday <= date.fromisoformat(e["day"]) <= monday + timedelta(days=6):
+                day = date.fromisoformat(e["day"])
+                t.row([f"{day:%a %d %b}", "extra", e["description"], quantity_text(l) or "expense", f"£{l['amount']:,.2f}"],
+                      color=MUTED)
+
     if inv["style"] == "day":   # the month week by week: a heading, its days, then the week's total
         from .reports import day_weeks
         for wk in day_weeks(inv):   # (how short a week is stays on screen: the PDF goes to the client)
@@ -286,6 +296,7 @@ def invoice_pdf(inv: dict) -> bytes:
                 day_rows(d)
             if not wk["days"]:
                 t.row(["Nothing recorded this week."], color=MUTED)
+            extra_rows(monday)
             week_s = sum(d["billed_s"] for d in wk["days"])
             worked = sum(1 for d in wk["days"] if d["billed_s"] > 0)
             bits, any_over = [f"{worked} day{'s' * (worked != 1)} worked"], False
@@ -310,6 +321,8 @@ def invoice_pdf(inv: dict) -> bytes:
             t.row(["No time recorded."], color=MUTED)
         for d in g["days"]:
             day_rows(d)
+        if g.get("monday"):
+            extra_rows(date.fromisoformat(g["monday"]))
         if g["label"]:
             banked = ((f"{_hm(g['banked_s'])} over the weekly hours: banked, not charged here", MUTED)
                       if g.get("banked_s") else None)

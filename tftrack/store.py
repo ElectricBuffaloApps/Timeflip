@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS extra (
     quantity REAL NOT NULL,
     unit_price REAL NOT NULL,
     created_at TEXT NOT NULL,
-    bill_id INTEGER
+    bill_id INTEGER,
+    day TEXT                    -- YYYY-MM-DD: the day it was done, if known
 );
 -- Hours in lieu: a bank of hours per client, typed in by hand. Positive rows put hours in; negative rows take them
 -- out. A row made by adding banked hours to a day points at the entry it created (entry_id), and stops counting if
@@ -197,6 +198,8 @@ class Store:
         if old:
             self.db.execute("ALTER TABLE bill RENAME TO bill_v30")
         self.db.executescript(SCHEMA)
+        if "day" not in [r["name"] for r in self.db.execute("PRAGMA table_info(extra)")]:
+            self.db.execute("ALTER TABLE extra ADD COLUMN day TEXT")   # extras gained the day they were done
         if "task" not in [r[1] for r in self.db.execute("PRAGMA table_info(carry_added)")]:
             # Older versions kept one lot of carried hours per client and month; now it's one per allowance.
             with self.db:
@@ -514,11 +517,13 @@ class Store:
 
     # ----- extras for invoices -----
 
-    def add_extra(self, client: str, month: str, kind: str, description: str, quantity: float, unit_price: float) -> int:
+    def add_extra(self, client: str, month: str, kind: str, description: str, quantity: float, unit_price: float,
+                  day: str | None = None) -> int:
         with self.db:
             return self.db.execute(
-                "INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at) VALUES (?,?,?,?,?,?,?)",
-                (client, month, kind, description, quantity, unit_price, datetime.now(timezone.utc).isoformat())).lastrowid
+                "INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at, day) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (client, month, kind, description, quantity, unit_price, datetime.now(timezone.utc).isoformat(), day)).lastrowid
 
     def extras(self, client: str | None = None, month: str | None = None) -> list[dict]:
         """Extras not yet on an invoice, oldest first (for one client's month, or all of them)."""
@@ -527,7 +532,8 @@ class Store:
             sql, args = sql + " AND lower(client) = lower(?)", args + [client]
         if month is not None:
             sql, args = sql + " AND month = ?", args + [month]
-        return [dict(r) for r in self.db.execute(sql + " ORDER BY month, id", args)]
+        # in the order they happened: by day, with any that have no day last
+        return [dict(r) for r in self.db.execute(sql + " ORDER BY month, day IS NULL, day, id", args)]
 
     def delete_extra(self, extra_id: int) -> None:
         with self.db:

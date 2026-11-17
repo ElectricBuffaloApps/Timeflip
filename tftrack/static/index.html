@@ -289,7 +289,7 @@ textarea { width: 100%; resize: vertical; line-height: 1.45; }
 .field .hint { font-weight: 400; }
 .bizbar { margin-bottom: 16px; flex-wrap: wrap; }
 .bizbar select { min-width: 200px; max-width: 100%; }
-.xform { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+.xform { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
 .xform .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .xform input, .xform select { width: 100%; }
 .xform .desc { grid-column: span 2; }
@@ -742,6 +742,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="xform">
         <label class="field">Client<select id="xClient"></select></label>
         <label class="field">Month<input type="month" id="xMonth"></label>
+        <label class="field">Day done <span class="hint">(optional)</span><input type="date" id="xDay"></label>
         <label class="field">Type<select id="xKind"><option value="time">Extra time</option><option value="mileage">Mileage</option><option value="expense">Expense</option></select></label>
         <label class="field desc">On the invoice as<input id="xDesc" placeholder="e.g. Site visit, 12/11/2026"></label>
         <label class="field" id="xQtyField"><span id="xQtyLabel">Hours</span><input id="xQty" type="number" min="0" step="0.25"></label>
@@ -2016,7 +2017,8 @@ function renderExtras(b) {
 $("xAdd").onclick = async () => {
   try {
     await api("/api/extra/add", { client: $("xClient").value, month: $("xMonth").value, kind: $("xKind").value,
-                                  description: $("xDesc").value, quantity: $("xQty").value, unit_price: $("xPrice").value });
+                                  description: $("xDesc").value, quantity: $("xQty").value, unit_price: $("xPrice").value,
+                                  day: $("xDay").value });
     $("xDesc").value = ""; $("xQty").value = ""; $("xMsg").textContent = "";
     loadBills(); loadOutstanding(); loadCollect();
   } catch (e) { $("xMsg").textContent = e.message; }

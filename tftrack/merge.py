@@ -130,9 +130,9 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
             same = db.execute("SELECT 1 FROM extra WHERE client = ? AND month = ? AND description = ? AND created_at = ?",
                               (x["client"], x["month"], x["description"], x["created_at"])).fetchone()
             if not same:
-                db.execute("INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at) "
-                           "VALUES (?,?,?,?,?,?,?)", (x["client"], x["month"], x["kind"], x["description"],
-                                                      x["quantity"], x["unit_price"], x["created_at"]))
+                db.execute("INSERT INTO extra (client, month, kind, description, quantity, unit_price, created_at, day) "
+                           "VALUES (?,?,?,?,?,?,?,?)", (x["client"], x["month"], x["kind"], x["description"],
+                                                        x["quantity"], x["unit_price"], x["created_at"], x.get("day")))
                 n += 1
         if n:
             report.append(f"{n} invoice extra{'s' * (n != 1)}")
