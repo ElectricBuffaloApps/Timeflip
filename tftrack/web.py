@@ -524,6 +524,8 @@ def invoice_page(inv: dict) -> str:
     parts = []
     short = {x["monday"]: x["spare_s"] for x in (inv.get("bank") or {}).get("weeks", [])}
 
+    split = {x["monday"]: x for x in (inv.get("bank") or {}).get("weeks", []) if x["split"]}
+
     def week_note(monday: date) -> tuple[str, int]:
         """What to say beside a week's total: each allowance's hours against its max, and how short the week is."""
         note = ""
@@ -537,8 +539,13 @@ def invoice_page(inv: dict) -> str:
                      f'{_hm(w["max_s"])} max{f" · {_hm(over)} over" if over > 0 else ""}'
                      f'{f" · +{_hm(extra)} carried over" if extra else ""})</span>')
         gap = short.get(monday.isoformat(), 0)
+        part = split.get(monday.isoformat())
+        if part and part["elsewhere_s"]:   # this total is only the days in this month: say what the whole week comes to
+            note += (f' <span class="tag">Whole week, with {part["other_month"]}: {_hm(part["charged_s"])}'
+                     f' ({_hm(part["elsewhere_s"])} is on {part["other_month"]}\'s timesheet)</span>')
         if gap:
-            note += f' <span class="tag adj">{_hm(gap)} short of the weekly hours</span>'
+            note += (f' <span class="tag adj">{_hm(gap)} short of the weekly hours'
+                     f'{" for the whole week" if part and part["elsewhere_s"] else ""}</span>')
         return note + week_actions(monday, gap), gap
 
     banked = max(0, (inv.get("bank") or {}).get("seconds", 0))
@@ -744,18 +751,41 @@ def _bank_for_sheet(inv: dict) -> dict | None:
     # Whole weeks, Monday to Sunday, even where a week runs into the month before or after: a week with nothing
     # recorded, or one at the month's edge, is still short of the weekly hours.
     charged = areas.charged_by_week(store, conf, inv["client"], start, end)
+    here: dict[str, int] = {}                          # the part of each week that's on this sheet
+    for g in inv["groups"]:
+        for d in g["days"]:
+            day = date.fromisoformat(d["date"])
+            key = (day - timedelta(days=day.weekday())).isoformat()
+            here[key] = here.get(key, 0) + d["billed_s"]
     weeks, monday = [], start - timedelta(days=start.weekday())
     while monday <= end:
         got = charged.get(monday.isoformat(), 0)
         over = monday + timedelta(days=6) < today      # only a finished week can be said to be short
+        split = monday < start or monday + timedelta(days=6) > end
+        # the rest of a week that crosses the month: which month it's in, and how much is charged there
+        other = (monday if monday < start else monday + timedelta(days=6)) if split else None
         weeks.append({"monday": monday.isoformat(), "first": max(monday, start).isoformat(), "charged_s": got,
-                      "finished": over, "split": monday < start or monday + timedelta(days=6) > end,
+                      "here_s": here.get(monday.isoformat(), 0),
+                      "elsewhere_s": max(0, got - here.get(monday.isoformat(), 0)) if split else 0,
+                      "other_month": f"{other:%B}" if other else "",
+                      "finished": over, "split": split,
                       "spare_s": max(0, rules["limit_seconds"] - got) if rules["limit_seconds"] and over else 0})
         monday += timedelta(days=7)
     tasks = [t for t in store.tasks() if (t["tag"] or "").lower() == inv["client"].lower()]
     tasks.sort(key=lambda t: (-worked_by_task.get(t["id"], 0), t["name"].lower()))
     return {"seconds": banked, "limit_seconds": rules["limit_seconds"], "weeks": weeks,
             "tasks": [{"id": t["id"], "name": t["name"]} for t in tasks]}
+
+
+def _week_charged(w: dict) -> str:
+    """What a week has charged. A week that crosses the month says how much is on this sheet and how much is in the
+    other month, so the figure can be checked against the sheet in front of you."""
+    if w["split"] and w["elsewhere_s"]:
+        return (f'{_hm(w["here_s"])} here + {_hm(w["elsewhere_s"])} in {w["other_month"]} = '
+                f'{_hm(w["charged_s"])} charged')
+    if w["split"]:
+        return f'{_hm(w["charged_s"])} charged (nothing in {w["other_month"]})'
+    return f'{_hm(w["charged_s"])} charged'
 
 
 def _bank_box(inv: dict) -> str:
@@ -784,9 +814,8 @@ def _bank_box(inv: dict) -> str:
     fill_btn = (f'<button class="primary" id="bankFill" data-plan="{esc(json.dumps(plan))}">Fill short weeks ({_hm(total)})</button>'
                 if total else "")
     week_opts = "".join(
-        f'<option value="{w["first"]}">Week of {date.fromisoformat(w["monday"]):%a %d %b} · {_hm(w["charged_s"])} charged'
-        f'{" · " + _hm(w["spare_s"]) + " short" if w["spare_s"] else "" if w["finished"] else " · not finished yet"}'
-        f'{" (runs into another month)" if w["split"] else ""}</option>'
+        f'<option value="{w["first"]}">Week of {date.fromisoformat(w["monday"]):%a %d %b} · ' + _week_charged(w)
+        + f'{" · " + _hm(w["spare_s"]) + " short" if w["spare_s"] else "" if w["finished"] else " · not finished yet"}</option>'
         for w in b["weeks"])
     task_opts = "".join(f'<option value="{t["id"]}">{esc(t["name"])}</option>' for t in b["tasks"])
     limit = (f' Finished weeks under {_hm(b["limit_seconds"])} are short, including any with nothing recorded: '

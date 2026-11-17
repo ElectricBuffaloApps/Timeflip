@@ -1,5 +1,13 @@
 [
   {
+    "version": 44,
+    "changes": [
+      "A week that crosses two months now explains its figures. The hours-in-lieu box says, for example, '1h 30m here + 4h 15m in November = 5h 45m charged', so you can see which part is on the sheet in front of you.",
+      "The week's total on the timesheet adds 'Whole week, with November: 5h 45m (4h 15m is on November's timesheet)' when the other month has hours in that week.",
+      "Nothing about the sums has changed. Before, the box showed only the whole-week figure, which looked wrong next to a week total that covers just the days in that month."
+    ]
+  },
+  {
     "version": 43,
     "changes": [
       "New name: the app is now called FlipTracker. It still works with your TIMEFLIP2 cube in exactly the same way, and none of your data or settings has moved.",

@@ -1503,7 +1503,7 @@ class ShortWeeksTest(unittest.TestCase):
                              ("2026-10-26", 0, 6 * h, True, "2026-10-26"))            # empty week: the full 6h short
             page = web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"}))
             self.assertIn("Fill short weeks (3h 00m)", page)
-            self.assertIn("Week of Mon 26 Oct · 0h 00m charged · 6h 00m short (runs into another month)", page)
+            self.assertIn("Week of Mon 26 Oct · 0h 00m charged (nothing in November) · 6h 00m short", page)
             nov = {w["monday"]: w for w in web._invoice({"client": "HTB", "month": "2026-11"})["bank"]["weeks"]}
             self.assertEqual((nov["2026-10-26"]["spare_s"], nov["2026-10-26"]["first"]), (6 * h, "2026-11-01"))
             self.assertEqual(nov["2026-11-02"]["spare_s"], 2 * h)
@@ -1719,3 +1719,43 @@ class ShortEntriesTest(unittest.TestCase):
         # lengthening a short entry with Edit makes it count
         store.set_adjustment(4, datetime(2026, 10, 8, 9).astimezone(), 10 * m, 1)
         self.assertEqual([r["short"] for r in october() if r["id"] == 4], [False])
+
+
+class SplitWeekTest(unittest.TestCase):
+    def test_a_week_crossing_the_month_says_what_is_on_each_sheet(self):
+        """Dave's case: 1h30 in the October part of the week of 26 Oct, 4h15 on Sunday 1 November."""
+        from datetime import date
+        from unittest import mock
+        from tftrack import areas, web, allowance
+        m = 60
+        at = lambda mo, d, hh: datetime(2026, mo, d, hh).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": at(10, 27, 9), "duration": 90 * m},     # Tue 27 Oct
+                            {"id": 2, "taskId": 1, "startedAt": at(11, 1, 9), "duration": 255 * m}],    # Sun 1 Nov
+                           tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}},
+                "limits": [{"task": "HTB", "weekly_hours": 6, "allowance": True, "allowance_start": "2026-10"}],
+                "areas": [{"client": "HTB", "label": "HTB", "bank_start": "2026-09-01"}]}
+
+        class Today(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 11, 17)
+
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)), \
+                mock.patch.object(web, "date", Today), mock.patch.object(areas, "date", Today):
+            octo = web._invoice({"client": "HTB", "month": "2026-10"})
+            w = octo["bank"]["weeks"][-1]
+            self.assertEqual((w["monday"], w["here_s"] // m, w["elsewhere_s"] // m, w["charged_s"] // m, w["other_month"],
+                              w["spare_s"] // m), ("2026-10-26", 90, 255, 345, "November", 15))
+            page = web.invoice_page(octo)
+            self.assertEqual(web._week_charged(w), "1h 30m here + 4h 15m in November = 5h 45m charged")
+            self.assertNotIn("Whole week, with September", page)        # nothing in September's part: no need to say
+            self.assertIn("Whole week, with November: 5h 45m (4h 15m is on November's timesheet)", page)
+            self.assertIn("0h 15m short of the weekly hours for the whole week", page)
+            nov = web._invoice({"client": "HTB", "month": "2026-11"})
+            w = nov["bank"]["weeks"][0]
+            self.assertEqual((w["here_s"] // m, w["elsewhere_s"] // m, w["other_month"]), (255, 90, "October"))
+            self.assertEqual(web._week_charged(w), "4h 15m here + 1h 30m in October = 5h 45m charged")
+            self.assertIn("Whole week, with October: 5h 45m (1h 30m is on October's timesheet)", web.invoice_page(nov))
