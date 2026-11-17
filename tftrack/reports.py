@@ -67,6 +67,11 @@ def build_report(store, start: date, end: date, group: str = "task") -> dict:
 def timesheet_rows(store, start: date, end: date, client: str | None = None) -> list[dict]:
     excluded = store.excluded_ids()
     comments = store.notes()
+    # Tracked entries under the minimum length aren't counted: a cube knocked or flipped by mistake isn't work,
+    # and mustn't be rounded up to a quarter of an hour. Entries typed in by hand are always counted. A month
+    # already invoiced is left exactly as it was charged.
+    too_short = getattr(store, "min_entry_seconds", 0)
+    invoiced = store.invoiced_months() if too_short else set()
     rows = []
     for d, seg in segments_by_day(store, start, end):
         seg_client = seg["client"] or NO_CLIENT
@@ -85,7 +90,13 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
                 when = f"{os_:%a %d %b} {when}"
             note = f"was {when}" + (f", {o['task']}" if o["task_changed"] else "")
         es, ee = seg["entry_start"].astimezone(), seg["entry_end"].astimezone()
+        short = False
+        if too_short and not seg["manual"] and (seg["entry_end"] - seg["entry_start"]).total_seconds() < too_short:
+            monday = d - timedelta(days=d.weekday())
+            short = not ({(seg_client.lower(), f"{d:%Y-%m}"), (seg_client.lower(), f"{monday:%Y-%m}")} & invoiced)
+        is_excluded = is_excluded or short
         rows.append({
+            "short": short,
             "id": seg["id"],
             "task_id": seg["task_id"],
             "adjusted": seg["adjusted"],

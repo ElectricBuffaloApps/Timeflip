@@ -11,8 +11,14 @@ from .store import Store
 
 
 def open_store(include_ignored: bool = False) -> Store:
-    ignored = () if include_ignored else cfg.load_config().get("ignored_tasks", [])
-    return Store(cfg.DB_PATH, ignored)
+    conf = cfg.load_config()
+    ignored = () if include_ignored else conf.get("ignored_tasks", [])
+    store = Store(cfg.DB_PATH, ignored)
+    try:
+        store.min_entry_seconds = max(0, int(float(conf.get("min_entry_minutes", 5)) * 60))
+    except (TypeError, ValueError):
+        store.min_entry_seconds = 300
+    return store
 
 
 def client(conf: dict) -> TimeFlipClient:

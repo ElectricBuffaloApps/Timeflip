@@ -19,6 +19,8 @@ DEFAULT_CONFIG = {
     "duration_unit": "seconds",
     "limits": [],
     "auto_update": True,
+    # Tracked entries shorter than this aren't counted or charged (the cube knocked, or flipped by mistake).
+    "min_entry_minutes": 5,
     "last_seen_version": None,
     # How each client (TimeFlip task tag) is invoiced: "hourly", "day" (monthly, by day) or "week"
     # (weeks whose Monday is in the month). Day totals can be rounded to a block of minutes.

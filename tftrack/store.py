@@ -186,6 +186,8 @@ class Store:
     def __init__(self, path: Path, ignored_task_ids=()):
         # Tasks the user doesn't want counted (breaks, timers, "off"): left out of every figure.
         self.ignored_task_ids = {int(i) for i in ignored_task_ids}
+        # Tracked entries shorter than this aren't counted (0 = count everything). Set from Settings when opened.
+        self.min_entry_seconds = 0
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
@@ -549,6 +551,10 @@ class Store:
         row = self.db.execute(f"SELECT COALESCE(SUM(l.seconds), 0) FROM lieu l WHERE lower(l.client) = lower(?) AND {self._LIEU_LIVE}",
                               (client,)).fetchone()
         return int(row[0])
+
+    def invoiced_months(self) -> set[tuple[str, str]]:
+        """Every (client in lower case, month) marked as invoiced."""
+        return {(r[0].lower(), r[1]) for r in self.db.execute("SELECT client, month FROM invoiced")}
 
     def notes(self) -> dict[int, str]:
         """The user's notes on entries: entry id -> note."""

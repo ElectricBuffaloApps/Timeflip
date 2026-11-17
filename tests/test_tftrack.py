@@ -1671,3 +1671,51 @@ class EntryNotesTest(unittest.TestCase):
         store.set_note(new, "Agreed call")
         store.delete_manual(new)
         self.assertEqual(store.notes(), {})
+
+
+class ShortEntriesTest(unittest.TestCase):
+    def test_entries_under_five_minutes_are_not_counted_or_rounded_up(self):
+        from datetime import date
+        from unittest import mock
+        from tftrack import web, allowance
+        from tftrack.reports import timesheet_rows
+        m = 60
+        at = lambda mo, d, hh, mm=0: datetime(2026, mo, d, hh, mm).astimezone().astimezone(UTC).isoformat()
+        store = make_store([
+            {"id": 1, "taskId": 1, "startedAt": at(10, 5, 9), "duration": 0},           # timer read 00:00
+            {"id": 2, "taskId": 1, "startedAt": at(10, 6, 9), "duration": 4 * m + 59},  # just under 5 minutes
+            {"id": 3, "taskId": 1, "startedAt": at(10, 7, 9), "duration": 5 * m},       # exactly 5: counts
+            {"id": 4, "taskId": 1, "startedAt": at(10, 8, 9), "duration": 3 * m},       # short, beside real work
+            {"id": 5, "taskId": 1, "startedAt": at(10, 8, 10), "duration": 50 * m},
+            {"id": 6, "taskId": 1, "startedAt": at(9, 7, 9), "duration": 2 * m},        # September: already invoiced
+        ], tasks=[{"id": 1, "name": "HTB", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rounding": "up", "block_minutes": 15, "rate": 40}}}
+        october = lambda: timesheet_rows(store, date(2026, 10, 1), date(2026, 10, 31), "HTB")
+        self.assertFalse(any(r["short"] for r in october()))                    # off unless Settings says so
+        store.min_entry_seconds = 5 * m
+        # short entries stay on the sheet, marked and not counted; a 00:00 entry has no time to show at all
+        self.assertEqual([(r["date"], r["short"], r["excluded"]) for r in october()], [
+            ("2026-10-06", True, True), ("2026-10-07", False, False), ("2026-10-08", True, True), ("2026-10-08", False, False)])
+        with mock.patch.object(web.service, "open_store", return_value=store), \
+                mock.patch.object(web.cfg, "load_config", side_effect=lambda: conf), \
+                mock.patch.object(allowance, "bank_holidays", return_value=(set(), None)):
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            days = {d["date"]: d["billed_s"] // m for g in inv["groups"] for d in g["days"]}
+            # 6 Oct: 4m59 alone is nothing, not a quarter of an hour. 8 Oct: 50m rounds to 60, the 3m isn't added.
+            self.assertEqual(days, {"2026-10-06": 0, "2026-10-07": 15, "2026-10-08": 60})
+            self.assertEqual(inv["days_worked"], 2)
+            page = web.invoice_page(inv)
+            self.assertEqual(page.count("under 5 minutes: not counted"), 2)
+            self.assertTrue(web.pdf.invoice_pdf(inv).startswith(b"%PDF"))
+            # a month already invoiced stays exactly as it was charged
+            store.set_invoiced("HTB", "2026-09", 15 * m, 10.0)
+            sept = web._invoice({"client": "HTB", "month": "2026-09"})
+            self.assertEqual(sept["total_billed_s"], 15 * m)
+            store.set_invoiced("HTB", "2026-09", None)
+            self.assertEqual(web._invoice({"client": "HTB", "month": "2026-09"})["total_billed_s"], 0)
+        # time you type in yourself always counts, however short
+        added = store.add_manual(datetime(2026, 10, 9, 9).astimezone(), 2 * m, 1)
+        self.assertEqual([(r["short"], r["seconds"]) for r in october() if r["id"] == added], [(False, 2 * m)])
+        # lengthening a short entry with Edit makes it count
+        store.set_adjustment(4, datetime(2026, 10, 8, 9).astimezone(), 10 * m, 1)
+        self.assertEqual([r["short"] for r in october() if r["id"] == 4], [False])

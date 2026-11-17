@@ -11,7 +11,10 @@
       "Under each week's total there are now buttons to top it up. '+ from the bank' adds banked hours up to the weekly hours (or all that's banked, if that's less) in one press.",
       "'+ Agreed hours' and '+ Mileage' under each week add extra hours you agreed, or mileage, for that week. They're charged in full on the month's invoice and don't count towards the weekly hours. The wording is filled in for you, such as 'Mileage, week of Mon 05 Oct', and you can change it.",
       "Extras on this invoice: a list under the timesheet of the agreed hours, mileage and expenses waiting to be invoiced, with a total and a Remove button for each. They're also in the copy-ready invoice lines.",
-      "Notes on entries: press Edit on an entry and type a note saying what it was for. It shows under the entry on the timesheet, on the PDF and in the spreadsheet. Adding a note doesn't mark the entry as adjusted."
+      "Notes on entries: press Edit on an entry and type a note saying what it was for. It shows under the entry on the timesheet, on the PDF and in the spreadsheet. Adding a note doesn't mark the entry as adjusted.",
+      "Entries under 5 minutes are no longer counted or charged. A cube knocked or flipped by mistake used to round up to a quarter of an hour. Now it shows on the timesheet as 'under 5 minutes: not counted' and adds nothing.",
+      "Change the 5 minutes, or switch it off with 0, in Settings → App & updates → 'Don't count entries shorter than'. Time you type in yourself always counts. To count a short entry, press Edit and make it longer.",
+      "Months you've already marked as invoiced are left exactly as they were charged."
     ]
   },
   {

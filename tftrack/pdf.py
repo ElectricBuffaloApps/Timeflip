@@ -223,6 +223,8 @@ def _entry_notes(r: dict) -> tuple[str, tuple] | None:
     """What's printed beside an entry's task: how it was changed, and the user's own note on it."""
     mine = r.get("comment") or ""
     also = f" · {mine}" if mine else ""
+    if r.get("short"):
+        return "too short: not counted" + also, MUTED
     if r["excluded"]:
         return "not charged" + also, MUTED
     if r.get("rolled"):

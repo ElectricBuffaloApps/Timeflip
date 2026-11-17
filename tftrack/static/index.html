@@ -912,6 +912,8 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
             <option value="monday">Monday</option><option value="sunday">Sunday</option>
             <option value="saturday">Saturday</option>
           </select></div>
+        <div><label class="k" for="minEntry">Don't count entries shorter than (minutes)</label>
+          <input type="number" id="minEntry" min="0" max="60" step="1" style="width:90px"></div>
         <div><label class="k" for="termsDays">Clients pay within (days)</label>
           <input type="number" id="termsDays" min="0" max="365" step="1" style="width:90px"></div>
         <div><label class="check k"><input type="checkbox" id="autoUpdate"> Install updates automatically overnight</label></div>
@@ -1117,6 +1119,7 @@ function showState(s, redraw = false) {
   showNews(s.whats_new || []);
   $("weekStarts").value = s.week_starts;
   if (document.activeElement !== $("termsDays")) $("termsDays").value = s.payment_terms_days;
+  if (document.activeElement !== $("minEntry")) $("minEntry").value = s.min_entry_minutes;
   $("levels").textContent = s.alert_levels_percent.map((l) => `${l}%`).join(" and ");
   renderMeters(s.status);
   if (draw("limits")) renderLimitRows(s.limits);
@@ -2261,6 +2264,10 @@ function showNews(notes) {
   $("newsList").replaceChildren(...notes.flatMap((n) => n.changes).map((c) => el("li", {}, c)));
 }
 $("newsOk").onclick = async () => { showState(await api("/api/seen", {})); };
+$("minEntry").onchange = async () => {
+  try { showState(await api("/api/settings", { min_entry_minutes: $("minEntry").value })); refreshAll(); }
+  catch (e) { alert(e.message); }
+};
 $("termsDays").onchange = async () => {
   try { showState(await api("/api/settings", { payment_terms_days: $("termsDays").value })); loadCollect(); }
   catch (e) { alert(e.message); }

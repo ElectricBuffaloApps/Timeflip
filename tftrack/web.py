@@ -63,6 +63,7 @@ def state() -> dict:
         "unmatched_intervals": int(store.get_meta("unmatched_intervals") or 0),
         "week_starts": conf.get("week_starts", "monday"),
         "payment_terms_days": collect.terms_days(conf),
+        "min_entry_minutes": conf.get("min_entry_minutes", 5),
         "businesses": billing.businesses(conf),
         "areas": [{**a, "week_hours": next((t.get("week") for n, t in ((conf.get("targets") or {}).get("hours") or {}).items()
                                             if n.lower() == a["client"].lower()), None),
@@ -380,9 +381,20 @@ def _hm(seconds: int) -> str:
     return f"{m // 60}h {m % 60:02d}m"
 
 
+def _entry_json(r: dict) -> str:
+    return html.escape(json.dumps({
+        "id": r["id"], "date": r["entry_date"], "start": r["entry_start"], "end": r["entry_end"],
+        "task_id": r["task_id"], "adjusted": r["adjusted"], "manual": r["manual"], "note": r.get("comment", ""),
+    }))
+
+
 def _exclude_cell(r: dict) -> str:
     checked = " checked" if r["excluded"] else ""
     note = '<span class="tag">not charged</span>' if r["excluded"] else ""
+    if r.get("short"):   # left out by the minimum length, not by a tick: Edit it longer to count it
+        limit = getattr(service.open_store(), "min_entry_seconds", 300) // 60
+        return (f'<td class="keep"><span class="tag">under {limit} minutes: not counted</span>'
+                f'<button class="edit" data-entry="{_entry_json(r)}">Edit</button></td>')
     entry = html.escape(json.dumps({
         "id": r["id"], "date": r["entry_date"], "start": r["entry_start"], "end": r["entry_end"],
         "task_id": r["task_id"], "adjusted": r["adjusted"], "manual": r["manual"], "note": r.get("comment", ""),
@@ -1093,6 +1105,11 @@ class Handler(BaseHTTPRequestHandler):
                         conf["week_starts"] = body["week_starts"]
                     if isinstance(body.get("auto_update"), bool):
                         conf["auto_update"] = body["auto_update"]
+                    if body.get("min_entry_minutes") not in (None, ""):
+                        minutes = float(body["min_entry_minutes"])
+                        if not 0 <= minutes <= 60:
+                            raise ValueError("The shortest entry to count must be between 0 and 60 minutes.")
+                        conf["min_entry_minutes"] = minutes
                     if body.get("payment_terms_days") not in (None, ""):
                         days = int(body["payment_terms_days"])
                         if not 0 <= days <= 365:
