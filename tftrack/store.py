@@ -535,6 +535,14 @@ class Store:
         # in the order they happened: by day, with any that have no day last
         return [dict(r) for r in self.db.execute(sql + " ORDER BY month, day IS NULL, day, id", args)]
 
+    def update_extra(self, extra_id: int, kind: str, description: str, quantity: float, unit_price: float,
+                     day: str | None) -> bool:
+        """Change an extra that isn't on an invoice yet. Returns False if there's no such extra (or it's been invoiced)."""
+        with self.db:
+            return self.db.execute(
+                "UPDATE extra SET kind = ?, description = ?, quantity = ?, unit_price = ?, day = ? "
+                "WHERE id = ? AND bill_id IS NULL", (kind, description, quantity, unit_price, day, extra_id)).rowcount == 1
+
     def delete_extra(self, extra_id: int) -> None:
         with self.db:
             self.db.execute("DELETE FROM extra WHERE id = ? AND bill_id IS NULL", (extra_id,))

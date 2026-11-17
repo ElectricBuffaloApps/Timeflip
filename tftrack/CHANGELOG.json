@@ -1,5 +1,14 @@
 [
   {
+    "version": 45,
+    "changes": [
+      "Edit and Remove on extras: agreed hours, mileage and expenses now have Edit and Remove buttons on their row inside the week, and in the list at the bottom of the timesheet.",
+      "Edit opens the same box with the figures filled in, so you can correct the hours, miles, rate, wording or day. Change the day and the extra moves to the right week, and the date in its wording follows.",
+      "Remove asks you to confirm first.",
+      "Once the month is invoiced the buttons go, because the invoice can't change. Void the invoice to change its extras."
+    ]
+  },
+  {
     "version": 44,
     "changes": [
       "A week that crosses two months now explains its figures. The hours-in-lieu box says, for example, '1h 30m here + 4h 15m in November = 5h 45m charged', so you can see which part is on the sheet in front of you.",

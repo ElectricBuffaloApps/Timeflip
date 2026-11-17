@@ -1788,7 +1788,19 @@ class DatedExtrasTest(unittest.TestCase):
             hours, miles = page.index('<td>Wed 07 Oct</td><td><span class="tag">extra</span>'), \
                 page.index('<td>Thu 22 Oct</td><td><span class="tag">extra</span>')
             self.assertTrue(page.index('id="week-2026-09-28"') < hours < wk1 < miles < wk3)
-            self.assertEqual(page.count('<tr class="extra">'), 2)                              # Parking has no day: list only
+            self.assertEqual(page.count('<tr class="extra" id="extra-'), 2)                    # Parking has no day: list only
+            # every extra can be changed or removed: in its week and in the list (2 in weeks + 3 in the list)
+            self.assertEqual((page.count('class="xedit"'), page.count('class="xdel"')), (5, 5))
+            hours_id = next(e["id"] for e in store.extras("HTB", "2026-10") if e["kind"] == "time")
+            self.assertTrue(store.update_extra(hours_id, "time", "Additional agreed hours, Thu 08 Oct 2026", 3, 40, "2026-10-08"))
+            changed = web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"}))
+            self.assertIn('<td>Thu 08 Oct</td><td><span class="tag">extra</span></td><td>Additional agreed hours, Thu 08 Oct 2026</td>'
+                          '<td class=n>3.00 h · £120.00</td>', changed)
+            self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 240 + 120 + 18 + 6)
+            self.assertEqual(web._extra_day({"day": "2026-10-31"}, "2026-10"), "2026-10-31")
+            with self.assertRaisesRegex(ValueError, "isn't in October 2026"):
+                web._extra_day({"day": "2026-11-01"}, "2026-10")
+            store.update_extra(hours_id, "time", "Additional agreed hours, Wed 07 Oct 2026", 2, 40, "2026-10-07")   # put it back
             self.assertIn("Wed 07 Oct · Additional agreed hours, Wed 07 Oct 2026", page)       # and the list shows the day
             self.assertEqual(inv["total_billed_s"], 6 * h)                                     # tracked time is unchanged
             self.assertEqual(web._month_due(store, conf, "HTB", "2026-10")[1], 240 + 80 + 18 + 6)
@@ -1804,5 +1816,11 @@ class DatedExtrasTest(unittest.TestCase):
         db.commit()
         db.close()
         old = Store(tmp)
+        # once it's on an invoice it can't be changed or removed: void the invoice first
+        store.claim_extras("HTB", "2026-10", 99)
+        self.assertFalse(store.update_extra(hours_id, "time", "Sneaky", 9, 40, "2026-10-07"))
+        store.delete_extra(hours_id)
+        self.assertEqual(store.db.execute("SELECT description FROM extra WHERE id = ?", (hours_id,)).fetchone()[0],
+                         "Additional agreed hours, Wed 07 Oct 2026")
         old = Store(tmp)      # opening twice mustn't try to add the column twice
         self.assertEqual([(e["description"], e["day"]) for e in old.extras()], [("Old mileage", None)])
