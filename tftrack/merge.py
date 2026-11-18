@@ -96,8 +96,9 @@ def import_changes(store, conf: dict, data: dict) -> tuple[dict, list[str]]:
 
         n = 0
         for i in t.get("invoiced", []):
-            n += db.execute("INSERT OR IGNORE INTO invoiced VALUES (?, ?, ?, ?, ?)",
-                            (i["client"], i["month"], i["marked_at"], i["seconds"], i["amount"])).rowcount
+            n += db.execute("INSERT OR IGNORE INTO invoiced (client, month, marked_at, seconds, amount, min_entry_s) "
+                            "VALUES (?, ?, ?, ?, ?, ?)", (i["client"], i["month"], i["marked_at"], i["seconds"],
+                                                         i["amount"], i.get("min_entry_s"))).rowcount
         if n:
             report.append(f"{n} month{'s' * (n != 1)} marked as invoiced")
 

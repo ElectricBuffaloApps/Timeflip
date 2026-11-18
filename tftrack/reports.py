@@ -69,9 +69,10 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
     comments = store.notes()
     # Tracked entries under the minimum length aren't counted: a cube knocked or flipped by mistake isn't work,
     # and mustn't be rounded up to a quarter of an hour. Entries typed in by hand are always counted. A month
-    # already invoiced is left exactly as it was charged.
+    # already invoiced keeps the limit it was invoiced with, so its timesheet goes on matching the invoice; one
+    # invoiced before the limit was recorded counts everything, unless web.settle_short_rule has worked it out.
     too_short = getattr(store, "min_entry_seconds", 0)
-    invoiced = store.invoiced_months() if too_short else set()
+    invoiced = store.invoiced_limits()
     rows = []
     for d, seg in segments_by_day(store, start, end):
         seg_client = seg["client"] or NO_CLIENT
@@ -91,9 +92,12 @@ def timesheet_rows(store, start: date, end: date, client: str | None = None) -> 
             note = f"was {when}" + (f", {o['task']}" if o["task_changed"] else "")
         es, ee = seg["entry_start"].astimezone(), seg["entry_end"].astimezone()
         short = False
-        if too_short and not seg["manual"] and (seg["entry_end"] - seg["entry_start"]).total_seconds() < too_short:
-            monday = d - timedelta(days=d.weekday())
-            short = not ({(seg_client.lower(), f"{d:%Y-%m}"), (seg_client.lower(), f"{monday:%Y-%m}")} & invoiced)
+        if not seg["manual"]:
+            monday = d - timedelta(days=d.weekday())   # a week belongs to the month its Monday is in
+            fixed = [invoiced[k] or 0 for k in {(seg_client.lower(), f"{d:%Y-%m}"), (seg_client.lower(), f"{monday:%Y-%m}")}
+                     if k in invoiced]
+            limit = min(fixed) if fixed else too_short
+            short = bool(limit) and (seg["entry_end"] - seg["entry_start"]).total_seconds() < limit
         is_excluded = is_excluded or short
         rows.append({
             "short": short,

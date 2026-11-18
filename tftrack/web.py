@@ -1579,6 +1579,10 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/api/import":
                     conf, report = merge.import_changes(service.open_store(include_ignored=True), cfg.load_config(), body)
                     cfg.save_config(conf)
+                    try:
+                        settle_short_rule()   # invoiced months from a Mac on an older version
+                    except Exception:
+                        pass
                     return self._send(200, {"report": report})
                 elif self.path == "/api/rollover":
                     service.open_store().set_rolled(int(body["id"]), "carried" if body.get("rolled") else None,
@@ -1822,6 +1826,29 @@ def _bill_lines(store, conf: dict, client: str, month: str) -> tuple[list[dict],
     return lines, sum(by_task.values())
 
 
+def settle_short_rule() -> int:
+    """Months invoiced before the short-entry limit was recorded with them: work out which way each was charged.
+    The month's total is tried with short entries counted and with today's limit; if exactly one comes to the hours
+    saved when it was invoiced, that's the one kept. Otherwise it stays as it was (everything counted)."""
+    store, conf = service.open_store(), cfg.load_config()
+    now, settled = int(store.min_entry_seconds), 0
+    for (client, month), limit in sorted(store.invoiced_limits().items()):
+        if limit is not None:
+            continue
+        saved = next((v["seconds"] for m, v in store.invoiced(client).items() if m == month), None)
+        fits = []
+        try:
+            for candidate in dict.fromkeys([0, now]):
+                store.set_invoiced_limit(client, month, candidate)
+                if _month_due(store, conf, client, month)[0] == saved:
+                    fits.append(candidate)
+        except Exception:
+            fits = []
+        store.set_invoiced_limit(client, month, fits[0] if len(fits) == 1 else None)
+        settled += len(fits) == 1
+    return settled
+
+
 def _create_bill(client: str, month: str, today: date) -> dict:
     conf = cfg.load_config()
     store = service.open_store()
@@ -1932,6 +1959,10 @@ def serve() -> None:
         ensure_app()  # existing installs get the app on their next restart or update
     except Exception as e:
         print(f"Couldn't create the app: {e}")
+    try:
+        settle_short_rule()
+    except Exception as e:
+        print(f"Couldn't check older invoices' short entries: {e}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.PORT), Handler)
     print(f"FlipTracker running at http://127.0.0.1:{cfg.PORT}")
     server.serve_forever()

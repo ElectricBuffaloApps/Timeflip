@@ -1,5 +1,13 @@
 [
   {
+    "version": 48,
+    "changes": [
+      "Fixed: a timesheet no longer changes the moment you invoice it. Entries under 5 minutes were left off the invoice, but came back on the timesheet (rounded up) once the month was marked as invoiced, so the sheet and its PDF showed more than the invoice and warned 'Changed since'.",
+      "An invoiced month now keeps the short-entry setting it was invoiced with. Changing 'Don't count entries shorter than' later doesn't alter months already invoiced.",
+      "Months you've already invoiced are checked once against the hours saved with the invoice, and put back to match. A month whose timesheet you've changed since invoicing is left as it is."
+    ]
+  },
+  {
     "version": 47,
     "changes": [
       "Bank details are now separate boxes: Name on the account, Bank, Sort code and Account number, with a line for anything else to print (such as a payment reference). They print on the invoice under 'How to pay' as before.",
