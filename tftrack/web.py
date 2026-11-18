@@ -18,7 +18,7 @@ from . import config as cfg
 from . import allowance, areas, billing, collect, insights, logo, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
+from .reports import (pence, BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
                       timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -1123,7 +1123,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not bill:
                     return self._send(404, "No such invoice.", "text/plain; charset=utf-8")
                 if url.path == "/bill.pdf":
-                    return self._send(200, billing.bill_pdf(bill), "application/pdf",
+                    return self._send(200, billing.bill_pdf(bill, store.paid(bill["client"]).get(bill["month"])), "application/pdf",
                                       {"Content-Disposition": f'attachment; filename="{billing.file_name(bill)}"'})
                 paid_at = store.paid(bill["client"]).get(bill["month"])
                 conf = cfg.load_config()
@@ -1140,6 +1140,8 @@ class Handler(BaseHTTPRequestHandler):
                 b = next((x for x in billing.businesses(cfg.load_config()) if x["id"] == q.get("business")), None)
                 if not b:
                     return self._send(404, "No such business.", "text/plain; charset=utf-8")
+                if q.get("layout") in billing.LAYOUTS:   # the style chosen on screen, before it's saved
+                    b = {**b, "layout": q["layout"]}
                 return self._send(200, billing.bill_pdf(billing.sample_bill(b, date.today())), "application/pdf",
                                   {"Content-Disposition": 'inline; filename="Sample invoice.pdf"'})
             if url.path == "/sheet.pdf":
@@ -1157,7 +1159,7 @@ class Handler(BaseHTTPRequestHandler):
                             if name in names:   # two businesses can share a number
                                 name = f"{bill['data']['business']['name']} {name}"
                             names.add(name)
-                            z.writestr(name, billing.bill_pdf(bill))
+                            z.writestr(name, billing.bill_pdf(bill, store.paid(bill["client"]).get(bill["month"])))
                             raw, name = _sheet_pdf(bill["client"], bill["month"])
                             z.writestr(name, raw)
                 return self._send(200, out.getvalue(), "application/zip",
@@ -1817,8 +1819,8 @@ def _bill_lines(store, conf: dict, client: str, month: str) -> tuple[list[dict],
     lines = []
     for task, secs in sorted(by_task.items(), key=lambda kv: kv[0].lower()):
         hours = round(secs / 3600, 2)
-        lines.append({"description": f"{client} – {task}, {billing.month_title(month)}", "hours": hours, "rate": rate,
-                      "amount": round(hours * rate, 2) if rate else None})
+        lines.append({"description": f"{client} – {task}", "detail": billing.month_title(month), "hours": hours,
+                      "rate": rate, "amount": pence(hours * rate) if rate else None})
     return lines, sum(by_task.values())
 
 

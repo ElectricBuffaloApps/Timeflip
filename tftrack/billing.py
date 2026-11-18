@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from . import logo as logos
 from . import pdf
+from .reports import pence
 from .pdf import ACCENT, FAINT, GREY_BG, INK, MARGIN, MUTED, PAGE_H, PAGE_W, Document, fit, text_width
 
 BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix",
@@ -26,7 +27,7 @@ DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "compan
                     "mail_method": "mail", "smtp_host": "", "smtp_port": 587, "smtp_security": "starttls",
                     "smtp_user": "", "smtp_password_saved": False,
                     # how its invoices and timesheets look: a logo (kept by logo.py, named here), a colour, a website
-                    "logo": "", "colour": "", "website": "",
+                    "logo": "", "colour": "", "website": "", "layout": "",
                     # the address and bank details as fields; `address` and `payment` are put together from them
                     "addr1": "", "addr2": "", "town": "", "county": "", "postcode": "",
                     "bank_account_name": "", "bank_name": "", "bank_sort_code": "", "bank_account_number": "",
@@ -121,7 +122,7 @@ def brand(b: dict | None) -> pdf.Brand:
     """How a business's PDFs look, from its settings (or from the copy of them kept on an invoice)."""
     b = b or {}
     return pdf.Brand(logos.for_pdf(b.get("logo")), logos.colour(b.get("colour"), None) if b.get("colour") else None,
-                     b.get("name") or "", b.get("website") or "")
+                     b.get("name") or "", b.get("website") or "", _layout(b))
 
 
 def business_for(conf: dict, client: str | None) -> dict:
@@ -192,6 +193,7 @@ def clean_business(raw: dict) -> dict:
     if out["vat_registered"] and not out["vat_number"]:
         raise ValueError("Enter your VAT number, or untick VAT registered.")
     out["colour"] = logos.clean_colour(raw.get("colour"))
+    out["layout"] = raw.get("layout") if raw.get("layout") in LAYOUTS else ""
     out["mail_method"] = "smtp" if raw.get("mail_method") == "smtp" else "mail"
     out["smtp_host"] = str(raw.get("smtp_host") or "").strip()[:200]
     out["smtp_user"] = str(raw.get("smtp_user") or "").strip()[:200]
@@ -268,7 +270,7 @@ def clean_extra(raw: dict) -> dict:
 def extra_lines(extras: list[dict]) -> list[dict]:
     """Invoice lines for a month's extras, in the same shape as the time lines."""
     return [{"description": e["description"], "hours": e["quantity"], "rate": e["unit_price"],
-             "amount": round(e["quantity"] * e["unit_price"], 2), "unit": EXTRA_KINDS.get(e["kind"], ""),
+             "amount": pence(e["quantity"] * e["unit_price"]), "unit": EXTRA_KINDS.get(e["kind"], ""),
              "extra": e["kind"]} for e in extras]
 
 
@@ -280,6 +282,13 @@ def quantity_text(line: dict) -> str:
     if unit == "h":
         return f"{line['hours']:.2f} h"
     return f"{line['hours']:g} {unit}".strip()
+
+
+def quantity_words(line: dict) -> str:
+    """The same, as it reads on an invoice: "3 hours", "0.75 hours", "40 miles"."""
+    if line.get("unit", "h") == "h" and line.get("extra") != "expense":
+        return f"{line['hours']:g} hour{'s' * (line['hours'] != 1)}"
+    return quantity_text(line)
 
 
 def format_number(b: dict, n: int) -> str:
@@ -320,7 +329,7 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
         "seconds": seconds, "net": net, "vat": vat, "total": round(net + vat, 2),
         "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": terms,
                  "business": {k: b[k] for k in ("name", "address", "email", "phone", "company_number", "vat_number",
-                                                "payment", "footer", "logo", "colour", "website")},
+                                                "payment", "footer", "logo", "colour", "website", "layout")},
                  "client": {k: details[k] for k in CLIENT_TEXT}},
     }
     bill["id"] = store.add_bill(bill)
@@ -335,8 +344,8 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
 def sample_bill(b: dict, today: date) -> dict:
     """A made-up invoice from a business, to see how its logo, colour and details look before sending a real one."""
     rate = 40.0
-    lines = [{"description": f"Example client – week commencing Mon {d:02d} Oct 2026", "hours": h, "rate": rate,
-              "amount": round(h * rate, 2)} for d, h in ((5, 6.0), (12, 5.5), (19, 6.0), (26, 4.25))]
+    lines = [{"description": "Example client Hourly Rate", "detail": f"W/C {d} Oct 2026", "hours": h, "rate": rate,
+              "amount": round(h * rate, 2)} for d, h in (("5th", 6.0), ("12th", 5.5), ("19th", 6.0), ("26th", 4.25))]
     lines += extra_lines([{"description": "Additional agreed hours, Thu 22 Oct 2026", "quantity": 2, "unit_price": rate,
                            "kind": "time"},
                           {"description": "Mileage, Thu 08 Oct 2026", "quantity": 40, "unit_price": 0.45, "kind": "mileage"}])
@@ -348,7 +357,7 @@ def sample_bill(b: dict, today: date) -> dict:
             "net": net, "vat": vat, "total": round(net + vat, 2),
             "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": 30,
                      "business": {k: b.get(k, "") for k in ("name", "address", "email", "phone", "company_number",
-                                                             "vat_number", "payment", "footer", "logo", "colour", "website")},
+                                                             "vat_number", "payment", "footer", "logo", "colour", "website", "layout")},
                      "client": {"name": "Example Client Ltd", "address": "1 Example Street\nBrighton\nBN1 1AA", "email": "",
                                 "reference": "PO 1234"}}}
 
@@ -408,16 +417,41 @@ def _wrap(s: str, width: float, size: float, bold: bool = False) -> list[str]:
     return out
 
 
-def bill_pdf(bill: dict) -> bytes:
+LAYOUTS = ("", "band", "classic")     # modern (the first look), bold band, classic rules
+PAID_GREEN = (0.30, 0.69, 0.38)
+WHITE = (1, 1, 1)
+
+
+def _layout(b: dict) -> str:
+    return b.get("layout") if b.get("layout") in LAYOUTS else ""
+
+
+def _contact(b: dict, data: dict) -> list[str]:
+    out = [x for x in (b["phone"], b["email"], b.get("website")) if x]
+    if b["company_number"]:
+        out.append(f"Company number {b['company_number']}")
+    if data["vat_rate"] is not None and b["vat_number"]:
+        out.append(f"VAT number {b['vat_number']}")
+    return out
+
+
+def _bill_to(c: dict, width: float) -> list[str]:
+    out = [c["name"]] + (_wrap(c["address"], width, 9) if c["address"] else [])
+    if c.get("reference"):
+        out.append(f"Reference: {c['reference']}")
+    return out
+
+
+def _meta(bill: dict) -> tuple:
+    return (("Invoice number", bill["number"]), ("Date", _d(bill["issued_on"])), ("Due date", _d(bill["due_on"])),
+            ("For", month_title(bill["month"])))
+
+
+def _top_modern(doc, bill, look, left, right) -> float:
     data = bill["data"]
     b, c = data["business"], data["client"]
-    doc = Document(f"Invoice {bill['number']} – {b['name']}")
-    look = brand(b)   # the logo and colour this invoice was made with
-    left, right = MARGIN, PAGE_W - MARGIN
     y = PAGE_H - MARGIN
     doc.rect(left, y - 3, right - left if look.logo else 28, 2.5, look.accent)
-
-    # who it's from (left) and the invoice's own details (right)
     doc.text(right, y - 30, "INVOICE", 22, bold=True, color=look.accent if look.logo or b.get("colour") else INK, align="right")
     ry = y - 50
     for label, value in (("Invoice number", bill["number"]), ("Invoice date", _d(bill["issued_on"])),
@@ -437,42 +471,141 @@ def bill_pdf(bill: dict) -> bytes:
             doc.text(left, ly, line, 15, bold=True)
             ly -= 18
         ly += 4
-    if b.get("website"):
-        extra_first = [b["website"]]
-    else:
-        extra_first = []
-    extra = [x for x in (b["email"], b["phone"]) if x] + extra_first
-    if b["company_number"]:
-        extra.append(f"Company number {b['company_number']}")
-    if data["vat_rate"] is not None and b["vat_number"]:
-        extra.append(f"VAT number {b['vat_number']}")
+    extra = _contact(b, data)
     for line in _wrap(b["address"], 280, 9) + extra:
         doc.text(left, ly, fit(line, 280, 9), 9, color=MUTED)
         ly -= 12
     y = min(ly, ry) - 16
-
     doc.text(left, y, "BILL TO", 7.5, bold=True, color=look.accent)
     y -= 15
-    doc.text(left, y, fit(c["name"], 300, 11, True), 11, bold=True)
-    y -= 14
-    for line in _wrap(c["address"], 300, 9) if c["address"] else []:
-        doc.text(left, y, fit(line, 300, 9), 9, color=MUTED)
-        y -= 12
-    if c.get("reference"):
-        doc.text(left, y, f"Reference: {fit(c['reference'], 250, 9)}", 9, color=MUTED)
-        y -= 12
-    y -= 14
+    for i, line in enumerate(_bill_to(c, 300)):
+        doc.text(left, y, fit(line, 300, 11 if not i else 9, not i), 11 if not i else 9, bold=not i, color=INK if not i else MUTED)
+        y -= 14 if not i else 12
+    return y - 14
 
-    cols = (("Description", left + 6, "left"), ("Quantity", right - 150, "right"), ("Rate", right - 80, "right"),
-            ("Amount", right - 6, "right"))
+
+def _top_band(doc, bill, look, left, right) -> float:
+    """Logo, a big INVOICE in the business's colour and its name on the left, its details on the right, then a grey
+    band across the page with who it's to and the invoice's number and dates."""
+    data = bill["data"]
+    b, c = data["business"], data["client"]
+    y = PAGE_H - MARGIN + 6
+    ly = y
+    if look.logo:
+        _, lh = doc.image(look.logo, left, y, 150, 46)
+        ly -= lh + 6
+    ly -= 22
+    doc.text(left, ly, "INVOICE", 25, bold=True, color=look.accent)
+    ly -= 20
+    for line in _wrap(b["name"], 270, 13):
+        doc.text(left, ly, line, 13)
+        ly -= 16
+    ry = y - 12
+    for line in _wrap(b["address"], 230, 8.5) + _contact(b, data):
+        doc.text(right, ry, fit(line, 230, 8.5), 8.5, color=MUTED, align="right")
+        ry -= 11.5
+    y = min(ly + 6, ry) - 14
+    to, meta = _bill_to(c, 220), _meta(bill)
+    h = max(len(to), len(meta)) * 13 + 16
+    doc.rect(0, y - h, PAGE_W, h, GREY_BG)
+    doc.text(left, y - 18, "Bill To", 9, bold=True)
+    ty = y - 18
+    for i, line in enumerate(to):
+        doc.text(left + 54, ty, fit(line, 220, 9, not i), 9, bold=not i, color=INK if not i else MUTED)
+        ty -= 13
+    ty = y - 18
+    for label, value in meta:
+        doc.text(right - 100, ty, label, 9, bold=True, align="right")
+        doc.text(right, ty, value, 9, align="right")
+        ty -= 13
+    return y - h - 14
+
+
+def _top_classic(doc, bill, look, left, right) -> float:
+    """INVOICE in black with the business's name in its colour, the logo centred above, then three columns: the
+    business's details, the invoice's number and dates, and who it's to."""
+    data = bill["data"]
+    b, c = data["business"], data["client"]
+    y = PAGE_H - MARGIN + 8
+    if look.logo:
+        scale = min(120 / look.logo["w"], 44 / look.logo["h"])
+        doc.image(look.logo, PAGE_W / 2 - look.logo["w"] * scale / 2, y, 120, 44)
+    y -= 46
+    doc.text(left, y, "INVOICE", 26, bold=True)
+    y -= 22
+    for line in _wrap(b["name"], 300, 12.5, True):
+        doc.text(left, y, line, 12.5, bold=True, color=look.accent)
+        y -= 16
+    y -= 8
+    c1, c2, c3 = left, left + 165, left + 345
+    y1 = y
+    for line in _contact(b, data):
+        doc.text(c1, y1, fit(line, 150, 8.5), 8.5, color=MUTED)
+        y1 -= 11.5
+    y1 -= 2
+    for line in _wrap(b["address"], 150, 8.5):
+        doc.text(c1, y1, fit(line, 150, 8.5), 8.5)
+        y1 -= 11.5
+    y2 = y
+    for label, value in _meta(bill):
+        doc.text(c2, y2, label, 9)
+        doc.text(c2 + 82, y2, value, 9, color=MUTED)
+        y2 -= 14
+    doc.text(c3, y, "Bill To", 9, bold=True)
+    y3 = y - 14
+    for i, line in enumerate(_bill_to(c, right - c3)):
+        doc.text(c3, y3, fit(line, right - c3, 9), 9, color=INK if not i else MUTED)
+        y3 -= 12
+    return min(y1, y2, y3) - 12
+
+
+def _stamp(doc, right: float, top: float, paid_at: str) -> None:
+    """A green PAID stamp with the date, its top right corner at (right, top)."""
+    w, h = 104, 46
+    x, y = right - w, top - h
+    doc.round_rect(x, y, w, h, 7, PAID_GREEN, 2.5)
+    when = _d(paid_at[:10])
+    doc.text(x + (w - text_width(when, 8.5, True)) / 2, y + h - 13, when, 8.5, bold=True, color=PAID_GREEN)
+    doc.text(x + (w - text_width("PAID", 24, True)) / 2, y + 8, "PAID", 24, bold=True, color=PAID_GREEN)
+
+
+def bill_pdf(bill: dict, paid_at: str | None = None) -> bytes:
+    """The invoice as a PDF, in its business's layout. Give paid_at (when it was marked paid) for a PAID stamp."""
+    data = bill["data"]
+    b, c = data["business"], data["client"]
+    doc = Document(f"Invoice {bill['number']} – {b['name']}")
+    look = brand(b)   # the logo and colour this invoice was made with
+    layout = _layout(b)
+    left, right = MARGIN, PAGE_W - MARGIN
+    vat_on = data["vat_rate"] is not None
+    y = {"band": _top_band, "classic": _top_classic}.get(layout, _top_modern)(doc, bill, look, left, right)
+
+    inset = 0 if layout else 6
+    cols = [("Description", left + inset, "left"), ("Quantity", right - (200 if vat_on else 150), "right"),
+            ("Rate", right - (125 if vat_on else 80), "right")]
+    if vat_on:
+        cols.append(("VAT", right - 72, "right"))
+    cols.append(("Amount", right - inset, "right"))
+    desc_w = cols[1][1] - 70 - cols[0][1]
 
     def head() -> None:
         nonlocal y
-        doc.rect(left, y - 18, right - left, 18, look.tint if b.get("colour") else GREY_BG)
-        for label, x, align in cols:
-            doc.text(x, y - 12, label, 8, bold=True, color=MUTED, align=align)
-        y -= 18
-        doc.line(left, y, right, y, 0.8, look.accent)
+        if layout == "band":
+            doc.rect(0, y - 20, PAGE_W, 20, look.accent)
+            for label, x, align in cols:
+                doc.text(x, y - 13.5, label, 8.5, bold=True, color=WHITE, align=align)
+            y -= 24
+        elif layout == "classic":
+            for label, x, align in cols:
+                doc.text(x, y - 13, label, 10, bold=True, color=look.accent, align=align)
+            y -= 21
+            doc.line(left, y, right, y)
+        else:
+            doc.rect(left, y - 18, right - left, 18, look.tint if b.get("colour") else GREY_BG)
+            for label, x, align in cols:
+                doc.text(x, y - 12, label, 8, bold=True, color=MUTED, align=align)
+            y -= 18
+            doc.line(left, y, right, y, 0.8, look.accent)
 
     def room(height: float) -> None:
         nonlocal y
@@ -482,44 +615,97 @@ def bill_pdf(bill: dict) -> bytes:
             head()
 
     head()
+    pad = 3 if layout else 0
     for l in data["lines"]:
-        room(18)
-        doc.text(cols[0][1], y - 12, fit(l["description"], right - 215 - cols[0][1], 9), 9)
-        doc.text(cols[1][1], y - 12, quantity_text(l), 9, align="right")
+        height = 18 + (12 if l.get("detail") else 0) + 2 * pad
+        room(height)
+        base = y - 12 - pad
+        doc.text(cols[0][1], base, fit(l["description"], desc_w, 9), 9)
+        if l.get("detail"):
+            doc.text(cols[0][1], base - 12, fit(l["detail"], desc_w, 8.5), 8.5, color=MUTED)
+        doc.text(cols[1][1], base, quantity_words(l), 9, align="right")
         if l.get("extra") != "expense":
-            doc.text(cols[2][1], y - 12, _gbp(l["rate"]), 9, align="right")
-        doc.text(cols[3][1], y - 12, _gbp(l["amount"]), 9, align="right")
-        y -= 18
-        doc.line(left, y, right, y)
+            doc.text(cols[2][1], base, _gbp(l["rate"]), 9, align="right")
+        if vat_on:
+            doc.text(cols[3][1], base, f"{data['vat_rate']:g}%", 9, align="right")
+        doc.text(cols[-1][1], base, _gbp(l["amount"]), 9, align="right")
+        y -= height
+        if layout != "band":
+            doc.line(left, y, right, y)
 
-    pay = _wrap(b["payment"], right - left - 20, 9) if b["payment"] else []
-    room(90)
-    y -= 10
-    totals = [("Subtotal", _gbp(bill["net"]), False)]
-    if data["vat_rate"] is not None:
-        totals.append((f"VAT at {data['vat_rate']:g}%", _gbp(bill["vat"]), False))
-    for label, value, _ in totals:
-        doc.text(right - 110, y - 10, label, 9, color=MUTED, align="right")
-        doc.text(right - 6, y - 10, value, 9, align="right")
-        y -= 16
-    y -= 4   # the amount to pay, in a panel of the business's colour
-    doc.rect(right - 230, y - 28, 230, 28, look.tint)
-    doc.rect(right - 230, y - 28, 3, 28, look.accent)
-    doc.text(right - 110, y - 18, "Total due", 11, bold=True, align="right")
-    doc.text(right - 8, y - 19, _gbp(bill["total"]), 14, bold=True, align="right")
-    y -= 50
-
-    if pay:
-        box = 12 * len(pay) + 34
-        room(box + 10)
-        doc.rect(left, y - box, right - left, box, look.tint)
-        doc.text(left + 10, y - 16, f"HOW TO PAY · due by {_d(bill['due_on'])}", 7.5, bold=True, color=MUTED)
-        py = y - 32
-        for line in pay:
-            doc.text(left + 10, py, line, 9)
-            py -= 12
-        y -= box + 14
-    for line in _wrap(b["footer"], right - left, 8.5) if b["footer"] else []:
+    pay = _wrap(b["payment"], 250 if layout else right - left - 20, 9) if b["payment"] else []
+    foot = _wrap(b["footer"], right - left, 8.5) if b["footer"] else []
+    if not layout:
+        room(90)
+        y -= 10
+        totals = [("Subtotal", _gbp(bill["net"]))]
+        if vat_on:
+            totals.append((f"VAT at {data['vat_rate']:g}%", _gbp(bill["vat"])))
+        for label, value in totals:
+            doc.text(right - 110, y - 10, label, 9, color=MUTED, align="right")
+            doc.text(right - 6, y - 10, value, 9, align="right")
+            y -= 16
+        y -= 4   # the amount to pay, in a panel of the business's colour
+        doc.rect(right - 230, y - 28, 230, 28, look.tint)
+        doc.rect(right - 230, y - 28, 3, 28, look.accent)
+        doc.text(right - 110, y - 18, "Total due", 11, bold=True, align="right")
+        doc.text(right - 8, y - 19, _gbp(bill["total"]), 14, bold=True, align="right")
+        y -= 50
+        if paid_at:
+            room(60)
+            _stamp(doc, right, y + 10, paid_at)
+            y -= 48
+        if pay:
+            box = 12 * len(pay) + 34
+            room(box + 10)
+            doc.rect(left, y - box, right - left, box, look.tint)
+            doc.text(left + 10, y - 16, f"HOW TO PAY · due by {_d(bill['due_on'])}", 7.5, bold=True, color=MUTED)
+            py = y - 32
+            for line in pay:
+                doc.text(left + 10, py, line, 9)
+                py -= 12
+            y -= box + 14
+    else:
+        # payment details on the left, the sums on the right, side by side
+        sums = [("Subtotal", bill["net"])]
+        if vat_on:
+            sums.append((f"VAT {data['vat_rate']:g}%", bill["vat"]))
+        sums.append(("Total", bill["total"]))
+        if paid_at:
+            sums.append(("Paid", bill["total"]))
+        right_h = 16 * len(sums) + 40 + (56 if paid_at else 0)
+        left_h = (12 * len(pay) + 34) if pay else 0
+        room(max(left_h, right_h) + 14)
+        y -= 16 if layout == "band" else 10
+        top = y
+        classic = layout == "classic"
+        for label, value in sums:
+            doc.text(right - 145, y - 10, (label.upper() if classic else label) + ":", 9 if not classic else 8.5,
+                     bold=classic, align="right")
+            doc.text(right, y - 10, _gbp(value), 9, bold=classic, align="right")
+            y -= 16
+        y -= 6
+        doc.line(right - 285, y, right, y, 1.6 if classic else 0.8, look.accent if classic else (0.82, 0.84, 0.86))
+        due = 0.0 if paid_at else bill["total"]
+        doc.text(right - 145, y - 20, "BALANCE DUE" if classic else "Balance due", 12.5, bold=True, align="right")
+        doc.text(right, y - 20, _gbp(due), 12.5, bold=True, align="right")
+        y -= 32
+        if paid_at:
+            _stamp(doc, right, y - 4, paid_at)
+            y -= 54
+        if pay:
+            py = top - 10
+            doc.text(left, py, "Payment info", 9, bold=True)
+            py -= 15
+            for line in pay:
+                doc.text(left, py, line, 9, color=MUTED)
+                py -= 12
+            if not paid_at:
+                doc.text(left, py - 3, f"Due by {_d(bill['due_on'])}", 9, bold=True)
+                py -= 15
+            y = min(y, py)
+        y -= 14
+    for line in foot:
         room(12)
         doc.text(left, y - 9, line, 8.5, color=FAINT)
         y -= 12
@@ -637,7 +823,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
         extra.append(f"Company number {esc(b['company_number'])}")
     if data["vat_rate"] is not None and b["vat_number"]:
         extra.append(f"VAT number {esc(b['vat_number'])}")
-    rows = "".join(f"<tr><td>{esc(l['description'])}</td><td class=n>{quantity_text(l)}</td>"
+    rows = "".join(f"<tr><td>{esc(l['description'])}{'<div class=muted>' + esc(l['detail']) + '</div>' if l.get('detail') else ''}</td><td class=n>{quantity_words(l)}</td>"
                    f"<td class=n>{'' if l.get('extra') == 'expense' else _gbp(l['rate'])}</td>"
                    f"<td class=n>{_gbp(l['amount'])}</td></tr>" for l in data["lines"])
     vat = (f"<tr><td>VAT at {data['vat_rate']:g}%</td><td class=n>{_gbp(bill['vat'])}</td></tr>"

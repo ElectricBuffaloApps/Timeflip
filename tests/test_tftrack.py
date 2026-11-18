@@ -3,7 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -351,10 +351,69 @@ class InvoiceLinesTest(unittest.TestCase):
             {"id": 3, "taskId": 2, "startedAt": at(9, 29), "duration": 6 * 60},
         ], tasks=[{"id": 1, "name": "Prog", "tag": "FCY"}, {"id": 2, "name": "Build", "tag": "HTB"}])
         fcy = invoice_lines(invoice(store, "FCY", 2026, 9, "week"), 40)
-        self.assertEqual(fcy, [{"description": "FCY – week commencing Mon 28 Sep 2026", "hours": 2.0,
+        self.assertEqual(fcy, [{"description": "FCY Hourly Rate", "detail": "W/C 28th Sep 2026", "hours": 2.0,
                                 "rate": 40, "amount": 80.0}])
         htb = invoice_lines(invoice(store, "HTB", 2026, 9, "day", 15, "up"))
-        self.assertEqual(htb, [{"description": "HTB – Tue 29 Sep 2026", "hours": 0.25, "rate": None, "amount": None}])
+        self.assertEqual(htb, [{"description": "HTB Hourly Rate", "detail": "29/09/2026", "hours": 0.25, "rate": None,
+                                "amount": None}])
+
+    def test_half_pennies_round_up_and_weeks_read_naturally(self):
+        from tftrack.reports import ordinal, pence, week_commencing
+        self.assertEqual(pence(4.25 * 26.5), 112.63)      # plain round() gives 112.62
+        self.assertEqual([pence(x) for x in (99.0, 0.005, 82.5, 1.004)], [99.0, 0.01, 82.5, 1.0])
+        self.assertEqual([ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 31)],
+                         ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "31st"])
+        self.assertEqual(week_commencing(date(2026, 10, 5)), "W/C 5th Oct 2026")
+
+
+class InvoiceLayoutTest(unittest.TestCase):
+    def _bill(self, layout, vat=False):
+        from tftrack import billing
+        b = billing.clean_business({"name": "Acme", "address": "1 Road\nTown", "layout": layout, "colour": "#0b4f8a",
+                                    "payment": "Bank: Test", "vat_registered": vat, "vat_number": "GB1" if vat else ""})
+        return billing.sample_bill(b, date(2026, 11, 18))
+
+    @staticmethod
+    def _text(raw):
+        import re, zlib
+        return b"\n".join(zlib.decompress(m) for m in re.findall(rb"stream\n(.*?)\nendstream", raw, re.S)
+                          if m[:1] == b"x").decode("latin-1")
+
+    def test_each_layout_prints_and_an_unknown_one_falls_back(self):
+        from tftrack import billing
+        self.assertEqual(billing.clean_business({"layout": "nonsense"})["layout"], "")
+        self.assertEqual(self._bill("band")["data"]["business"]["layout"], "band")
+        for layout in billing.LAYOUTS:
+            text = self._text(billing.bill_pdf(self._bill(layout)))
+            self.assertIn("(Example client Hourly Rate)", text)
+            self.assertIn("(W/C 5th Oct 2026)", text)
+            self.assertIn("(6 hours)", text)
+            self.assertNotIn("(PAID)", text)
+            self.assertNotIn("VAT", text)                       # no VAT line unless the business charges it
+        self.assertIn("(Balance due)", self._text(billing.bill_pdf(self._bill("band"))))
+        self.assertIn("(BALANCE DUE)", self._text(billing.bill_pdf(self._bill("classic"))))
+
+    def test_paid_stamp_vat_column_and_old_invoices(self):
+        from tftrack import billing
+        bill = self._bill("classic", vat=True)
+        text = self._text(billing.bill_pdf(bill, "2026-11-18T10:00:00+00:00"))
+        for want in ("(PAID)", "(18/11/2026)", "(PAID:)", "(VAT 20%:)", "(20%)", "(\2430.00)"):
+            self.assertIn(want, text)
+        self.assertIn("(PAID)", self._text(billing.bill_pdf(self._bill(""), "2026-11-18T10:00:00+00:00")))
+        old = self._bill("")                                    # an invoice made before layouts and detail lines
+        del old["data"]["business"]["layout"]
+        for line in old["data"]["lines"]:
+            line.pop("detail", None)
+        self.assertIn("(Total due)", self._text(billing.bill_pdf(old)))
+
+    def test_timesheets_take_the_layout(self):
+        from tftrack import pdf
+        rows = []
+        band = self._text(pdf.timesheet_pdf(rows, date(2026, 10, 1), date(2026, 10, 31), "HTB",
+                                             pdf.Brand(accent=(0.1, 0.2, 0.3), layout="band")))
+        plain = self._text(pdf.timesheet_pdf(rows, date(2026, 10, 1), date(2026, 10, 31), "HTB", pdf.Brand()))
+        self.assertIn("0.100 0.200 0.300 rg 0.00", band)       # the band of colour, edge to edge
+        self.assertNotIn("0.100 0.200 0.300 rg 0.00", plain)
 
 
 class MacAppTest(unittest.TestCase):
@@ -550,7 +609,8 @@ class AllowanceTest(unittest.TestCase):
         self.assertEqual((c["added_s"], c["remaining_s"], oct_["total_billed_s"]), (30 * 60, 90 * 60, 90 * 60))
         self.assertEqual(sum(w["seconds"] for w in c["by_week"]) + c["unplaced_s"], 30 * 60)
         lines = invoice_lines(oct_, 40)
-        self.assertTrue(lines[0]["description"].startswith("HTB – Justin, carried over (week of "))
+        self.assertTrue(lines[0]["description"].startswith("HTB – Justin Hourly Rate"))
+        self.assertTrue(lines[0]["detail"].startswith("Carried over, W/C "))
         self.assertEqual(sum(l["hours"] for l in lines), 1.5)
         # November: what's left (1h 30m) is still available
         self.assertEqual(self._inv(11)["carry"]["available_s"], 90 * 60)
@@ -595,7 +655,7 @@ class AllowanceTest(unittest.TestCase):
         from tftrack.reports import invoice_lines
         from tftrack import allowance
         allowance.set_added(self.store, self.conf, "HTB", "", "2026-10", 30 * 60)
-        self.assertTrue(invoice_lines(self._inv(10), 40)[0]["description"].startswith("HTB, carried over (week of "))
+        self.assertEqual(invoice_lines(self._inv(10), 40)[0]["description"], "HTB Hourly Rate")
 
     def test_two_allowances_for_one_client_keep_separate_balances(self):
         from tftrack import allowance

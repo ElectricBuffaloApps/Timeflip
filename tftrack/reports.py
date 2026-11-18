@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+from decimal import ROUND_HALF_UP, Decimal
 from datetime import date, datetime, timedelta
 
 CURRENCY_SYMBOLS = {"POUND": "£", "EURO": "€", "DOLLAR": "$", "YEN": "¥", "YUAN": "¥"}
@@ -261,6 +262,19 @@ def smooth_weeks(inv: dict) -> list[int]:
     return out
 
 
+def pence(value: float) -> float:
+    """Money to the penny, with a half penny rounded up (112.625 is 112.63, as a person would write it)."""
+    return float(Decimal(repr(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def week_commencing(monday: date) -> str:
+    return f"W/C {ordinal(monday.day)} {monday:%b %Y}"
+
+
 def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) -> list[dict]:
     """One invoice line per billed day (by-the-day clients) or per week (by-the-week clients).
 
@@ -269,25 +283,25 @@ def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) ->
     lines = []
     smoothed = smooth_weeks(inv) if smooth and inv["style"] == "week" else None
 
-    def add(description: str, seconds: int) -> None:
+    def add(who: str, detail: str, seconds: int) -> None:
         if seconds <= 0:
             return
         hours = round(seconds / 3600, 2)
-        lines.append({"description": description, "hours": hours, "rate": rate,
-                      "amount": round(hours * rate, 2) if rate else None})
+        lines.append({"description": f"{who} Hourly Rate", "detail": detail, "hours": hours, "rate": rate,
+                      "amount": pence(hours * rate) if rate else None})
 
     for al in inv.get("allowances") or []:   # carried-over hours added this month, in the weeks with spare room
         who = f"{inv['client']} – {al['name']}" if al["scope"] == "task" else inv["client"]
         for w in al["carry"]["by_week"]:
-            add(f"{who}, carried over (week of {date.fromisoformat(w['monday']):%a %d %b %Y})", w["seconds"])
-        add(f"{who}, carried over from earlier months", al["carry"]["unplaced_s"])
+            add(who, f"Carried over, {week_commencing(date.fromisoformat(w['monday']))}", w["seconds"])
+        add(who, "Carried over from earlier months", al["carry"]["unplaced_s"])
     for i, g in enumerate(inv["groups"]):
         if inv["style"] == "week":
-            add(f"{inv['client']} – {g['label'].replace('Week commencing', 'week commencing')}",
+            add(inv["client"], week_commencing(date.fromisoformat(g["monday"])) if g.get("monday") else g["label"],
                 smoothed[i] if smoothed else g["billed_s"])
         else:
             for d in g["days"]:
-                add(f"{inv['client']} – {date.fromisoformat(d['date']):%a %d %b %Y}", d["billed_s"])
+                add(inv["client"], f"{date.fromisoformat(d['date']):%d/%m/%Y}", d["billed_s"])
     return lines
 
 

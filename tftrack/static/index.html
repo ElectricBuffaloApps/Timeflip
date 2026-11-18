@@ -810,6 +810,9 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
               <label class="filebtn">Choose a logo…<input type="file" id="bLogoFile" accept="image/png,image/jpeg"></label>
               <button class="link hidden" id="bLogoRemove">Remove logo</button>
               <label class="colourpick"><input type="color" id="bColour"> Brand colour <button class="link" id="bColourReset">Use the default</button></label>
+              <label class="colourpick">Invoice style <select id="bLayout">
+                <option value="">Modern</option><option value="band">Bold band</option><option value="classic">Classic rules</option>
+              </select></label>
               <a class="btnlink hidden" id="bSample" target="_blank">See a sample invoice</a>
             </div>
           </div>
@@ -2073,7 +2076,7 @@ const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bPhone", "phone"],
                     ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
                     ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
                     ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
-                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"]];
+                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"], ["bLayout", "layout"]];
 const DEFAULT_COLOUR = "#f97316";
 function bizStash() {   // keep what's typed for the business on screen
   const b = bizList[bizAt]; if (!b) return;
@@ -2089,7 +2092,7 @@ function brandShow() {   // the logo, colour and sample link for the business on
   $("bLogoRemove").classList.toggle("hidden", !b.logo);
   if (b.logo) $("bLogoImg").src = `/logo?key=${encodeURIComponent(b.logo)}`;
   $("bSample").classList.toggle("hidden", !b.id);
-  if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}`;
+  if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}&layout=${encodeURIComponent($("bLayout").value)}`;
 }
 $("bReuse").onchange = () => {
   const from = bizList[Number($("bReuse").value)];
@@ -2104,6 +2107,7 @@ $("bSortCode").onblur = () => {   // 123456 becomes 12-34-56
   const d = $("bSortCode").value.replace(/\D/g, "");
   if (d.length === 6) $("bSortCode").value = `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
 };
+$("bLayout").onchange = () => { bizStash(); brandShow(); };
 $("bColour").oninput = () => { $("bColour").dataset.set = "1"; $("bColourReset").classList.remove("hidden"); };
 $("bColourReset").onclick = (ev) => {
   ev.preventDefault(); $("bColour").value = DEFAULT_COLOUR; $("bColour").dataset.set = ""; $("bColourReset").classList.add("hidden");

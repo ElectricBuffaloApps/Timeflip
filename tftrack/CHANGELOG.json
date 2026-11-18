@@ -1,5 +1,17 @@
 [
   {
+    "version": 48,
+    "changes": [
+      "Invoice styles: each business can now choose how its invoices look. In Settings → Your businesses, pick Modern (as before), Bold band (a solid band of your colour, with INVOICE in your colour) or Classic rules (thin lines, your business name in your colour, logo centred). 'See a sample invoice' shows the style you've picked before you save.",
+      "Invoice lines read the way you'd write them: 'HTB Hourly Rate' with the date underneath, or 'W/C 5th Oct 2026' for clients billed by the week. Quantities say '3 hours' rather than '3.00 h'.",
+      "Paid invoices show it: once you mark an invoice as paid, its PDF carries a green PAID stamp with the date, a Paid line and a balance due of £0.00.",
+      "The VAT line and VAT column only appear when the business is VAT registered.",
+      "Timesheets follow the same style as the business's invoices.",
+      "Half pennies now round up, as you'd do by hand: 4.25 hours at £26.50 is £112.63, not £112.62.",
+      "Invoices you've already made keep the look they were made with."
+    ]
+  },
+  {
     "version": 47,
     "changes": [
       "Bank details are now separate boxes: Name on the account, Bank, Sort code and Account number, with a line for anything else to print (such as a payment reference). They print on the invoice under 'How to pay' as before.",
