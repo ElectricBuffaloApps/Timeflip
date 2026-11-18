@@ -801,6 +801,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
         <button id="bAdd">+ Add another business</button><button class="link hidden" id="bRemove">Remove this one</button></div>
       <div class="form formgrid">
         <label class="field">Business name<input id="bName" autocomplete="organization"></label>
+        <label class="field">Your name <span class="hint">(optional, printed under the business name)</span><input id="bContact" autocomplete="name"></label>
         <label class="field">Email <span class="hint">(invoices are sent from this address)</span><input id="bEmail" type="email"></label>
         <label class="field">Website <span class="hint">(optional, shown under your details)</span><input id="bWebsite" autocapitalize="off" placeholder="e.g. www.example.co.uk"></label>
         <div class="field brandrow wide">Logo and colour <span class="hint">(on this business's invoices and timesheets)</span>
@@ -810,6 +811,9 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
               <label class="filebtn">Choose a logo…<input type="file" id="bLogoFile" accept="image/png,image/jpeg"></label>
               <button class="link hidden" id="bLogoRemove">Remove logo</button>
               <label class="colourpick"><input type="color" id="bColour"> Brand colour <button class="link" id="bColourReset">Use the default</button></label>
+              <label class="colourpick">Invoice style <select id="bLayout">
+                <option value="">Modern</option><option value="band">Bold band</option><option value="classic">Classic rules</option>
+              </select></label>
               <a class="btnlink hidden" id="bSample" target="_blank">See a sample invoice</a>
             </div>
           </div>
@@ -841,6 +845,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
             <option value="mail">Apple Mail on this Mac: makes a draft for me to check and send</option>
             <option value="smtp">My email provider: sends straight away, with a copy to me</option>
           </select></label>
+        <div class="wide"><label class="check"><input type="checkbox" id="bSheet"> Attach the timesheet as well as the invoice</label></div>
         <div class="wide trio smtponly">
           <label class="field">Outgoing mail server <span class="hint">(SMTP)</span><input id="bSmtpHost" placeholder="e.g. smtp.gmail.com" autocapitalize="off"></label>
           <label class="field">Port<input id="bSmtpPort" type="number" min="1" max="65535"></label>
@@ -2073,12 +2078,12 @@ const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bPhone", "phone"],
                     ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
                     ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
                     ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
-                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"]];
+                    ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"], ["bLayout", "layout"], ["bContact", "contact_name"]];
 const DEFAULT_COLOUR = "#f97316";
 function bizStash() {   // keep what's typed for the business on screen
   const b = bizList[bizAt]; if (!b) return;
   for (const [id, key] of BIZ_FIELDS) b[key] = $(id).value;
-  b.vat_registered = $("bVat").checked;
+  b.vat_registered = $("bVat").checked; b.attach_timesheet = $("bSheet").checked;
   b.colour = $("bColour").dataset.set === "1" ? $("bColour").value : "";
 }
 function brandShow() {   // the logo, colour and sample link for the business on screen
@@ -2089,7 +2094,7 @@ function brandShow() {   // the logo, colour and sample link for the business on
   $("bLogoRemove").classList.toggle("hidden", !b.logo);
   if (b.logo) $("bLogoImg").src = `/logo?key=${encodeURIComponent(b.logo)}`;
   $("bSample").classList.toggle("hidden", !b.id);
-  if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}`;
+  if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}&layout=${encodeURIComponent($("bLayout").value)}`;
 }
 $("bReuse").onchange = () => {
   const from = bizList[Number($("bReuse").value)];
@@ -2104,6 +2109,7 @@ $("bSortCode").onblur = () => {   // 123456 becomes 12-34-56
   const d = $("bSortCode").value.replace(/\D/g, "");
   if (d.length === 6) $("bSortCode").value = `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
 };
+$("bLayout").onchange = () => { bizStash(); brandShow(); };
 $("bColour").oninput = () => { $("bColour").dataset.set = "1"; $("bColourReset").classList.remove("hidden"); };
 $("bColourReset").onclick = (ev) => {
   ev.preventDefault(); $("bColour").value = DEFAULT_COLOUR; $("bColour").dataset.set = ""; $("bColourReset").classList.add("hidden");
@@ -2132,7 +2138,7 @@ $("bLogoRemove").onclick = (ev) => { ev.preventDefault(); sendLogo({ remove: tru
 function bizShow() {
   const b = bizList[bizAt];
   for (const [id, key] of BIZ_FIELDS) $(id).value = b[key] ?? "";
-  $("bVat").checked = !!b.vat_registered;
+  $("bVat").checked = !!b.vat_registered; $("bSheet").checked = !!b.attach_timesheet;
   $("bPick").replaceChildren(...bizList.map((x, i) => el("option", { value: String(i) }, x.name || `New business ${i + 1}`)));
   $("bPick").value = String(bizAt);
   $("bPick").classList.toggle("hidden", bizList.length < 2);

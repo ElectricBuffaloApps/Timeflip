@@ -68,8 +68,9 @@ class Brand:
     """How a business's PDFs look: its logo (ready for the PDF writer, or None), its colour and a pale tint of it.
     With nothing given it's the tracker's own orange and no logo."""
 
-    def __init__(self, logo: dict | None = None, accent=None, name: str = "", website: str = ""):
+    def __init__(self, logo: dict | None = None, accent=None, name: str = "", website: str = "", layout: str = ""):
         self.logo, self.name, self.website = logo, name, website
+        self.layout = layout   # "" (modern), "band" (a solid band of the colour) or "classic" (thin rules)
         self.accent = accent or ACCENT
         self.tint = tuple(x + (1 - x) * 0.9 for x in self.accent) if accent else TINT
 
@@ -119,6 +120,17 @@ class Document:
 
     def rect(self, x: float, y: float, w: float, h: float, color) -> None:
         self.ops.append(f"{self._rgb(color)} {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f")
+
+    def round_rect(self, x: float, y: float, w: float, h: float, r: float, color, width: float = 2) -> None:
+        """The outline of a box with rounded corners (x, y is its bottom left)."""
+        k = r * 0.5523
+        x2, y2 = x + w, y + h
+        self.ops.append(
+            f"{self._rgb(color, True)} {width} w {x + r:.2f} {y:.2f} m {x2 - r:.2f} {y:.2f} l "
+            f"{x2 - r + k:.2f} {y:.2f} {x2:.2f} {y + r - k:.2f} {x2:.2f} {y + r:.2f} c {x2:.2f} {y2 - r:.2f} l "
+            f"{x2:.2f} {y2 - r + k:.2f} {x2 - r + k:.2f} {y2:.2f} {x2 - r:.2f} {y2:.2f} c {x + r:.2f} {y2:.2f} l "
+            f"{x + r - k:.2f} {y2:.2f} {x:.2f} {y2 - r + k:.2f} {x:.2f} {y2 - r:.2f} c {x:.2f} {y + r:.2f} l "
+            f"{x:.2f} {y + r - k:.2f} {x + r - k:.2f} {y:.2f} {x + r:.2f} {y:.2f} c S")
 
     def to_bytes(self) -> bytes:
         objs: list[bytes] = []
@@ -189,9 +201,12 @@ class _Sheet:
         if self.brand.logo:   # top right, level with the title
             w, _ = doc.image(self.brand.logo, PAGE_W - MARGIN, self.y + 4, 130, 46, align="right")
             room -= w + 16
-        doc.rect(MARGIN, self.y - 3, 28, 2.5, self.brand.accent)
+        styled = self.brand.layout in ("band", "classic")
+        if not styled:
+            doc.rect(MARGIN, self.y - 3, 28, 2.5, self.brand.accent)
         self.y -= 26
-        doc.text(MARGIN, self.y, fit(title, room, 18, True), 18, bold=True)
+        doc.text(MARGIN, self.y, fit(title, room, 18, True), 18, bold=True,
+                 color=self.brand.accent if self.brand.layout == "band" else INK)
         self.y -= 16
         doc.text(MARGIN, self.y, fit(subtitle, room, 9), 9, color=MUTED)
         self.y -= 14
@@ -226,8 +241,17 @@ class _Sheet:
         self.y -= h + 10
 
     def head(self) -> None:
+        look = self.brand.layout
+        if look == "band":   # a solid band of the business's colour, edge to edge, like its invoices
+            self.y -= 4
+            self.doc.rect(0, self.y - 17, PAGE_W, 17, self.brand.accent)
+            for heading, x, align in self.columns:
+                self.doc.text(x, self.y - 11.5, heading, 8, bold=True, color=(1, 1, 1), align=align)
+            self.y -= 19
+            return
         for heading, x, align in self.columns:
-            self.doc.text(x, self.y - 10, heading, 8, bold=True, color=MUTED, align=align)
+            self.doc.text(x, self.y - 10, heading, 8.5 if look == "classic" else 8, bold=True,
+                          color=self.brand.accent if look == "classic" else MUTED, align=align)
         self.y -= 15
         self.doc.line(MARGIN, self.y, PAGE_W - MARGIN, self.y, 0.8, (0.82, 0.84, 0.86))
 
