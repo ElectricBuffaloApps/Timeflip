@@ -406,6 +406,19 @@ class InvoiceLayoutTest(unittest.TestCase):
             line.pop("detail", None)
         self.assertIn("(Total due)", self._text(billing.bill_pdf(old)))
 
+    def test_your_name_prints_under_the_business_and_signs_the_email(self):
+        from tftrack import billing
+        b = billing.clean_business({"name": "Acme", "contact_name": " Sam Smith ", "attach_timesheet": 1})
+        self.assertEqual((b["contact_name"], b["attach_timesheet"]), ("Sam Smith", True))
+        self.assertFalse(billing.clean_business({"name": "Acme"})["attach_timesheet"])   # the invoice alone, unless asked
+        for layout in billing.LAYOUTS:
+            bill = billing.sample_bill({**b, "layout": layout}, date(2026, 11, 18))
+            self.assertIn("(Sam Smith)", self._text(billing.bill_pdf(bill)))
+        bill["id"] = 1
+        self.assertTrue(billing.email_text(bill)[1].endswith("Thank you,\nSam Smith\nAcme"))
+        self.assertNotIn("timesheet", billing.email_text(bill)[1])
+        self.assertIn("with the timesheet", billing.email_text(bill, True)[1])
+
     def test_timesheets_take_the_layout(self):
         from tftrack import pdf
         rows = []

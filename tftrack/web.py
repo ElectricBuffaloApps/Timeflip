@@ -1526,9 +1526,12 @@ class Handler(BaseHTTPRequestHandler):
                     now = next((b for b in billing.businesses(conf) if b["id"] == bill["business_id"]), {})
                     sender = now.get("email") or bill["data"]["business"].get("email") or ""
                     to = billing.client_details(conf, bill["client"])["email"] or bill["data"]["client"].get("email") or ""
-                    subject, text = billing.email_text(bill)
-                    sheet, sheet_name = _sheet_pdf(bill["client"], bill["month"])
-                    files = [(billing.file_name(bill), billing.bill_pdf(bill)), (sheet_name, sheet)]
+                    with_sheet = bool(now.get("attach_timesheet"))   # off unless the business asks for it
+                    subject, text = billing.email_text(bill, with_sheet)
+                    files = [(billing.file_name(bill), billing.bill_pdf(bill))]
+                    if with_sheet:
+                        sheet, sheet_name = _sheet_pdf(bill["client"], bill["month"])
+                        files.append((sheet_name, sheet))
                     direct = now.get("mail_method") == "smtp"
                     if direct:
                         mailer.send(now, mailer.get_password(now["id"]), to, subject, text, files)

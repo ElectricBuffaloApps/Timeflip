@@ -18,7 +18,7 @@ from .reports import pence
 from .pdf import ACCENT, FAINT, GREY_BG, INK, MARGIN, MUTED, PAGE_H, PAGE_W, Document, fit, text_width
 
 BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix",
-                 "website")
+                 "website", "contact_name")
 DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "company_number": "", "vat_registered": False,
                     "vat_number": "", "vat_rate": 20.0, "payment": "", "footer": "", "prefix": "INV-", "digits": 4,
                     "next_number": 1,
@@ -28,6 +28,8 @@ DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "compan
                     "smtp_user": "", "smtp_password_saved": False,
                     # how its invoices and timesheets look: a logo (kept by logo.py, named here), a colour, a website
                     "logo": "", "colour": "", "website": "", "layout": "",
+                    # your own name, printed under the business's name; and whether emails carry the timesheet too
+                    "contact_name": "", "attach_timesheet": False,
                     # the address and bank details as fields; `address` and `payment` are put together from them
                     "addr1": "", "addr2": "", "town": "", "county": "", "postcode": "",
                     "bank_account_name": "", "bank_name": "", "bank_sort_code": "", "bank_account_number": "",
@@ -178,6 +180,7 @@ def clean_business(raw: dict) -> dict:
     else:
         out.update(split_payment(out["payment"]))
     out["vat_registered"] = bool(raw.get("vat_registered"))
+    out["attach_timesheet"] = bool(raw.get("attach_timesheet"))
     try:
         out["vat_rate"] = float(raw.get("vat_rate") if raw.get("vat_rate") not in (None, "") else 20)
         out["digits"] = int(raw.get("digits") or 4)
@@ -329,7 +332,7 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
         "seconds": seconds, "net": net, "vat": vat, "total": round(net + vat, 2),
         "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": terms,
                  "business": {k: b[k] for k in ("name", "address", "email", "phone", "company_number", "vat_number",
-                                                "payment", "footer", "logo", "colour", "website", "layout")},
+                                                "payment", "footer", "logo", "colour", "website", "layout", "contact_name")},
                  "client": {k: details[k] for k in CLIENT_TEXT}},
     }
     bill["id"] = store.add_bill(bill)
@@ -357,7 +360,7 @@ def sample_bill(b: dict, today: date) -> dict:
             "net": net, "vat": vat, "total": round(net + vat, 2),
             "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": 30,
                      "business": {k: b.get(k, "") for k in ("name", "address", "email", "phone", "company_number",
-                                                             "vat_number", "payment", "footer", "logo", "colour", "website", "layout")},
+                                                             "vat_number", "payment", "footer", "logo", "colour", "website", "layout", "contact_name")},
                      "client": {"name": "Example Client Ltd", "address": "1 Example Street\nBrighton\nBN1 1AA", "email": "",
                                 "reference": "PO 1234"}}}
 
@@ -385,13 +388,13 @@ def _gbp(v: float) -> str:
     return f"£{v:,.2f}"
 
 
-def email_text(bill: dict) -> tuple[str, str]:
+def email_text(bill: dict, with_sheet: bool = False) -> tuple[str, str]:
     """(subject, body) of the email that goes with an invoice."""
     b = bill["data"]["business"]
     subject = f"Invoice {bill['number']} from {b['name']}"
-    body = (f"Hi,\n\nPlease find attached invoice {bill['number']} for {month_title(bill['month'])}, with the "
-            f"timesheet.\n\nAmount due: {_gbp(bill['total'])}\nDue by: {_d(bill['due_on'])}\n\n"
-            + (f"How to pay:\n{b['payment']}\n\n" if b["payment"] else "") + f"Thank you,\n{b['name']}")
+    body = (f"Hi,\n\nPlease find attached invoice {bill['number']} for {month_title(bill['month'])}"
+            f"{', with the timesheet' if with_sheet else ''}.\n\nAmount due: {_gbp(bill['total'])}\nDue by: {_d(bill['due_on'])}\n\n"
+            + (f"How to pay:\n{b['payment']}\n\n" if b["payment"] else "") + "Thank you,\n" + (f"{b['contact_name']}\n" if b.get("contact_name") else "") + b["name"])
     return subject, body
 
 
@@ -471,6 +474,9 @@ def _top_modern(doc, bill, look, left, right) -> float:
             doc.text(left, ly, line, 15, bold=True)
             ly -= 18
         ly += 4
+    if b.get("contact_name"):
+        doc.text(left, ly, fit(b["contact_name"], 280, 9), 9)
+        ly -= 13
     extra = _contact(b, data)
     for line in _wrap(b["address"], 280, 9) + extra:
         doc.text(left, ly, fit(line, 280, 9), 9, color=MUTED)
@@ -500,6 +506,9 @@ def _top_band(doc, bill, look, left, right) -> float:
     for line in _wrap(b["name"], 270, 13):
         doc.text(left, ly, line, 13)
         ly -= 16
+    if b.get("contact_name"):
+        doc.text(left, ly + 2, fit(b["contact_name"], 270, 9.5), 9.5, color=MUTED)
+        ly -= 12
     ry = y - 12
     for line in _wrap(b["address"], 230, 8.5) + _contact(b, data):
         doc.text(right, ry, fit(line, 230, 8.5), 8.5, color=MUTED, align="right")
@@ -536,6 +545,9 @@ def _top_classic(doc, bill, look, left, right) -> float:
     for line in _wrap(b["name"], 300, 12.5, True):
         doc.text(left, y, line, 12.5, bold=True, color=look.accent)
         y -= 16
+    if b.get("contact_name"):
+        doc.text(left, y + 2, fit(b["contact_name"], 300, 9.5), 9.5)
+        y -= 12
     y -= 8
     c1, c2, c3 = left, left + 165, left + 345
     y1 = y
@@ -847,7 +859,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
 :root{{--accent:{accent};--tint:{tint}}}</style></head><body data-bill="{info}">
 <div class="bar">{BACK_LINK}<span class="state {s['status']}">{state}</span>{buttons}</div>
 <div class="sheet {s['status']}">
-<div class="top"><div class="from">{logo_img}<b>{esc(b['name'])}</b>{esc(b['address'])}{''.join('<br>' + x for x in extra)}</div>
+<div class="top"><div class="from">{logo_img}<b>{esc(b['name'])}</b>{esc(b['contact_name']) + chr(10) if b.get('contact_name') else ''}{esc(b['address'])}{''.join('<br>' + x for x in extra)}</div>
 <div class="meta"><p class="big">Invoice</p><table>
 <tr><td>Invoice number</td><td>{esc(bill['number'])}</td></tr>
 <tr><td>Invoice date</td><td>{_d(bill['issued_on'])}</td></tr>
@@ -861,7 +873,7 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
 <tr class="due"><td>Total due</td><td class=n>{_gbp(bill['total'])}</td></tr></table>
 {pay}<div class="foot">{esc(b['footer'])}</div></div>
 <p class="hint">This invoice is a fixed copy from {_d(bill['issued_on'])}. If something on it is wrong, void it and make a new one
-from the <a href="/invoice?{sheet_q}">timesheet</a>. <b>Email it</b> sends the invoice and timesheet the way this business is set up in Settings: a draft in Mail on your Mac to
+from the <a href="/invoice?{sheet_q}">timesheet</a>. <b>Email it</b> sends the invoice the way this business is set up in Settings: a draft in Mail on your Mac to
 check and send, or straight from your email provider. <span id="emailed">{emailed}</span>
 <a href="{esc(mailto(bill))}">Use another email app instead</a> (you attach the PDF yourself).</p>
 {SCRIPT}</body></html>"""

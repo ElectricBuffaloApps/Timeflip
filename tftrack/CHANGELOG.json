@@ -1,5 +1,12 @@
 [
   {
+    "version": 49,
+    "changes": [
+      "Emails now carry just the invoice. To send the timesheet too, tick 'Attach the timesheet as well as the invoice' for the business in Settings → Your businesses. You can still save a timesheet PDF from the invoice page whenever you want one.",
+      "Your name on invoices: add it under 'Your name' in Settings → Your businesses and it prints under the business name, and signs off the email."
+    ]
+  },
+  {
     "version": 48,
     "changes": [
       "Invoice styles: each business can now choose how its invoices look. In Settings → Your businesses, pick Modern (as before), Bold band (a solid band of your colour, with INVOICE in your colour) or Classic rules (thin lines, your business name in your colour, logo centred). 'See a sample invoice' shows the style you've picked before you save.",
