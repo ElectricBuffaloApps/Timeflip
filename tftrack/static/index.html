@@ -288,6 +288,11 @@ textarea { width: 100%; resize: vertical; line-height: 1.45; }
 @media (max-width: 700px) { .formgrid { grid-template-columns: 1fr; } }
 .field .hint { font-weight: 400; }
 .bizbar { margin-bottom: 16px; flex-wrap: wrap; }
+.formsub { font-family: Sora, Inter, sans-serif; font-size: 13px; font-weight: 700; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.formsub .hint { font-family: Inter, sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-2); }
+.formsub .reuse { margin-left: auto; font-family: Inter, sans-serif; font-weight: 400; font-size: 12px; color: var(--ink-2); display: inline-flex; gap: 8px; align-items: center; }
+.formsub .reuse select { font-size: 12px; padding: 5px 8px; }
 .form .brandrow { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .brandbox { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; margin-top: 6px; }
 .logobox { width: 200px; height: 76px; border: 1px dashed var(--axis); border-radius: 12px; display: grid; place-items: center; background: #fff;
@@ -810,11 +815,22 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
           </div>
           <span class="hint" id="bLogoMsg">A PNG or JPG. A PNG with a see-through background looks best.</span>
         </div>
-        <label class="field wide">Address<textarea id="bAddress" rows="3"></textarea></label>
+        <div class="wide formsub">Address</div>
+        <label class="field wide">Address line 1<input id="bAddr1" autocomplete="address-line1"></label>
+        <label class="field wide">Address line 2 <span class="hint">(optional)</span><input id="bAddr2" autocomplete="address-line2"></label>
+        <label class="field">Town or city<input id="bTown" autocomplete="address-level2"></label>
+        <label class="field">County <span class="hint">(optional)</span><input id="bCounty" autocomplete="address-level1"></label>
+        <label class="field">Postcode<input id="bPostcode" autocomplete="postal-code" style="text-transform:uppercase"></label>
         <label class="field">Phone <span class="hint">(optional)</span><input id="bPhone"></label>
         <label class="field">Company number <span class="hint">(limited companies only)</span><input id="bCompany"></label>
-        <label class="field wide">How clients pay you <span class="hint">(printed on the invoice: account name, sort code, account number)</span>
-          <textarea id="bPayment" rows="3"></textarea></label>
+        <div class="wide formsub">Bank details <span class="hint">(printed on the invoice under “How to pay”)</span>
+          <span class="reuse hidden" id="bReuseWrap">Same as another business? <select id="bReuse" aria-label="Copy bank details from"></select></span></div>
+        <label class="field">Name on the account<input id="bBankAccName" autocomplete="off"></label>
+        <label class="field">Bank<input id="bBankName" autocomplete="off" placeholder="e.g. Revolut Business"></label>
+        <label class="field">Sort code<input id="bSortCode" inputmode="numeric" autocomplete="off" placeholder="12-34-56"></label>
+        <label class="field">Account number<input id="bAccNumber" inputmode="numeric" autocomplete="off" placeholder="8 digits"></label>
+        <label class="field wide">Anything else to print with them <span class="hint">(optional, e.g. “Please use the invoice number as your reference”)</span>
+          <input id="bBankNote"></label>
         <label class="field wide">Note at the bottom <span class="hint">(optional, e.g. “Thank you for your business”)</span>
           <textarea id="bFooter" rows="2"></textarea></label>
         <div class="wide"><label class="check"><input type="checkbox" id="bVat"> I'm VAT registered (adds VAT to every invoice)</label></div>
@@ -2049,8 +2065,12 @@ $("xAdd").onclick = async () => {
 
 /* businesses: edit one at a time, save them all together */
 let bizList = [], bizAt = 0;
-const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bAddress", "address"], ["bPhone", "phone"], ["bCompany", "company_number"],
-                    ["bPayment", "payment"], ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
+const BANK_FIELDS = [["bBankAccName", "bank_account_name"], ["bBankName", "bank_name"], ["bSortCode", "bank_sort_code"],
+                     ["bAccNumber", "bank_account_number"], ["bBankNote", "bank_note"]];
+const BIZ_FIELDS = [["bName", "name"], ["bEmail", "email"], ["bPhone", "phone"], ["bCompany", "company_number"],
+                    ["bAddr1", "addr1"], ["bAddr2", "addr2"], ["bTown", "town"], ["bCounty", "county"], ["bPostcode", "postcode"],
+                    ...BANK_FIELDS,
+                    ["bFooter", "footer"], ["bVatNumber", "vat_number"], ["bVatRate", "vat_rate"],
                     ["bPrefix", "prefix"], ["bDigits", "digits"], ["bNext", "next_number"], ["bMethod", "mail_method"],
                     ["bSmtpHost", "smtp_host"], ["bSmtpPort", "smtp_port"], ["bSmtpSecurity", "smtp_security"],
                     ["bSmtpUser", "smtp_user"], ["bSmtpPass", "smtp_password"], ["bWebsite", "website"]];
@@ -2071,6 +2091,19 @@ function brandShow() {   // the logo, colour and sample link for the business on
   $("bSample").classList.toggle("hidden", !b.id);
   if (b.id) $("bSample").href = `/sample.pdf?business=${encodeURIComponent(b.id)}`;
 }
+$("bReuse").onchange = () => {
+  const from = bizList[Number($("bReuse").value)];
+  if (!from || $("bReuse").value === "") return;
+  const typed = BANK_FIELDS.some(([id]) => $(id).value.trim());
+  if (typed && !confirm(`Replace the bank details here with ${from.name || "that business"}'s?`)) { $("bReuse").value = ""; return; }
+  for (const [id, key] of BANK_FIELDS) $(id).value = from[key] || "";
+  $("bReuse").value = "";
+  $("businessMsg").textContent = "Bank details copied. Click Save business details.";
+};
+$("bSortCode").onblur = () => {   // 123456 becomes 12-34-56
+  const d = $("bSortCode").value.replace(/\D/g, "");
+  if (d.length === 6) $("bSortCode").value = `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
+};
 $("bColour").oninput = () => { $("bColour").dataset.set = "1"; $("bColourReset").classList.remove("hidden"); };
 $("bColourReset").onclick = (ev) => {
   ev.preventDefault(); $("bColour").value = DEFAULT_COLOUR; $("bColour").dataset.set = ""; $("bColourReset").classList.add("hidden");
@@ -2104,6 +2137,11 @@ function bizShow() {
   $("bPick").value = String(bizAt);
   $("bPick").classList.toggle("hidden", bizList.length < 2);
   $("bRemove").classList.toggle("hidden", bizList.length < 2);
+  // Reuse bank details: offer every other business that has some
+  const others = bizList.map((x, i) => [x, i]).filter(([x, i]) => i !== bizAt && (x.bank_sort_code || x.bank_account_number));
+  $("bReuseWrap").classList.toggle("hidden", !others.length);
+  $("bReuse").replaceChildren(el("option", { value: "" }, "Copy from…"),
+                              ...others.map(([x, i]) => el("option", { value: String(i) }, x.name || `Business ${i + 1}`)));
   brandShow();
   businessPreview();
 }
@@ -2115,7 +2153,9 @@ function renderBusiness(s) {
 $("bPick").onchange = () => { bizStash(); bizAt = Number($("bPick").value); bizShow(); };
 $("bAdd").onclick = () => {
   bizStash();
-  bizList.push({ name: "", email: "", address: "", phone: "", company_number: "", payment: "", footer: "", vat_registered: false,
+  bizList.push({ name: "", email: "", addr1: "", addr2: "", town: "", county: "", postcode: "", phone: "", company_number: "",
+                 bank_account_name: "", bank_name: "", bank_sort_code: "", bank_account_number: "", bank_note: "",
+                 footer: "", vat_registered: false,
                  vat_number: "", vat_rate: 20, prefix: "INV-", digits: 4, next_number: 1, mail_method: "mail", smtp_host: "",
                  smtp_port: 587, smtp_security: "starttls", smtp_user: "" });
   bizAt = bizList.length - 1; bizShow(); $("bName").focus();
@@ -2147,11 +2187,11 @@ $("bTest").onclick = async () => {
   $("bTest").disabled = false;
 };
 $("businessTile").addEventListener("change", (ev) => {
-  if (ev.target.id === "bPick" || ev.target.id === "bLogoFile") return;
+  if (["bPick", "bLogoFile", "bReuse"].includes(ev.target.id)) return;
   businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
 });
 $("businessTile").addEventListener("input", (ev) => {
-  if (ev.target.id === "bPick" || ev.target.id === "bLogoFile") return;
+  if (["bPick", "bLogoFile", "bReuse"].includes(ev.target.id)) return;
   businessPreview(); $("businessMsg").textContent = "Unsaved changes: click Save business details.";
 });
 $("saveBusiness").onclick = async () => {

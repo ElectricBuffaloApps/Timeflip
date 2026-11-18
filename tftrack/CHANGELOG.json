@@ -1,5 +1,15 @@
 [
   {
+    "version": 47,
+    "changes": [
+      "Bank details are now separate boxes: Name on the account, Bank, Sort code and Account number, with a line for anything else to print (such as a payment reference). They print on the invoice under 'How to pay' as before.",
+      "The business address is separate boxes too: two address lines, town or city, county and postcode.",
+      "Reuse bank details: when a business should be paid into the same account as another, choose it under 'Same as another business?' and the bank details are copied in.",
+      "What you'd already typed has been sorted into the new boxes for you. Check them in Settings → Your businesses and press Save. Anything that didn't fit a box is kept on the extra line, so nothing is lost.",
+      "A sort code typed as 123456 is tidied to 12-34-56."
+    ]
+  },
+  {
     "version": 46,
     "changes": [
       "Your own look on invoices and timesheets: each business can have a logo, a brand colour and a website. Set them in Settings → Your businesses → Logo and colour.",

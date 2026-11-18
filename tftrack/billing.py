@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -25,8 +26,87 @@ DEFAULT_BUSINESS = {"name": "", "address": "", "email": "", "phone": "", "compan
                     "mail_method": "mail", "smtp_host": "", "smtp_port": 587, "smtp_security": "starttls",
                     "smtp_user": "", "smtp_password_saved": False,
                     # how its invoices and timesheets look: a logo (kept by logo.py, named here), a colour, a website
-                    "logo": "", "colour": "", "website": ""}
+                    "logo": "", "colour": "", "website": "",
+                    # the address and bank details as fields; `address` and `payment` are put together from them
+                    "addr1": "", "addr2": "", "town": "", "county": "", "postcode": "",
+                    "bank_account_name": "", "bank_name": "", "bank_sort_code": "", "bank_account_number": "",
+                    "bank_note": ""}
 CLIENT_TEXT = ("name", "address", "email", "reference")
+
+
+# The address and bank details are kept as separate fields. What's printed on an invoice (`address`, `payment`) is
+# put together from them, so everything that prints or checks those two carries on working.
+ADDRESS_FIELDS = ("addr1", "addr2", "town", "county", "postcode")
+BANK_FIELDS = ("bank_account_name", "bank_name", "bank_sort_code", "bank_account_number", "bank_note")
+_POSTCODE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", re.I)
+_BANK_LABELS = (("bank_account_name", r"(?:account\s+name|name(?:\s+on\s+(?:the\s+)?account)?|payee)"),
+                ("bank_sort_code", r"sort\s*code"), ("bank_account_number", r"(?:account|acc(?:ount)?\.?)\s*(?:number|no\.?|num)?"),
+                ("bank_name", r"bank"))
+
+
+def sort_code(value: str) -> str:
+    """Six digits become 12-34-56. Anything else is left as typed (other countries write theirs differently)."""
+    digits = re.sub(r"\D", "", value or "")
+    return f"{digits[:2]}-{digits[2:4]}-{digits[4:]}" if len(digits) == 6 else (value or "").strip()
+
+
+def compose_address(b: dict) -> str:
+    return "\n".join(str(b.get(k) or "").strip() for k in ADDRESS_FIELDS if str(b.get(k) or "").strip())
+
+
+def compose_payment(b: dict) -> str:
+    """The bank details as they're printed in the invoice's How to pay box."""
+    lines = [f"{label}: {str(b.get(key) or '').strip()}" for key, label in
+             (("bank_account_name", "Account name"), ("bank_name", "Bank"), ("bank_sort_code", "Sort code"),
+              ("bank_account_number", "Account number")) if str(b.get(key) or "").strip()]
+    note = str(b.get("bank_note") or "").strip()
+    return "\n".join(lines + ([note] if note else []))
+
+
+def split_address(text: str) -> dict:
+    """An address typed as one block, into its fields: first line, anything between, town, postcode."""
+    lines = [l.strip().rstrip(",") for l in (text or "").replace(",", "\n").splitlines() if l.strip().rstrip(",")]
+    out = dict.fromkeys(ADDRESS_FIELDS, "")
+    if lines and _POSTCODE.match(lines[-1]):
+        out["postcode"] = lines.pop().upper()
+    if lines:
+        out["addr1"] = lines.pop(0)
+    if len(lines) >= 3:   # enough lines for a county after the town; with fewer, the last line is taken as the town
+        out["county"] = lines.pop()
+    if lines:
+        out["town"] = lines.pop()
+    out["addr2"] = ", ".join(lines)
+    return out   # whichever fields the lines land in, they print in the order they were typed
+
+
+def split_payment(text: str) -> dict:
+    """Bank details typed as one block ("Sort code: 12-34-56 …"), into their fields. Lines it can't place are kept
+    as the extra note, so nothing typed is lost."""
+    out, note = dict.fromkeys(BANK_FIELDS, ""), []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for key, label in _BANK_LABELS:
+            m = re.match(rf"^{label}\s*[:\-–]\s*(.+)$", line, re.I)
+            if m and not out[key]:
+                out[key] = sort_code(m.group(1)) if key == "bank_sort_code" else m.group(1).strip()
+                break
+        else:
+            note.append(line)
+    out["bank_note"] = "\n".join(note)
+    return out
+
+
+def with_fields(b: dict) -> dict:
+    """A business with its address and bank details as fields. One saved before they were fields has them worked out
+    from the text it was typed as."""
+    b = dict(b)
+    if not any(b.get(k) for k in ADDRESS_FIELDS) and b.get("address"):
+        b.update(split_address(b["address"]))
+    if not any(b.get(k) for k in BANK_FIELDS) and b.get("payment"):
+        b.update(split_payment(b["payment"]))
+    return b
 
 
 def businesses(conf: dict) -> list[dict]:
@@ -34,7 +114,7 @@ def businesses(conf: dict) -> list[dict]:
     saved = conf.get("businesses")
     if not saved and conf.get("business"):   # version 30 had a single business
         saved = [{**conf["business"], "id": "b1"}]
-    return [{**DEFAULT_BUSINESS, **b} for b in saved] if saved else [{**DEFAULT_BUSINESS, "id": "b1"}]
+    return [with_fields({**DEFAULT_BUSINESS, **b}) for b in saved] if saved else [{**DEFAULT_BUSINESS, "id": "b1"}]
 
 
 def brand(b: dict | None) -> pdf.Brand:
@@ -79,6 +159,23 @@ def clean_business(raw: dict) -> dict:
     for key in BUSINESS_TEXT:
         if isinstance(raw.get(key), str):
             out[key] = raw[key].strip()[:2000]
+    # Address and bank details arrive as fields from Settings; what's printed is put together from them. Sent the
+    # old way, as one block of text each, they're split into fields instead.
+    if any(k in raw for k in ADDRESS_FIELDS):
+        for k in ADDRESS_FIELDS:
+            out[k] = str(raw.get(k) or "").strip()[:200]
+        out["postcode"] = out["postcode"].upper()
+        out["address"] = compose_address(out)
+    else:
+        out.update(split_address(out["address"]))
+    if any(k in raw for k in BANK_FIELDS):
+        for k in BANK_FIELDS:
+            out[k] = str(raw.get(k) or "").strip()[:300]
+        out["bank_sort_code"] = sort_code(out["bank_sort_code"])
+        out["bank_account_number"] = re.sub(r"\s+", " ", out["bank_account_number"])
+        out["payment"] = compose_payment(out)
+    else:
+        out.update(split_payment(out["payment"]))
     out["vat_registered"] = bool(raw.get("vat_registered"))
     try:
         out["vat_rate"] = float(raw.get("vat_rate") if raw.get("vat_rate") not in (None, "") else 20)

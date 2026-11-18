@@ -1891,3 +1891,53 @@ class LogoTest(unittest.TestCase):
         plain = billing.bill_pdf(billing.sample_bill(billing.clean_business({"name": "Me"}), date(2026, 11, 17)))
         self.assertNotIn(b"/Subtype /Image", plain)
         self.assertEqual(billing.brand({}).accent, pdf.ACCENT)
+
+
+class BusinessFieldsTest(unittest.TestCase):
+    def test_address_and_bank_details_are_fields_and_print_as_before(self):
+        from tftrack import billing
+        b = billing.clean_business({
+            "name": "Me Ltd", "addr1": " 1 High Street ", "addr2": "", "town": "Brighton", "county": "East Sussex",
+            "postcode": "bn1 1aa", "bank_account_name": "Me Ltd", "bank_name": "Example Bank", "bank_sort_code": "123456",
+            "bank_account_number": "1234  5678", "bank_note": "Please use the invoice number as your reference"})
+        self.assertEqual(b["address"], "1 High Street\nBrighton\nEast Sussex\nBN1 1AA")
+        self.assertEqual(b["payment"], "Account name: Me Ltd\nBank: Example Bank\nSort code: 12-34-56\n"
+                                       "Account number: 1234 5678\nPlease use the invoice number as your reference")
+        self.assertEqual(billing.missing({"businesses": [{**b, "id": "b1"}]}), [])
+        # emptying the fields empties what's printed (it mustn't fall back to old text)
+        blank = billing.clean_business({**b, "addr1": "", "town": "", "county": "", "postcode": "",
+                                        **dict.fromkeys(billing.BANK_FIELDS, "")})
+        self.assertEqual((blank["address"], blank["payment"]), ("", ""))
+        self.assertEqual(billing.missing({"businesses": [{**blank, "id": "b1"}]}),
+                         ["your business address", "how clients pay you"])
+        # a sort code that isn't six digits is left as typed
+        self.assertEqual(billing.sort_code("12 34 56"), "12-34-56")
+        self.assertEqual(billing.sort_code("IBAN GB00"), "IBAN GB00")
+
+    def test_details_typed_as_text_before_become_fields(self):
+        from tftrack import billing
+        old = {"businesses": [{"id": "b1", "name": "Me Ltd", "address": "Flat 2\n1 High Street\nBrighton\nBN1 1AA",
+                               "payment": "Account name: Dave Example\nBank - Revolut Business\nSort Code: 04-00-75\n"
+                                          "Account No: 12345678\nRef: invoice number"}]}
+        b = billing.businesses(old)[0]
+        self.assertEqual([b[k] for k in billing.ADDRESS_FIELDS], ["Flat 2", "1 High Street", "Brighton", "", "BN1 1AA"])
+        self.assertEqual([b[k] for k in billing.BANK_FIELDS],
+                         ["Dave Example", "Revolut Business", "04-00-75", "12345678", "Ref: invoice number"])
+        self.assertEqual(b["address"], old["businesses"][0]["address"])          # what prints is untouched until you save
+        # saved again from the form, it prints the same details in the standard wording
+        again = billing.clean_business(b)
+        self.assertEqual(again["address"], "Flat 2\n1 High Street\nBrighton\nBN1 1AA")
+        self.assertEqual(again["payment"], "Account name: Dave Example\nBank: Revolut Business\nSort code: 04-00-75\n"
+                                           "Account number: 12345678\nRef: invoice number")
+        # text it can't make sense of is kept whole as the extra note: nothing typed is lost
+        odd = billing.businesses({"businesses": [{"id": "b1", "payment": "Pay by PayPal to me@example.com"}]})[0]
+        self.assertEqual((odd["bank_sort_code"], odd["bank_note"]), ("", "Pay by PayPal to me@example.com"))
+        long = "Flat 2\n1 High Street\nSeven Dials\nBrighton\nEast Sussex\nBN1 1AA"
+        self.assertEqual(billing.split_address(long), {"addr1": "Flat 2", "addr2": "1 High Street, Seven Dials",
+                                                       "town": "Brighton", "county": "East Sussex", "postcode": "BN1 1AA"})
+        # however the lines are shared out, they print in the order they were typed
+        for text in (long, "1 Road, Hove, East Sussex, BN3 1AA", "1 Road\nHove", "Just one line"):
+            printed = billing.compose_address(billing.split_address(text)).replace("\n", ", ")
+            self.assertEqual(printed, ", ".join(x.strip() for x in text.replace("\n", ",").split(",")))
+        self.assertEqual(billing.split_address("1 Road\nHove\nBN3 1AA"),
+                         {"addr1": "1 Road", "addr2": "", "town": "Hove", "county": "", "postcode": "BN3 1AA"})
