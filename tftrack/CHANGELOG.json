@@ -1,5 +1,14 @@
 [
   {
+    "version": 50,
+    "changes": [
+      "A new look: the app is now forest green instead of orange, in the top bar, buttons, charts, timesheet pages and the default colour for invoices. Warnings stay amber and overdue stays red, so they stand out more than before.",
+      "A new icon in the shape of the cube: a twelve-sided dodecahedron with clock hands on its front face. On the Mac it replaces the orange clock (it can take a restart of the Mac for the Dock and Launchpad to catch up). On the iPhone, remove the home screen shortcut and add it again to get the new icon.",
+      "Your invoices keep each business's own colour. Only a business with no colour chosen changes, from orange to green: pick a colour in Settings → Your businesses if you'd rather it didn't.",
+      "The invoice lines on a timesheet page show their date or week again."
+    ]
+  },
+  {
     "version": 49,
     "changes": [
       "Emails now carry just the invoice. To send the timesheet too, tick 'Attach the timesheet as well as the invoice' for the business in Settings → Your businesses. You can still save a timesheet PDF from the invoice page whenever you want one.",

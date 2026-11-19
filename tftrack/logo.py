@@ -225,7 +225,7 @@ def for_pdf(key: str | None) -> dict | None:
 
 
 def colour(value: str | None, default: tuple[float, float, float]) -> tuple[float, float, float]:
-    """"#F97316" -> (0.98, 0.45, 0.09) for the PDF. Anything else gives the default."""
+    """"#166534" -> (0.09, 0.40, 0.20) for the PDF. Anything else gives the default."""
     v = (value or "").strip().lstrip("#")
     if len(v) == 3:
         v = "".join(ch * 2 for ch in v)

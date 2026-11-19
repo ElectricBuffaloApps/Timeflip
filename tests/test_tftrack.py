@@ -357,6 +357,19 @@ class InvoiceLinesTest(unittest.TestCase):
         self.assertEqual(htb, [{"description": "HTB Hourly Rate", "detail": "29/09/2026", "hours": 0.25, "rate": None,
                                 "amount": None}])
 
+    def test_lines_on_the_timesheet_page_say_which_day_or_week(self):
+        from tftrack import web
+        from tftrack.reports import invoice
+        at = lambda d: datetime(2026, 9, d, 9).astimezone().astimezone(UTC).isoformat()
+        store = make_store([{"id": 1, "taskId": 1, "startedAt": at(28), "duration": 3600},
+                            {"id": 2, "taskId": 1, "startedAt": at(29), "duration": 3600}],
+                           tasks=[{"id": 1, "name": "Build", "tag": "HTB"}])
+        inv = invoice(store, "HTB", 2026, 9, "day")
+        inv["rate"] = 40
+        panel = web._lines_panel(inv)
+        self.assertIn("HTB Hourly Rate, 28/09/2026", panel)
+        self.assertIn("HTB Hourly Rate, 29/09/2026", panel)
+
     def test_half_pennies_round_up_and_weeks_read_naturally(self):
         from tftrack.reports import ordinal, pence, week_commencing
         self.assertEqual(pence(4.25 * 26.5), 112.63)      # plain round() gives 112.62
@@ -430,6 +443,17 @@ class InvoiceLayoutTest(unittest.TestCase):
 
 
 class MacAppTest(unittest.TestCase):
+    def test_an_older_app_gets_the_new_icon(self):
+        from pathlib import Path
+        from tftrack import macapp
+        with tempfile.TemporaryDirectory() as tmp:
+            app = macapp.build_app(Path(tmp))
+            icon = app / "Contents" / "Resources" / "AppIcon.icns"
+            self.assertFalse(macapp.refresh_icon(app))            # already current: left alone
+            icon.write_bytes(b"old icon")
+            self.assertTrue(macapp.refresh_icon(app))
+            self.assertEqual(icon.read_bytes(), macapp.ICON.read_bytes())
+
     def test_build_app_bundle(self):
         import os
         import plistlib

@@ -10,7 +10,7 @@ from datetime import date, timedelta
 PAGE_W, PAGE_H = 595.28, 841.89   # A4 in points
 MARGIN = 40
 INK, MUTED, FAINT = (0.07, 0.09, 0.15), (0.42, 0.45, 0.50), (0.61, 0.64, 0.69)
-ACCENT, TINT, GREY_BG, RULE = (0.98, 0.45, 0.09), (1.0, 0.97, 0.93), (0.95, 0.96, 0.96), (0.90, 0.91, 0.92)
+ACCENT, TINT, GREY_BG, RULE = (0.086, 0.396, 0.204), (0.94, 0.97, 0.95), (0.95, 0.96, 0.96), (0.90, 0.91, 0.92)
 ORANGE_TEXT = (0.76, 0.25, 0.05)
 
 # Adobe Helvetica / Helvetica-Bold advance widths (1/1000 em) for WinAnsi codes 32-255.

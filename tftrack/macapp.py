@@ -73,12 +73,28 @@ def build_app(target_dir: Path) -> Path:
     return app
 
 
+def refresh_icon(app: Path) -> bool:
+    """Give an app made by an earlier version the current icon. True if it was changed."""
+    target = app / "Contents" / "Resources" / "AppIcon.icns"
+    try:
+        if target.exists() and target.read_bytes() == ICON.read_bytes():
+            return False
+        shutil.copyfile(ICON, target)
+        os.utime(app)   # a new date on the app tells Finder and the Dock to look at its icon again
+    except OSError:
+        return False
+    if sys.platform == "darwin":
+        subprocess.run([LSREGISTER, "-f", str(app)], capture_output=True)
+    return True
+
+
 def ensure_app() -> Path | None:
     """Create the app on a Mac if it isn't in /Applications or ~/Applications yet. Returns its path."""
     if sys.platform != "darwin":
         return None
     existing = find_app()
     if existing:
+        refresh_icon(existing)
         remove_legacy_apps()
         return existing
     for d in candidate_dirs():

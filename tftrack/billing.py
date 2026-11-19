@@ -735,8 +735,8 @@ h1,h2,button,.big{font-family:Sora,Inter,sans-serif;letter-spacing:-0.02em}
 .bar{max-width:820px;margin:0 auto 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 button,a.btn{font:600 14px Sora,Inter,sans-serif;padding:8px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;
  color:#111827;cursor:pointer;text-decoration:none;white-space:nowrap}
-button:hover,a.btn:hover{border-color:#F97316}
-.primary{background:#F97316!important;border-color:#F97316!important;color:#fff!important}
+button:hover,a.btn:hover{border-color:#166534}
+.primary{background:#166534!important;border-color:#166534!important;color:#fff!important}
 button.danger{color:#c62f2f;margin-left:auto}
 .state{font-weight:600;padding:4px 12px;border-radius:999px;font-size:13px}
 .state.paid{background:#E3F7EA;color:#00a344}.state.overdue{background:#FDE4E4;color:#c62f2f}
@@ -744,7 +744,7 @@ button.danger{color:#c62f2f;margin-left:auto}
 .sheet{max-width:820px;margin:0 auto;background:#fff;border-radius:12px;padding:44px 48px;box-shadow:0 2px 14px rgba(0,0,0,.08)}
 .sheet.void{opacity:.55}
 .top{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.top::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:var(--accent,#F97316);position:absolute;margin-top:-16px}
+.top::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:var(--accent,#166534);position:absolute;margin-top:-16px}
 img.logo{display:block;max-width:220px;max-height:72px;margin:0 0 12px}h2{color:var(--accent,#6B7280)!important}
 .from b{font:700 20px Sora,Inter,sans-serif;display:block;margin-bottom:4px}.muted,.from{color:#6B7280;white-space:pre-line}
 .from b{color:#111827}.meta{text-align:right}.meta .big{font-size:28px;font-weight:700;margin:0 0 6px}
@@ -756,9 +756,9 @@ table.lines{border-collapse:collapse;width:100%;margin-top:24px}
 .lines th{background:#F3F4F6;color:#6B7280;font-size:12px;text-align:left;padding:7px 8px}
 .lines td{padding:7px 8px;border-bottom:1px solid #E5E7EB}.n{text-align:right!important;font-variant-numeric:tabular-nums}
 .totals{margin:14px 0 0 auto;border-collapse:collapse}.totals td{padding:3px 8px;text-align:right}
-.totals td:first-child{color:#6B7280}.totals tr.due td{font:700 17px Sora,Inter,sans-serif;color:#111827;background:var(--tint,#FFF7ED);padding:9px 8px}
-.totals tr.due td:first-child{border-left:3px solid var(--accent,#F97316);color:#111827}
-.pay{background:var(--tint,#FFF7ED);border-radius:10px;padding:14px 18px;margin-top:28px;white-space:pre-line}
+.totals td:first-child{color:#6B7280}.totals tr.due td{font:700 17px Sora,Inter,sans-serif;color:#111827;background:var(--tint,#F0F7F2);padding:9px 8px}
+.totals tr.due td:first-child{border-left:3px solid var(--accent,#166534);color:#111827}
+.pay{background:var(--tint,#F0F7F2);border-radius:10px;padding:14px 18px;margin-top:28px;white-space:pre-line}
 .pay h2{color:#6B7280!important}
 .pay h2{margin:0 0 6px}.foot{color:#9CA3AF;font-size:12px;margin-top:20px;white-space:pre-line}
 .hint{max-width:820px;margin:14px auto 0;color:#6B7280;font-size:13px}
@@ -844,8 +844,8 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
            if b["payment"] else "")
     logo_img = (f'<img class="logo" src="/logo?key={quote(b["logo"])}" alt="{esc(b["name"])} logo">'
                 if b.get("logo") and logos.original(b["logo"]) else "")
-    accent = logos.clean_colour(b.get("colour")) or "#F97316"
-    r, g, bl = logos.tint(logos.colour(accent, (0.98, 0.45, 0.09)))
+    accent = logos.clean_colour(b.get("colour")) or "#166534"
+    r, g, bl = logos.tint(logos.colour(accent, pdf.ACCENT))
     tint = "#{:02x}{:02x}{:02x}".format(round(r * 255), round(g * 255), round(bl * 255))
     if b.get("website"):
         extra.append(esc(b["website"]))

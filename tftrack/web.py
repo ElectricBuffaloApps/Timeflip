@@ -99,33 +99,33 @@ PAGE_STYLE = """
 body{font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827;background:#fff;margin:32px}
 h1,h2,button{font-family:Sora,Inter,sans-serif;letter-spacing:-0.02em}
 h1{font-size:24px;font-weight:700;margin:0 0 4px}
-h1::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:#F97316;margin-bottom:14px}
+h1::before{content:"";display:block;width:40px;height:3px;border-radius:2px;background:#166534;margin-bottom:14px}
 h2{font-size:17px;margin:28px 0 6px} p{color:#6B7280;margin:0 0 20px}
 table{border-collapse:collapse;width:100%} th,td{padding:6px 8px;border-bottom:1px solid #E5E7EB;text-align:left}
 th{font-weight:600;color:#6B7280} .n{text-align:right;font-variant-numeric:tabular-nums}
-tr.sub td{font-weight:600;background:#FFF7ED}
+tr.sub td{font-weight:600;background:#F0F7F2}
 tr.week td{font-family:Sora,Inter,sans-serif;font-weight:700;background:#F3F4F6;border-bottom:2px solid #D1D5DB}
 tr.weekhead th{font-family:Sora,Inter,sans-serif;font-size:15px;color:#0b0b0b;padding-top:26px;border-bottom:2px solid #1E2530}
 tr.weekhead th .tag{font-family:Inter,sans-serif;font-weight:400;margin-left:10px} tr.none td{color:#9CA3AF;font-style:italic}
 tr.week .tag{font-family:Inter,sans-serif;font-weight:500}
 tr.extra td{background:#F0F9FF} tr.extra .tag{margin-left:0;color:#0369A1;font-weight:600}
-.allow{border:1px solid #FED7AA;background:#FFF7ED;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
+.allow{border:1px solid #BBDFC6;background:#F0F7F2;border-radius:10px;padding:10px 14px;margin:0 0 20px;font-size:13px}
 .allow .warn,.allow a{color:#c2410c}
 tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:normal}
-.carrybox{border:1px solid #FED7AA;border-radius:10px;padding:12px 14px;margin:-8px 0 20px;font-size:13px}
+.carrybox{border:1px solid #BBDFC6;border-radius:10px;padding:12px 14px;margin:-8px 0 20px;font-size:13px}
 .carrybtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px} .carrybtns button{font-size:13px;padding:5px 12px}
-.carrybtns button.primary{background:#F97316;border-color:#F97316;color:#fff} .carrybtns button:disabled{opacity:.4;cursor:default}
+.carrybtns button.primary{background:#166534;border-color:#166534;color:#fff} .carrybtns button:disabled{opacity:.4;cursor:default}
 .carrybox .hint{margin:8px 0 0;font-size:12px}
-.bankbox{border-color:#F97316;background:#FFF7ED;margin:0 0 20px}
+.bankbox{border-color:#166534;background:#F0F7F2;margin:0 0 20px}
 .bankform{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:flex-end;margin-top:12px}
 .bankform label{font-size:12px;color:#6B7280;font-weight:600}
 .bankform input,.bankform select{font:inherit;font-size:14px;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:3px;max-width:100%}
 .bankform input[type=number]{width:110px} .bankbox button{font-size:13px;padding:7px 14px}
 .bankform label{min-width:0} .bankform select{min-width:0;max-width:100%}
-.bankbox button.primary{background:#F97316;border-color:#F97316;color:#fff}
+.bankbox button.primary{background:#166534;border-color:#166534;color:#fff}
 button.weekfill,button.weekextra{font-size:12px;padding:4px 11px;border-radius:7px}
-button.weekfill{background:#F97316;border-color:#F97316;color:#fff}
-button.weekfill:hover{background:#c2410c;border-color:#c2410c} button.weekfill:disabled{opacity:.5}
+button.weekfill{background:#166534;border-color:#166534;color:#fff}
+button.weekfill:hover{background:#14532d;border-color:#14532d} button.weekfill:disabled{opacity:.5}
 .tag.keepline{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:8px 0 0;font-family:Inter,sans-serif;font-weight:400;font-style:normal;color:#6B7280}
 .tag.keepline .why{margin-right:6px} .xadd{display:flex;flex-wrap:wrap;gap:8px}
 button.xdel,button.xedit{font-size:12px;padding:2px 9px;border-radius:6px} td.xbtns{white-space:nowrap}
@@ -136,21 +136,21 @@ tr.x td{text-decoration:line-through;color:#9CA3AF} tr.x td.keep{text-decoration
 .grand td{font-family:Sora,Inter,sans-serif;font-weight:700;border-top:2px solid #1E2530;border-bottom:none;font-size:15px}
 .bar{margin-bottom:24px;display:flex;gap:12px;align-items:center;color:#6B7280}
 button{font-size:14px;font-weight:600;padding:8px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;color:#111827;cursor:pointer}
-button:hover{border-color:#F97316}
-.bar button{background:#F97316;border-color:#F97316;color:#fff} .bar button:hover{background:#c2410c;border-color:#c2410c}
-label.ex{cursor:pointer;font-size:12px;color:#6B7280;white-space:nowrap} input[type=checkbox]{accent-color:#F97316}
-.lines{border-radius:12px;padding:18px 22px;margin:0 0 28px;background:#FFF7ED;border-left:3px solid #F97316;
+button:hover{border-color:#166534}
+.bar button{background:#166534;border-color:#166534;color:#fff} .bar button:hover{background:#14532d;border-color:#14532d}
+label.ex{cursor:pointer;font-size:12px;color:#6B7280;white-space:nowrap} input[type=checkbox]{accent-color:#166534}
+.lines{border-radius:12px;padding:18px 22px;margin:0 0 28px;background:#F0F7F2;border-left:3px solid #166534;
   box-shadow:0 2px 12px rgba(0,0,0,0.08)}
-.lines td,.lines th{border-bottom-color:#FED7AA} label.smooth{font-size:14px;color:#111827}
+.lines td,.lines th{border-bottom-color:#BBDFC6} label.smooth{font-size:14px;color:#111827}
 button.copy{font-size:12px;padding:3px 10px;margin-left:6px;border-radius:6px}
 .copied{color:#00c853;font-size:13px}
 button.edit{font-size:12px;padding:2px 9px;margin-left:8px;border-radius:6px}
 .bar button.secondary{background:#fff;color:#111827;border-color:#D1D5DB}
-.bar a.btn{font:600 14px Sora,Inter,sans-serif;padding:8px 16px;border-radius:8px;background:#F97316;color:#fff;text-decoration:none}
-.bar a.btn:hover{background:#c2410c}
+.bar a.btn{font:600 14px Sora,Inter,sans-serif;padding:8px 16px;border-radius:8px;background:#166534;color:#fff;text-decoration:none}
+.bar a.btn:hover{background:#14532d}
 .bar .done{color:#00a344;font-weight:600} .bar .warn{color:#c2410c}
 .bar{flex-wrap:wrap} .bar button,.bar a.btn,.bar .done{white-space:nowrap} .bar>span:last-child{flex-basis:100%}
-.bar button.secondary:hover{background:#fff;border-color:#F97316}
+.bar button.secondary:hover{background:#fff;border-color:#166534}
 .tag.adj{color:#c2410c;font-style:italic}
 .tag.usernote{display:block;margin:2px 0 0;color:#374151;font-style:normal}
 .tag.usernote::before{content:"Note: ";color:#6B7280}
@@ -158,9 +158,9 @@ dialog{border:none;border-radius:12px;padding:24px;box-shadow:0 10px 40px rgba(0
 dialog::backdrop{background:rgba(15,18,25,.45)}
 dialog input,dialog select{font:inherit;padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;margin-top:4px}
 dialog select{width:100%} .dlg-buttons{display:flex;gap:8px;margin-top:18px;align-items:center}
-dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button.danger{color:#d03b3b}
+dialog button.primary{background:#166534;border-color:#166534;color:#fff} button.danger{color:#d03b3b}
 .err{color:#d03b3b;min-height:1.2em;margin:10px 0 0}
-.bar a.back{background:#fff;color:#111827;border:1px solid #D1D5DB} .bar a.back:hover{background:#fff;border-color:#F97316}
+.bar a.back{background:#fff;color:#111827;border:1px solid #D1D5DB} .bar a.back:hover{background:#fff;border-color:#166534}
 /* On a phone nothing scrolls sideways: each table row becomes a short block that wraps. */
 @media screen and (max-width:700px){body{margin:14px;overflow-wrap:anywhere} h1{font-size:21px} .lines{padding:12px}
  table,tbody,tfoot{display:block;width:100%} thead{display:none}
@@ -169,7 +169,7 @@ dialog button.primary{background:#F97316;border-color:#F97316;color:#fff} button
  td.n+td.n{margin-left:0} td[colspan]{flex:1 1 45%;min-width:0} td:empty{display:none}
  td.keep{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:4px}
  td.keep button.edit,label.roll{margin-left:0} label.ex{font-size:13px}
- tr.sub,tr.week{padding:9px 8px;border-radius:8px;margin:2px 0} tr.week{background:#F3F4F6} tr.sub{background:#FFF7ED}
+ tr.sub,tr.week{padding:9px 8px;border-radius:8px;margin:2px 0} tr.week{background:#F3F4F6} tr.sub{background:#F0F7F2}
  tr.sub td,tr.week td,tr.extra td{background:none!important} tr.grand{border-top:2px solid #1E2530;border-bottom:none}
  tr.extra{background:#F0F9FF;padding:9px 8px;border-radius:8px;margin:2px 0} tr.extra td:nth-child(3){flex:1 1 100%}
  tr.weekhead{margin-top:18px;padding:6px 2px;border-bottom:2px solid #1E2530} tr.weekhead th{display:block;flex:1 1 100%;font-size:15px;text-align:left}
@@ -965,7 +965,7 @@ def ledger_page(books: list[dict], today: date) -> str:
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <style>{PAGE_STYLE}
-h2{{margin-top:36px}} td a{{color:#c2410c}} .warn{{color:#c2410c}} @media print{{.bar{{display:none}}}}</style></head><body>
+h2{{margin-top:36px}} td a{{color:#14532d}} .warn{{color:#c2410c}} @media print{{.bar{{display:none}}}}</style></head><body>
 <div class="bar">{BACK_LINK}<button onclick="window.print()">Print</button><span>As at {today:%d/%m/%Y}</span></div>
 <h1>Carried hours</h1>
 <p>Month by month for each allowance. Worked is everything tracked that month, including what was rolled over.
@@ -979,7 +979,8 @@ def _lines_panel(inv: dict) -> str:
     rate = inv.get("rate")
     smooth = bool(inv.get("smooth")) and inv["style"] == "week"
     lines = invoice_lines(inv, rate, smooth)
-    real = {l["description"]: l["hours"] for l in invoice_lines(inv, rate)} if smooth else {}
+    full = lambda l: l["description"] + (f", {l['detail']}" if l.get("detail") else "")   # with its date or week
+    real = {full(l): l["hours"] for l in invoice_lines(inv, rate)} if smooth else {}
     if not lines:
         return ""
 
@@ -987,16 +988,16 @@ def _lines_panel(inv: dict) -> str:
         return f'<button class="copy" data-copy="{esc(value)}">{esc(text)}</button>'
 
     rows = "".join(
-        f"<tr><td>{esc(l['description'])} {btn('Copy', l['description'])}</td>"
+        f"<tr><td>{esc(full(l))} {btn('Copy', full(l))}</td>"
         f"<td class=n>{l['hours']:.2f} {btn('Copy', format(l['hours'], '.2f'))}"
-        + (f'<br><span class="tag">real {real.get(l["description"], 0):.2f}</span>' if smooth else "") + "</td>"
+        + (f'<br><span class="tag">real {real.get(full(l), 0):.2f}</span>' if smooth else "") + "</td>"
         f"<td class=n>{'£' + format(rate, '.2f') if rate else '–'}</td>"
         f"<td class=n>{'£' + format(l['amount'], '.2f') if l['amount'] is not None else '–'}</td></tr>"
         for l in lines
     )
     total_hours = sum(l["hours"] for l in lines)
     total_amount = sum(l["amount"] or 0 for l in lines)
-    all_text = "\n".join(f"{l['description']}\t{l['hours']:.2f}" + (f"\t{rate:.2f}" if rate else "") for l in lines)
+    all_text = "\n".join(f"{full(l)}\t{l['hours']:.2f}" + (f"\t{rate:.2f}" if rate else "") for l in lines)
     for x in billing.extra_lines(inv.get("extras") or []):   # agreed hours, mileage, expenses: after the time
         qty = f"{x['hours']:g}"
         rows += (f"<tr><td>{esc(x['description'])} {btn('Copy', x['description'])}</td>"
@@ -1622,7 +1623,7 @@ def viewer_page(viewer_of: str | None) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>FlipTracker – viewer</title>
 <style>body{{font:15px/1.6 -apple-system,Inter,sans-serif;color:#111827;max-width:560px;margin:40px auto;padding:0 16px}}
 a.btn,button{{font:600 14px -apple-system,sans-serif;padding:9px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;cursor:pointer;text-decoration:none;color:#111827}}
-a.btn{{background:#F97316;border-color:#F97316;color:#fff}} .small{{color:#6B7280;font-size:13px}}</style></head>
+a.btn{{background:#166534;border-color:#166534;color:#fff}} .small{{color:#6B7280;font-size:13px}}</style></head>
 <body><h1>FlipTracker</h1>{body}
 <script>const b=document.getElementById("stop");if(b)b.onclick=async()=>{{b.disabled=true;
 await fetch("/api/viewer/stop",{{method:"POST",headers:{{"Content-Type":"application/json","X-TFTrack":"1"}},body:"{{}}"}});

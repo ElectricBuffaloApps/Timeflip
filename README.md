@@ -12,7 +12,7 @@ FlipTracker works with your TIMEFLIP2 cube. It is an independent app, not made b
 2. In the unzipped folder, **right-click `Install FlipTracker.command` and choose Open**. If macOS warns that it's from an unidentified developer, click **Open**.
 3. If asked, let macOS install Apple's free developer tools, then double-click the installer again.
 4. Enter your TimeFlip email and password when asked. Your account needs an email and password; Apple or Google sign-in won't work here.
-5. Your browser opens the tracker. To reopen it later, open the **FlipTracker** app (orange clock icon) from Applications, Launchpad or Spotlight. You can drag it into your Dock.
+5. Your browser opens the tracker. To reopen it later, open the **FlipTracker** app (green icon with a 12-sided shape) from Applications, Launchpad or Spotlight. You can drag it into your Dock.
 
 After that, you can delete the downloaded folder.
 
@@ -21,7 +21,7 @@ If notifications don't appear, go to **System Settings → Notifications** and a
 ## Using it
 
 - **Tabs:** **Dashboard** (today, money and targets, this week, limits, this month), **Reports** (charts), **Timesheets**, **Invoices** and **Settings**.
-- **Settings:** sections fold away. Click a heading to open or close it (it's remembered), or **Open all** at the top. An orange dot on a closed heading means unsaved changes inside.
+- **Settings:** sections fold away. Click a heading to open or close it (it's remembered), or **Open all** at the top. A green dot on a closed heading means unsaved changes inside.
 - **Area cards and pages:** the top of the Dashboard has a card per main client with hours this week and this month. Click one for that client's page: this week, this month, last week, and a chart of hours **by day**, **by week** or **by month**, split by task. Choose the cards and their names in **Settings → Dashboard cards** (until you do, your four busiest clients are shown).
 - **Hours a week (allotted hours):** in **Settings → Dashboard cards**, enter the hours you mean to do for each client every week (it's the same figure as that client's weekly time target; if you leave it empty, the client's weekly limit or allowance is used). Cards show progress and what's left. A card turns **red** when you're behind: less done than the finished working days of the week call for (today isn't counted until it's over; bank holidays aren't working days). **Do first** under the cards lists the areas that are behind, furthest behind first. On the area's page the weekly chart has a line at the allotted hours and fades the weeks that fell short.
 - **Hours in lieu:** each area has a bank of hours, shown on its page and card.
