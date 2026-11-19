@@ -355,7 +355,26 @@ class InvoiceLinesTest(unittest.TestCase):
                                 "rate": 40, "amount": 80.0}])
         htb = invoice_lines(invoice(store, "HTB", 2026, 9, "day", 15, "up"))
         self.assertEqual(htb, [{"description": "HTB Hourly Rate", "detail": "29/09/2026", "hours": 0.25, "rate": None,
-                                "amount": None}])
+                                "amount": None, "week": "2026-09-28"}])
+
+    def test_day_lines_gather_into_weeks_on_the_invoice(self):
+        from tftrack import billing
+        day = lambda d, h: {"description": "HTB Hourly Rate", "detail": d, "hours": h, "rate": 40.0, "amount": h * 40,
+                            "week": (date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday())).isoformat()}
+        lines = [day("2026-10-06", 2), day("2026-10-08", 1.5), day("2026-10-13", 3)]
+        lines += billing.extra_lines([{"description": "Mileage", "quantity": 40, "unit_price": 0.45, "kind": "mileage", "day": "2026-10-07"},
+                                      {"description": "Software", "quantity": 1, "unit_price": 12.0, "kind": "expense"}])
+        weeks = billing.week_groups(lines)
+        self.assertEqual([(w["label"], w["hours"], w["amount"], len(w["lines"])) for w in weeks],
+                         [("W/C 5th Oct 2026", 3.5, 158.0, 3), ("W/C 12th Oct 2026", 3.0, 120.0, 1), ("Other", 0, 12.0, 1)])
+        self.assertIsNone(billing.week_groups([{"description": "FCY Hourly Rate", "hours": 2, "amount": 80.0}]))
+        b = billing.clean_business({"name": "Acme", "layout": "band"})
+        bill = billing.sample_bill(b, date(2026, 11, 18))
+        bill["data"]["lines"] = lines
+        text = InvoiceLayoutTest._text(billing.bill_pdf(bill))
+        for want in ("(W/C 5th Oct 2026)", "(3.5 hours)", "(\243158.00)", "(Other)"):
+            self.assertIn(want, text)
+        self.assertLess(text.index("(Mileage)"), text.index("(W/C 12th Oct 2026)"))   # the mileage sits in its week
 
     def test_lines_on_the_timesheet_page_say_which_day_or_week(self):
         from tftrack import web

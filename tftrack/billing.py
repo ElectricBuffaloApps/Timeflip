@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from . import logo as logos
 from . import pdf
-from .reports import pence
+from .reports import pence, week_commencing
 from .pdf import ACCENT, FAINT, GREY_BG, INK, MARGIN, MUTED, PAGE_H, PAGE_W, Document, fit, text_width
 
 BUSINESS_TEXT = ("name", "address", "email", "phone", "company_number", "vat_number", "payment", "footer", "prefix",
@@ -272,9 +272,32 @@ def clean_extra(raw: dict) -> dict:
 
 def extra_lines(extras: list[dict]) -> list[dict]:
     """Invoice lines for a month's extras, in the same shape as the time lines."""
-    return [{"description": e["description"], "hours": e["quantity"], "rate": e["unit_price"],
-             "amount": pence(e["quantity"] * e["unit_price"]), "unit": EXTRA_KINDS.get(e["kind"], ""),
-             "extra": e["kind"]} for e in extras]
+    out = []
+    for e in extras:
+        line = {"description": e["description"], "hours": e["quantity"], "rate": e["unit_price"],
+                "amount": pence(e["quantity"] * e["unit_price"]), "unit": EXTRA_KINDS.get(e["kind"], ""),
+                "extra": e["kind"]}
+        if e.get("day"):   # the week it was done in, for invoices broken down by week
+            d = date.fromisoformat(e["day"])
+            line["week"] = (d - timedelta(days=d.weekday())).isoformat()
+        out.append(line)
+    return out
+
+
+def week_groups(lines: list[dict]) -> list[dict] | None:
+    """An invoice's lines gathered into weeks, earliest first: [{"monday", "label", "lines", "hours", "amount"}].
+    Lines with no day (an expense for the month, say) come last under "Other". None if no line names a week, as on
+    invoices billed by the week, by the task, or made before weeks were kept."""
+    if not any(l.get("week") for l in lines):
+        return None
+    out = []
+    for key in sorted({l["week"] for l in lines if l.get("week")}) + [None]:
+        rows = [l for l in lines if l.get("week") == key]
+        if rows:
+            out.append({"monday": key, "label": week_commencing(date.fromisoformat(key)) if key else "Other",
+                        "lines": rows, "amount": round(sum(l["amount"] or 0 for l in rows), 2),
+                        "hours": round(sum(l["hours"] for l in rows if l.get("unit", "h") == "h" and not l.get("extra") == "expense"), 2)})
+    return out
 
 
 def quantity_text(line: dict) -> str:
@@ -637,8 +660,25 @@ def bill_pdf(bill: dict, paid_at: str | None = None) -> bytes:
 
     head()
     pad = 3 if layout else 0
-    for l in data["lines"]:
+    weeks = week_groups(data["lines"])
+    starts = {id(w["lines"][0]): w for w in weeks or []}
+    ordered = [l for w in weeks for l in w["lines"]] if weeks else data["lines"]
+    for l in ordered:
         height = 18 + (12 if l.get("detail") else 0) + 2 * pad
+        w = starts.get(id(l))
+        if w:   # a heading for the week, with what the week comes to
+            room(22 + height)
+            if layout == "band":
+                doc.rect(0, y - 19, PAGE_W, 19, GREY_BG)
+            elif not layout:
+                doc.rect(left, y - 19, right - left, 19, look.tint)
+            doc.text(cols[0][1], y - 13, w["label"], 9, bold=True, color=look.accent if layout == "classic" else INK)
+            if w["hours"]:
+                doc.text(cols[1][1], y - 13, f"{w['hours']:g} hour{'s' * (w['hours'] != 1)}", 9, bold=True, align="right")
+            doc.text(cols[-1][1], y - 13, _gbp(w["amount"]), 9, bold=True, align="right")
+            y -= 19 if layout != "classic" else 20
+            if layout == "classic":
+                doc.line(left, y, right, y)
         room(height)
         base = y - 12 - pad
         doc.text(cols[0][1], base, fit(l["description"], desc_w, 9), 9)
@@ -763,7 +803,7 @@ h2{font-size:11px;letter-spacing:.08em;color:#6B7280;margin:28px 0 4px}
 .to b{font-size:16px}
 table.lines{border-collapse:collapse;width:100%;margin-top:24px}
 .lines th{background:#F3F4F6;color:#6B7280;font-size:12px;text-align:left;padding:7px 8px}
-.lines td{padding:7px 8px;border-bottom:1px solid #E5E7EB}.n{text-align:right!important;font-variant-numeric:tabular-nums}
+.lines td{padding:7px 8px;border-bottom:1px solid #E5E7EB}.lines tr.wk td{font-weight:600;background:var(--tint,#F0F7F2)}.n{text-align:right!important;font-variant-numeric:tabular-nums}
 .totals{margin:14px 0 0 auto;border-collapse:collapse}.totals td{padding:3px 8px;text-align:right}
 .totals td:first-child{color:#6B7280}.totals tr.due td{font:700 17px Sora,Inter,sans-serif;color:#111827;background:var(--tint,#F0F7F2);padding:9px 8px}
 .totals tr.due td:first-child{border-left:3px solid var(--accent,#166534);color:#111827}
@@ -851,9 +891,15 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
         extra.append(f"Company number {esc(b['company_number'])}")
     if data["vat_rate"] is not None and b["vat_number"]:
         extra.append(f"VAT number {esc(b['vat_number'])}")
-    rows = "".join(f"<tr><td>{esc(l['description'])}{'<div class=muted>' + esc(l['detail']) + '</div>' if l.get('detail') else ''}</td><td class=n>{quantity_words(l)}</td>"
-                   f"<td class=n>{'' if l.get('extra') == 'expense' else _gbp(l['rate'])}</td>"
-                   f"<td class=n>{_gbp(l['amount'])}</td></tr>" for l in data["lines"])
+    row = lambda l: (f"<tr><td>{esc(l['description'])}{'<div class=muted>' + esc(l['detail']) + '</div>' if l.get('detail') else ''}</td><td class=n>{quantity_words(l)}</td>"
+                     f"<td class=n>{'' if l.get('extra') == 'expense' else _gbp(l['rate'])}</td>"
+                     f"<td class=n>{_gbp(l['amount'])}</td></tr>")
+    weeks = week_groups(data["lines"])
+    if weeks:
+        rows = "".join(f"<tr class=wk><td>{esc(w['label'])}</td><td class=n>{format(w['hours'], 'g') + ' hours' if w['hours'] else ''}</td>"
+                       f"<td></td><td class=n>{_gbp(w['amount'])}</td></tr>" + "".join(row(l) for l in w["lines"]) for w in weeks)
+    else:
+        rows = "".join(row(l) for l in data["lines"])
     vat = (f"<tr><td>VAT at {data['vat_rate']:g}%</td><td class=n>{_gbp(bill['vat'])}</td></tr>"
            if data["vat_rate"] is not None else "")
     pay = (f'<div class="pay"><h2>HOW TO PAY · DUE BY {_d(bill["due_on"])}</h2>{esc(b["payment"])}</div>'

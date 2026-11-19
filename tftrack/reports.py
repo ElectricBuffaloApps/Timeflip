@@ -287,17 +287,23 @@ def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) ->
     lines = []
     smoothed = smooth_weeks(inv) if smooth and inv["style"] == "week" else None
 
-    def add(who: str, detail: str, seconds: int) -> None:
+    by_day = inv["style"] != "week"
+
+    def add(who: str, detail: str, seconds: int, day: str | None = None) -> None:
         if seconds <= 0:
             return
         hours = round(seconds / 3600, 2)
-        lines.append({"description": f"{who} Hourly Rate", "detail": detail, "hours": hours, "rate": rate,
-                      "amount": pence(hours * rate) if rate else None})
+        line = {"description": f"{who} Hourly Rate", "detail": detail, "hours": hours, "rate": rate,
+                "amount": pence(hours * rate) if rate else None}
+        if day and by_day:   # which week a day's line belongs to, so the invoice can show the weeks
+            d = date.fromisoformat(day)
+            line["week"] = (d - timedelta(days=d.weekday())).isoformat()
+        lines.append(line)
 
     for al in inv.get("allowances") or []:   # carried-over hours added this month, in the weeks with spare room
         who = f"{inv['client']} – {al['name']}" if al["scope"] == "task" else inv["client"]
         for w in al["carry"]["by_week"]:
-            add(who, f"Carried over, {week_commencing(date.fromisoformat(w['monday']))}", w["seconds"])
+            add(who, f"Carried over, {week_commencing(date.fromisoformat(w['monday']))}", w["seconds"], w["monday"])
         add(who, "Carried over from earlier months", al["carry"]["unplaced_s"])
     for i, g in enumerate(inv["groups"]):
         if inv["style"] == "week":
@@ -305,7 +311,7 @@ def invoice_lines(inv: dict, rate: float | None = None, smooth: bool = False) ->
                 smoothed[i] if smoothed else g["billed_s"])
         else:
             for d in g["days"]:
-                add(inv["client"], f"{date.fromisoformat(d['date']):%d/%m/%Y}", d["billed_s"])
+                add(inv["client"], f"{date.fromisoformat(d['date']):%d/%m/%Y}", d["billed_s"], d["date"])
     return lines
 
 
