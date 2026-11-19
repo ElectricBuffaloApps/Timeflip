@@ -1,10 +1,24 @@
 [
   {
-    "version": 53,
+    "version": 55,
     "changes": [
       "Redo an invoice you haven't sent: open the invoice and press 'Redo (not sent yet)'. That copy is withdrawn, the month goes back to 'not invoiced' and you land on its timesheet. Make your changes, press Create invoice, and the new one gets the same number, so there's no gap.",
       "Void is still there for invoices that have gone out: the number is never reused and the replacement gets the next one.",
       "Redo is refused for an invoice the app emailed straight from your email provider, or one marked as paid, because those numbers are in use."
+    ]
+  },
+  {
+    "version": 54,
+    "changes": [
+      "The Extras form on the Invoices tab is laid out in two tidy rows: client, month, day done and type, then the wording, the figures and the Add extra button. The boxes no longer overlap and the labels line up."
+    ]
+  },
+  {
+    "version": 53,
+    "changes": [
+      "One money panel on the Dashboard instead of two. Outstanding has gone: it listed the same months to invoice as Money to collect, which keeps the buttons to deal with them.",
+      "What Outstanding added is now at the foot of Money to collect, under 'This month so far': each client's hours and value for the month in hand, any carried hours not yet charged, the link to its timesheet and the carried hours ledger.",
+      "On a by-the-week timesheet, the line under each week's heading now runs the full width."
     ]
   },
   {

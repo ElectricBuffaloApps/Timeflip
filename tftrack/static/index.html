@@ -304,11 +304,19 @@ textarea { width: 100%; resize: vertical; line-height: 1.45; }
 .colourpick { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
 .colourpick input[type=color] { width: 38px; height: 30px; padding: 2px; }
 .bizbar select { min-width: 200px; max-width: 100%; }
-.xform { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px 12px; align-items: end; }
+/* Two rows: who, when and what kind; then the wording, the figures and the button. */
+.xform { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.xform > * { grid-column: span 3; min-width: 0; }
 .xform .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
-.xform input, .xform select { width: 100%; }
-.xform .desc { grid-column: span 2; }
-@media (max-width: 900px) { .xform { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.xform .field > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xform .field .hint { font-weight: 400; }
+.xform input, .xform select { width: 100%; min-width: 0; height: 38px; }
+.xform .desc { grid-column: span 5; }
+.xform .num { grid-column: span 2; }
+@media (max-width: 900px) {
+  .xform { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .xform > *, .xform .num { grid-column: auto; } .xform .desc { grid-column: 1 / -1; }
+}
 .xlist { display: grid; gap: 6px; margin-top: 14px; }
 .xrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; background: var(--sunk); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
 .xrow .sub { font-size: 12px; }
@@ -489,7 +497,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
   table.edit td.hidden { display: none !important; }
   table.cmp td.share { min-width: 0; }
   .xform, .lieu-form, .formgrid .trio { grid-template-columns: minmax(0, 1fr); }
-  .xform .desc { grid-column: auto; }
+  .xform > *, .xform .num, .xform .desc { grid-column: auto; }
   .cprompt .worth { font-size: 15px; }
   .area-head h2 { font-size: 19px; flex: 1 1 100%; order: -1; }
   .toggle button { padding: 5px 9px; }
@@ -554,14 +562,13 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       </div>
       <div class="collect-list" id="collectList"></div>
       <div class="collect-foot" id="collectFoot"></div>
-    </section>
-    <section class="tile c12 owed hidden" id="owedTile" aria-label="Outstanding">
-      <div class="owed-head">
-        <div><div class="lbl">Outstanding</div><div class="owed-sub" id="owedSub"></div></div>
-        <div class="owed-total"><b id="owedTotal">–</b><span>to invoice</span></div>
-        <div class="owed-total carried"><b id="owedCarried">–</b><span>carried, not charged · <a href="/carried" target="_blank" style="color:inherit">ledger →</a></span></div>
+      <div class="sofar hidden" id="soFar">
+        <div class="sofar-head">
+          <div class="lbl">This month so far</div><span class="owed-sub" id="soFarSub"></span>
+          <a class="hidden" id="soFarLedger" href="/carried" target="_blank">Carried hours ledger →</a>
+        </div>
+        <div class="owed-grid" id="owedGrid"></div>
       </div>
-      <div class="owed-grid" id="owedGrid"></div>
     </section>
     <section class="tile hero c4 stretch" id="today" aria-label="Today">
       <div>
@@ -755,13 +762,13 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
     <section class="tile c12">
       <div class="tile-head"><h2>Extras</h2><span class="meta">Time not on the cube, mileage and expenses. They go on that client's next invoice for the month.</span></div>
       <div class="xform">
-        <label class="field">Client<select id="xClient"></select></label>
-        <label class="field">Month<input type="month" id="xMonth"></label>
-        <label class="field">Day done <span class="hint">(optional)</span><input type="date" id="xDay"></label>
-        <label class="field">Type<select id="xKind"><option value="time">Extra time</option><option value="mileage">Mileage</option><option value="expense">Expense</option></select></label>
-        <label class="field desc">On the invoice as<input id="xDesc" placeholder="e.g. Site visit, 12/11/2026"></label>
-        <label class="field" id="xQtyField"><span id="xQtyLabel">Hours</span><input id="xQty" type="number" min="0" step="0.25"></label>
-        <label class="field"><span id="xPriceLabel">Rate £ per hour</span><input id="xPrice" type="number" min="0" step="0.01"></label>
+        <label class="field"><span>Client</span><select id="xClient"></select></label>
+        <label class="field"><span>Month</span><input type="month" id="xMonth"></label>
+        <label class="field"><span>Day done <span class="hint">(optional)</span></span><input type="date" id="xDay"></label>
+        <label class="field"><span>Type</span><select id="xKind"><option value="time">Extra time</option><option value="mileage">Mileage</option><option value="expense">Expense</option></select></label>
+        <label class="field desc"><span>On the invoice as</span><input id="xDesc" placeholder="e.g. Site visit, 12/11/2026"></label>
+        <label class="field num" id="xQtyField"><span id="xQtyLabel">Hours</span><input id="xQty" type="number" min="0" step="0.25"></label>
+        <label class="field num"><span id="xPriceLabel">Rate £ per hour</span><input id="xPrice" type="number" min="0" step="0.01"></label>
         <div><button class="primary" id="xAdd">Add extra</button></div>
       </div>
       <p class="msg" id="xMsg"></p>
@@ -1533,12 +1540,13 @@ function openSheet(client, month) {
 }
 const COLLECT_SHOWN = 5;
 let collectAll = false;
+let collectAny = false, soFarAny = false;   // the two halves of the one money panel
+const showCollectTile = () => $("collectTile").classList.toggle("hidden", !(collectAny || soFarAny));
 async function loadCollect() {
   let c;
   try { c = await api("/api/collect"); } catch (_) { return; }
-  const any = c.prompts.length || c.hidden;
-  $("collectTile").classList.toggle("hidden", !any);
-  if (!any) return;
+  collectAny = !!(c.prompts.length || c.hidden);
+  showCollectTile();
   for (const [id, v] of [["colInvoice", c.to_invoice], ["colAwaiting", c.awaiting], ["colOverdue", c.overdue]]) {
     $(id).textContent = gbp(v);
     $(`${id}Box`).classList.toggle("zero", !v);
@@ -2242,19 +2250,25 @@ $("saveDetails").onclick = async () => {
   setTimeout(() => { if ($("detailMsg").textContent === "Saved.") $("detailMsg").textContent = ""; }, 4000);
 };
 
-/* ---------- outstanding ---------- */
+/* ---------- this month so far (the foot of Money to collect) ---------- */
+// Earlier months not yet invoiced are prompts in the list above; this is what the month in hand has built up.
 async function loadOutstanding() {
   let o;
   try { o = await api("/api/outstanding"); } catch (_) { return; }
-  $("owedTile").classList.toggle("hidden", !o.clients.length);
+  const now = (c) => c.months.find((mo) => mo.current);
+  const clients = o.clients.filter((c) => now(c) || c.carried_s);
+  soFarAny = clients.length > 0;
+  $("soFar").classList.toggle("hidden", !soFarAny);
+  showCollectTile();
   const [y, m] = o.month.split("-").map(Number);
   const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long" });
-  $("owedSub").textContent = `Months not yet marked as invoiced, and hours carried over` +
-    (o.missing_rate.length ? ` · add an hourly rate for ${o.missing_rate.join(", ")} in Settings to see amounts` : "");
-  $("owedTotal").textContent = gbp(o.due_value);
-  $("owedCarried").textContent = gbp(o.carried_value);
+  const secs = clients.reduce((t, c) => t + (now(c)?.seconds || 0), 0);
+  const value = clients.reduce((t, c) => t + (now(c)?.value || 0), 0);
+  $("soFarSub").textContent = `${monthName}: ${hm(secs)} · ${gbp(value)} to invoice when the month ends` +
+    (o.carried_value ? ` · ${gbp(o.carried_value)} carried, not charged` : "");
+  $("soFarLedger").classList.toggle("hidden", !clients.some((c) => c.carried_s));
   const amount = (v) => (v == null ? "no rate" : gbp(v));
-  $("owedGrid").replaceChildren(...o.clients.map((c) => {
+  $("owedGrid").replaceChildren(...clients.map((c) => {
     const card = el("div", { class: "owed-card" });
     const top = el("div", { class: "top" });
     top.append(el("b", {}, c.client));
@@ -2265,27 +2279,14 @@ async function loadOutstanding() {
       openPage(tsUrl(false));
     };
     top.append(link);
-    const line = (cls, label, secs, value) => {
+    const line = (cls, label, s, v) => {
       const l = el("div", { class: `owed-line ${cls}` });
-      l.append(el("span", {}, label), el("b", {}, `${hm(secs)} · ${amount(value)}`));
+      l.append(el("span", {}, label), el("b", {}, `${hm(s)} · ${amount(v)}`));
       return l;
     };
     card.append(top);
-    for (const mo of c.months) {
-      const [yy, mm] = mo.month.split("-").map(Number);
-      const name = new Date(yy, mm - 1, 1).toLocaleDateString("en-GB", { month: "long" });
-      const l = line(mo.current ? "" : "late", mo.current ? `${name} so far` : `${name}: not invoiced`, mo.seconds, mo.value);
-      if (!mo.current) {
-        const mark = el("button", { class: "link mark" }, "Mark invoiced");
-        mark.onclick = async () => {
-          mark.disabled = true;
-          try { await api("/api/invoiced", { client: c.client, month: mo.month, invoiced: true }); loadOutstanding(); loadCollect(); }
-          catch (_) { mark.disabled = false; }
-        };
-        l.firstChild.append(" ", mark);
-      }
-      card.append(l);
-    }
+    const mo = now(c);
+    if (mo) card.append(line("", "Tracked", mo.seconds, mo.value));
     if (c.carried_s) card.append(line("carried", "Carried, not charged", c.carried_s, c.carried_value));
     return card;
   }));

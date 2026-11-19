@@ -721,9 +721,9 @@ def invoice_page(inv: dict) -> str:
     for g in inv["groups"] if inv["style"] != "day" else []:
         rows = []
         if g["label"]:
-            rows.append(f'<tr><th colspan=4 style="padding-top:22px;color:#0b0b0b;font-size:15px">{esc(g["label"])}</th></tr>')
+            rows.append(f'<tr><th colspan=5 style="padding-top:22px;color:#0b0b0b;font-size:15px">{esc(g["label"])}</th></tr>')
         if not g["days"]:
-            rows.append('<tr><td colspan=4>No time recorded.</td></tr>')
+            rows.append('<tr><td colspan=5>No time recorded.</td></tr>')
         for d in g["days"]:
             day = date.fromisoformat(d["date"])
             rows += [_entry_row(r, day, inv) for r in d["entries"]]
