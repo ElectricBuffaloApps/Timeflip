@@ -1,11 +1,28 @@
 [
   {
-    "version": 50,
+    "version": 52,
     "changes": [
       "A new look: the app is now forest green instead of orange, in the top bar, buttons, charts, timesheet pages and the default colour for invoices. Warnings stay amber and overdue stays red, so they stand out more than before.",
       "A new icon in the shape of the cube: a twelve-sided dodecahedron with clock hands on its front face. On the Mac it replaces the orange clock (it can take a restart of the Mac for the Dock and Launchpad to catch up). On the iPhone, remove the home screen shortcut and add it again to get the new icon.",
       "Your invoices keep each business's own colour. Only a business with no colour chosen changes, from orange to green: pick a colour in Settings → Your businesses if you'd rather it didn't.",
       "The invoice lines on a timesheet page show their date or week again."
+    ]
+  },
+  {
+    "version": 51,
+    "changes": [
+      "Timesheets on screen now look like the rest of the app: the dark FlipTracker bar at the top, white cards, and the month's headline figures (hours charged, amount, days worked and whether it's invoiced or paid) before the detail.",
+      "On a phone, each entry is laid out properly: date, time and its figures on one line, the task underneath, then Exclude and Edit. Amounts no longer drop onto a line of their own.",
+      "Invoice lines folds away once the invoice has been made in the app, showing just its total. Click it to open it again. Until then it stays open as before.",
+      "Nothing changes on the PDFs or on paper: Save PDF and Print give the same timesheet as before."
+    ]
+  },
+  {
+    "version": 50,
+    "changes": [
+      "Fixed: a timesheet no longer changes the moment you invoice it. Entries under 5 minutes were left off the invoice, but came back on the timesheet (rounded up) once the month was marked as invoiced, so the sheet and its PDF showed more than the invoice and warned 'Changed since'.",
+      "An invoiced month now keeps the short-entry setting it was invoiced with. Changing 'Don't count entries shorter than' later doesn't alter months already invoiced.",
+      "Months you've already invoiced are checked once against the hours saved with the invoice, and put back to match. A month whose timesheet you've changed since invoicing is left as it is."
     ]
   },
   {

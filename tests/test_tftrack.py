@@ -1804,12 +1804,40 @@ class ShortEntriesTest(unittest.TestCase):
             page = web.invoice_page(inv)
             self.assertEqual(page.count("under 5 minutes: not counted"), 2)
             self.assertTrue(web.pdf.invoice_pdf(inv).startswith(b"%PDF"))
-            # a month already invoiced stays exactly as it was charged
+            total = lambda month: web._invoice({"client": "HTB", "month": month})["total_billed_s"]
+            # a month invoiced before the limit was kept with it stays exactly as it was charged
             store.set_invoiced("HTB", "2026-09", 15 * m, 10.0)
-            sept = web._invoice({"client": "HTB", "month": "2026-09"})
-            self.assertEqual(sept["total_billed_s"], 15 * m)
+            store.set_invoiced_limit("HTB", "2026-09", None)
+            self.assertEqual(total("2026-09"), 15 * m)
+            # ... and is worked out from the hours saved with it: 15m means the short entry was charged
+            self.assertEqual(web.settle_short_rule(), 1)
+            self.assertEqual(store.invoiced_limits()[("htb", "2026-09")], 0)
+            # had it been invoiced for nothing, the short entry wasn't charged, and still isn't
+            store.set_invoiced("HTB", "2026-09", 0, 0.0)
+            store.set_invoiced_limit("HTB", "2026-09", None)
+            self.assertEqual(web.settle_short_rule(), 1)
+            self.assertEqual(store.invoiced_limits()[("htb", "2026-09")], 5 * m)
+            self.assertEqual(total("2026-09"), 0)
+            # hours that fit neither way (the sheet changed since): left alone, everything counted as before
+            store.set_invoiced("HTB", "2026-09", 45 * m, 30.0)
+            store.set_invoiced_limit("HTB", "2026-09", None)
+            self.assertEqual(web.settle_short_rule(), 0)
+            self.assertEqual(store.invoiced_limits()[("htb", "2026-09")], None)
+            self.assertEqual(total("2026-09"), 15 * m)
             store.set_invoiced("HTB", "2026-09", None)
-            self.assertEqual(web._invoice({"client": "HTB", "month": "2026-09"})["total_billed_s"], 0)
+            self.assertEqual(total("2026-09"), 0)
+            # invoicing a month doesn't change its timesheet: short entries stay off it, so it matches the invoice
+            before = total("2026-10")
+            store.set_invoiced("HTB", "2026-10", before, 50.0)
+            self.assertEqual(total("2026-10"), before)
+            self.assertEqual(sum(r["short"] for r in october()), 2)
+            self.assertNotIn("Changed since", web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"})))
+            # ... even if the limit in Settings is changed or switched off afterwards
+            for later in (0, 10 * m):
+                store.min_entry_seconds = later
+                self.assertEqual(total("2026-10"), before)
+            store.min_entry_seconds = 5 * m
+            store.set_invoiced("HTB", "2026-10", None)
         # time you type in yourself always counts, however short
         added = store.add_manual(datetime(2026, 10, 9, 9).astimezone(), 2 * m, 1)
         self.assertEqual([(r["short"], r["seconds"]) for r in october() if r["id"] == added], [(False, 2 * m)])

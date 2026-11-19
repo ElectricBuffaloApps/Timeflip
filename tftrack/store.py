@@ -200,6 +200,10 @@ class Store:
         self.db.executescript(SCHEMA)
         if "day" not in [r["name"] for r in self.db.execute("PRAGMA table_info(extra)")]:
             self.db.execute("ALTER TABLE extra ADD COLUMN day TEXT")   # extras gained the day they were done
+        if "min_entry_s" not in [r["name"] for r in self.db.execute("PRAGMA table_info(invoiced)")]:
+            # The short-entry limit in force when the month was invoiced, so its timesheet keeps matching the
+            # invoice. Empty for months invoiced before this was recorded.
+            self.db.execute("ALTER TABLE invoiced ADD COLUMN min_entry_s INTEGER")
         if "task" not in [r[1] for r in self.db.execute("PRAGMA table_info(carry_added)")]:
             # Older versions kept one lot of carried hours per client and month; now it's one per allowance.
             with self.db:
@@ -416,8 +420,10 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM invoiced WHERE lower(client) = lower(?) AND month = ?", (client, month))
             if seconds is not None:
-                self.db.execute("INSERT INTO invoiced VALUES (?, ?, ?, ?, ?)",
-                                (client, month, datetime.now(timezone.utc).isoformat(), seconds, amount))
+                self.db.execute("INSERT INTO invoiced (client, month, marked_at, seconds, amount, min_entry_s) "
+                                "VALUES (?, ?, ?, ?, ?, ?)",
+                                (client, month, datetime.now(timezone.utc).isoformat(), seconds, amount,
+                                 int(self.min_entry_seconds)))
             else:   # no invoice, so nothing to have been paid, and its weeks' banked hours are worked out afresh
                 self.db.execute("DELETE FROM paid WHERE lower(client) = lower(?) AND month = ?", (client, month))
                 self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
@@ -569,6 +575,16 @@ class Store:
     def invoiced_months(self) -> set[tuple[str, str]]:
         """Every (client in lower case, month) marked as invoiced."""
         return {(r[0].lower(), r[1]) for r in self.db.execute("SELECT client, month FROM invoiced")}
+
+    def invoiced_limits(self) -> dict[tuple[str, str], int | None]:
+        """For every (client in lower case, month) marked as invoiced: the short-entry limit (seconds) it was
+        invoiced with, or None if it was invoiced before that was recorded."""
+        return {(r[0].lower(), r[1]): r[2] for r in self.db.execute("SELECT client, month, min_entry_s FROM invoiced")}
+
+    def set_invoiced_limit(self, client: str, month: str, seconds: int | None) -> None:
+        with self.db:
+            self.db.execute("UPDATE invoiced SET min_entry_s = ? WHERE lower(client) = lower(?) AND month = ?",
+                            (seconds, client, month))
 
     def notes(self) -> dict[int, str]:
         """The user's notes on entries: entry id -> note."""

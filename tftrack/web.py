@@ -431,6 +431,54 @@ for (const box of document.querySelectorAll("input[data-id]")) {
 </script>"""
 
 
+# The timesheet pages wear the app's look: dark top bar, grey page, white cards, a row of headline figures.
+SHEET_STYLE = """
+body.sheet{margin:0;background:#E5E7EB}
+.sheet .top{background:#1E2530;position:sticky;top:0;z-index:5}
+.sheet .top-in{max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px}
+.sheet .brand{display:flex;align-items:center;gap:10px;margin-right:auto;color:#f1f5f9;text-decoration:none;
+  font:700 17px Sora,Inter,sans-serif;letter-spacing:-.02em}
+.sheet .brand b{color:#5fcf8d} .sheet .brand i{width:34px;height:34px;border-radius:10px;background:#166534;display:grid;place-items:center}
+.sheet .top a.back{font:600 13px Sora,Inter,sans-serif;padding:6px 12px;border-radius:8px;border:1px solid #475569;
+  color:#f1f5f9;background:none;text-decoration:none;white-space:nowrap} .sheet .top a.back:hover{border-color:#5fcf8d;color:#5fcf8d}
+.sheet .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
+.sheet .card{background:#fff;border-radius:16px;box-shadow:0 1px 2px rgba(17,24,39,.05),0 4px 14px rgba(17,24,39,.06);
+  padding:20px 22px;margin:0 0 18px}
+.sheet .head h1::before{display:none} .sheet .head>p{margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0 0}
+.stat{background:#F3F4F6;border-radius:12px;padding:12px 14px;min-width:0}
+.stat .l{font:600 11px Sora,Inter,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#6B7280}
+.stat .v{font:700 22px/1.3 Sora,Inter,sans-serif;letter-spacing:-.02em;color:#111827;font-variant-numeric:tabular-nums}
+.stat .s{font-size:12px;color:#6B7280} .stat.ok .v{color:#00a344} .stat.todo .v{color:#c2410c}
+.sheet .bar{margin:16px 0 0;padding-top:14px;border-top:1px solid #E5E7EB}
+.sheet .bar>span.hint{flex-basis:100%;font-size:12px}
+.sheet thead th{font:600 11px Sora,Inter,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.sheet th,.sheet td{padding:8px 10px} .sheet tr.entry:hover td{background:#FAFAFA}
+.sheet td.keep{white-space:nowrap;text-align:right} .sheet td.n{white-space:nowrap}
+.sheet button.edit{border-color:#E5E7EB;color:#374151;font-weight:500} .sheet button.edit:hover{border-color:#166534}
+.sheet .carrybox{background:#fff} .sheet .allow,.sheet .carrybox,.sheet .bankbox{border-radius:14px}
+.sheet .lines{box-shadow:none;border-radius:14px;margin:0 0 18px}
+details.lines>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;list-style:none}
+details.lines>summary::-webkit-details-marker{display:none}
+details.lines>summary h2{margin:0} details.lines>summary .tot{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+details.lines>summary::after{content:"Show";font:600 12px Sora,Inter,sans-serif;color:#14532d}
+details.lines[open]>summary::after{content:"Hide"} details.lines[open]>summary{margin-bottom:12px}
+@media screen and (max-width:700px){body.sheet{margin:0} .sheet .wrap{padding:12px 10px 40px}
+ .sheet .card{padding:14px 12px;border-radius:14px} .sheet .top-in{padding:8px 10px} .stats{grid-template-columns:1fr 1fr;gap:8px}
+ .stat .v{font-size:19px} .stat:last-child:nth-child(odd){grid-column:1/-1} .sheet th,.sheet td{padding:0}
+ /* an entry: date, time and its figures on one line, what it was underneath, then its buttons */
+ .sheet tr.entry{display:grid;grid-template-columns:auto 1fr auto auto;gap:2px 10px;align-items:baseline}
+ .sheet tr.entry td{grid-row:1;margin:0} .sheet tr.entry td.n{grid-column:3;font-weight:600}
+ .sheet tr.entry td.n+td.n{grid-column:4;min-width:52px} .sheet tr.entry.mo td.n{grid-column:3/-1}
+ .sheet tr.entry td.c-client{grid-row:2;grid-column:1;color:#6B7280} .sheet tr.entry td.c-task{grid-row:2;grid-column:2/-1}
+ .sheet tr.entry.mo td.c-task{grid-column:1/-1}
+ .sheet tr.entry td.keep{grid-row:3;grid-column:1/-1;white-space:normal;text-align:left}}
+@media print{.sheet .top,.stats{display:none} body.sheet{background:#fff} .sheet .wrap{max-width:none;padding:0}
+ .sheet .card{box-shadow:none;padding:0;border-radius:0;margin-bottom:12px}
+ .sheet thead th{font:600 14px Inter,sans-serif;letter-spacing:0;text-transform:none} .sheet th,.sheet td{padding:6px 8px}}
+"""
+
+
 def _hm(seconds: int) -> str:
     m = round(seconds / 60)
     return f"{m // 60}h {m % 60:02d}m"
@@ -467,7 +515,7 @@ def _task_cell(r: dict) -> str:
         note = f' <span class="tag adj">adjusted · {html.escape(r["note"])}</span>'
     if r.get("comment"):
         note += f' <span class="tag usernote">{html.escape(r["comment"])}</span>'
-    return f"<td>{html.escape(r['task'])}{note}</td>"
+    return f"<td class=\"c-task\">{html.escape(r['task'])}{note}</td>"
 
 
 def _task_options() -> str:
@@ -479,7 +527,7 @@ def _task_options() -> str:
 
 
 def _page(title: str, heading: str, subtitle: str, table: str, default_date: date | None = None,
-          client: str | None = None, pdf_url: str = "", status: str = "") -> str:
+          client: str | None = None, pdf_url: str = "", status: str = "", stats: list | None = None) -> str:
     esc = html.escape
     dialog = f"""<dialog id="entryDialog"><form method="dialog" id="entryForm">
 <h2 id="dlgTitle" style="margin-top:0">Edit entry</h2>
@@ -499,24 +547,31 @@ def _page(title: str, heading: str, subtitle: str, table: str, default_date: dat
 <button type="submit" id="fSave" class="primary">Save</button></div>
 </form></dialog>"""
     defaults = esc(json.dumps({"date": (default_date or date.today()).isoformat(), "client": client or ""}))
+    # the headline figures: (label, value, small print, "ok" or "todo" to colour it)
+    tiles = "".join(f'<div class="stat {esc(kind)}"><div class="l">{esc(label)}</div><div class="v">{esc(value)}</div>'
+                    f'<div class="s">{esc(small)}</div></div>' for label, value, small, kind in stats or [])
+    tiles = f'<div class="stats">{tiles}</div>' if tiles else ""
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>{esc(title)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
-<style>{PAGE_STYLE}</style></head><body data-defaults="{defaults}">
-<div class="bar">{BACK_LINK}<a class="btn" href="{esc(pdf_url)}">Save PDF</a>
+<style>{PAGE_STYLE}{SHEET_STYLE}</style></head><body class="sheet" data-defaults="{defaults}">
+<header class="top"><div class="top-in"><a class="brand" href="/"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12.0 2.0L6.1 3.9L2.5 8.9L2.5 15.1L6.1 20.1L12.0 22.0L17.9 20.1L21.5 15.1L21.5 8.9L17.9 3.9Z M12.0 5.8L6.1 10.1L8.4 17.0L15.6 17.0L17.9 10.1Z M12.0 5.8L12.0 2.0 M6.1 10.1L2.5 8.9 M8.4 17.0L6.1 20.1 M15.6 17.0L17.9 20.1 M17.9 10.1L21.5 8.9"/></svg></i>
+<span>Flip<b>Tracker</b></span></a>{BACK_LINK}</div></header>
+<main class="wrap"><div class="card head"><h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{tiles}
+<div class="bar"><a class="btn" href="{esc(pdf_url)}">Save PDF</a>
 <button class="secondary" onclick="window.print()">Print</button>
 <button id="addEntry" class="secondary">+ Add entry</button>
-{status}<span>Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div>
-<h1>{esc(heading)}</h1><p>{esc(subtitle)}</p>{table}{dialog}{PAGE_SCRIPT}{LABEL_SCRIPT}</body></html>"""
+{status}<span class="hint">Use <b>Edit</b> to change an entry's times or task, or <b>Exclude</b> to leave it uncharged.</span></div></div>
+{table}</main>{dialog}{PAGE_SCRIPT}{LABEL_SCRIPT}</body></html>"""
 
 
 def timesheet_page(rows: list[dict], start: date, end: date, client: str | None) -> str:
     esc = html.escape
     body = "".join(
-        f"<tr class=\"{'x' if r['excluded'] else ''}\"><td>{date.fromisoformat(r['date']):%a %d %b}</td>"
+        f"<tr class=\"entry{' x' if r['excluded'] else ''}\"><td>{date.fromisoformat(r['date']):%a %d %b}</td>"
         f"<td>{esc(r['start'])}–{esc(r['end'])}</td>"
-        f"<td>{esc(r['client'])}</td>{_task_cell(r)}<td class=n>{r['hours']:.2f}</td>"
+        f"<td class=\"c-client\">{esc(r['client'])}</td>{_task_cell(r)}<td class=n>{r['hours']:.2f}</td>"
         f"<td class=n>{esc(r['currency']) + format(r['amount'], '.2f') if r['amount'] else '–'}</td>"
         f"{_exclude_cell(r)}</tr>"
         for r in rows
@@ -527,14 +582,18 @@ def timesheet_page(rows: list[dict], start: date, end: date, client: str | None)
     total = (f"{next(iter(currencies), '')}{sum(r['amount'] for r in charged):.2f}"
              if len(currencies) <= 1 else "mixed currencies")
     who = client or "All clients"
-    table = f"""<table><thead><tr><th>Date</th><th>Time</th><th>Client</th><th>Task</th><th class=n>Hours</th>
+    table = f"""<div class="card"><table><thead><tr><th>Date</th><th>Time</th><th>Client</th><th>Task</th><th class=n>Hours</th>
 <th class=n>Amount</th><th></th></tr></thead>
 <tbody>{body or '<tr><td colspan=7>No time recorded in this period.</td></tr>'}</tbody>
 <tfoot><tr class="grand"><td colspan=4>Total</td><td class=n>{hours:.2f}</td><td class=n>{esc(total)}</td><td></td></tr>
-</tfoot></table>"""
+</tfoot></table></div>"""
+    left_out = len(rows) - len(charged)
+    stats = [("Hours", _hm(round(hours * 3600)), f"{hours:.2f} h", ""),
+             ("Amount", total if currencies else "–", "" if currencies else "no rate on these tasks", ""),
+             ("Entries", str(len(charged)), f"{left_out} not counted" if left_out else "", "")]
     q = f"start={start}&end={end}" + (f"&client={quote(client)}" if client else "")
     return _page(f"Timesheet – {who}", f"Timesheet: {who}", f"{start:%d %b %Y} to {end:%d %b %Y}", table,
-                 start, client, pdf_url=f"/timesheet.pdf?{q}")
+                 start, client, pdf_url=f"/timesheet.pdf?{q}", stats=stats)
 
 
 def _roll_cell(r: dict, inv: dict) -> str:
@@ -552,7 +611,7 @@ def esc_attr(v: str) -> str:
 
 def _entry_row(r: dict, day: date, inv: dict) -> str:
     esc = html.escape
-    cls = "x" if r["excluded"] else "rolled" if r["rolled"] else ""
+    cls = "entry mo" + (" x" if r["excluded"] else " rolled" if r["rolled"] else "")
     task_cell = _task_cell(r)
     if r["rolled"] and not r["excluded"]:
         task_cell = task_cell[:-5] + ' <span class="tag adj">rolled over: carried to a later invoice</span></td>'
@@ -707,16 +766,36 @@ def invoice_page(inv: dict) -> str:
                     f'({al["working_days"]} working days) · charging {_hm(al["charging_s"])}{added}{rolling} · {state}'
                     f' · <a href="/carried">Carried hours ledger</a></div>'
                     + _carry_box(inv, al))
-    table = summary + f"""<table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
+    table = summary + f"""<div class="card"><table><thead><tr><th>Date</th><th>Time</th><th>Task</th><th class=n>Duration</th><th></th></tr></thead>
 <tbody>{"".join(parts)}</tbody><tfoot>{days_line}{extra_line}
 <tr class="grand"><td colspan=3>Total for {month:%B %Y}</td><td class=n>{_hm(inv["total_billed_s"])}</td>
-<td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table>"""
+<td class=n>{inv["total_billed_s"] / 3600:.2f} h</td></tr></tfoot></table></div>"""
     table = _bank_box(inv) + _lines_panel(inv) + table + _extras_box(inv)
+    # the headline figures: what the month comes to, and where its invoice has got to
+    rate = inv.get("rate")
+    lines = invoice_lines(inv, rate, bool(inv.get("smooth")) and inv["style"] == "week")
+    extras = billing.extra_lines(inv.get("extras") or [])
+    amount = sum(l["amount"] or 0 for l in lines) + sum(x["amount"] for x in extras)
+    done, bill = inv.get("invoiced"), inv.get("bill")
+    if inv.get("paid"):
+        state = ("Invoice", "Paid", f'{datetime.fromisoformat(inv["paid"]).astimezone():%d/%m/%Y}', "ok")
+    elif done:
+        state = ("Invoice", "Sent", (bill["number"] + " · " if bill else "") + "awaiting payment", "ok")
+    else:
+        state = ("Invoice", "Not invoiced", "", "todo")
+    stats = [("Hours charged", _hm(inv["total_billed_s"]), f'{inv["total_billed_s"] / 3600:.2f} h', ""),
+             ("Amount", f"£{amount:,.2f}" if rate else "–",
+              (f"at £{rate:,.2f} an hour" + (f", with {len(extras)} extra{'s' * (len(extras) != 1)}" if extras else ""))
+              if rate else "no hourly rate set", "")]
+    if inv["style"] == "day":
+        stats.append(("Days worked", str(inv["days_worked"]), "", ""))
+    stats.append(state)
     start, end = date.fromisoformat(inv["start"]), date.fromisoformat(inv["end"])
     style = "by the day" if inv["style"] == "day" else "by the week (weeks starting on a Monday in the month)"
     return _page(f"{inv['client']} – {month:%B %Y}", f"{inv['client']}: {month:%B %Y}",
                  f"{start:%d %b %Y} to {end:%d %b %Y} · billed {style}{rounding}", table, start, inv["client"],
-                 pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}", status=_invoiced_status(inv))
+                 pdf_url=f"/invoice.pdf?client={quote(inv['client'])}&month={inv['month']}", status=_invoiced_status(inv),
+                 stats=stats)
 
 
 def _invoiced_status(inv: dict) -> str:
@@ -1014,8 +1093,11 @@ def _lines_panel(inv: dict) -> str:
                       + ("the month's total spread evenly over its weeks, in whole blocks; same total, but the lines "
                          "won't match the week totals on the timesheet" if smooth else
                          "spread the month's total evenly over its weeks (same total)") + '</span></p>')
-    return f"""<div class="lines bar-block">
-<h2 style="margin-top:0">Invoice lines</h2>
+    made = inv.get("bill")
+    shown = f"£{total_amount:,.2f}" if rate else f"{total_hours:.2f} h"
+    return f"""<details class="lines bar-block"{"" if made else " open"}>
+<summary><h2>Invoice lines</h2><span class="tag">{f"on invoice {esc(made['number'])}" if made else "what the invoice will say"}</span>
+<span class="tot">{shown}</span></summary>
 <p>One line per {"day" if inv["style"] == "day" else "week"}, ready to copy into your invoice: description, then quantity
 (hours), then rate.{rate_note}</p>{smooth_box}
 <table class="labelled"><thead><tr><th>Description</th><th class=n>Hours</th><th class=n>Rate</th><th class=n>Amount</th></tr></thead>
@@ -1023,7 +1105,7 @@ def _lines_panel(inv: dict) -> str:
 <tfoot><tr class="grand"><td>Total</td><td class=n>{total_hours:.2f}</td><td></td>
 <td class=n>{'£' + format(total_amount, '.2f') if rate else '–'}</td></tr></tfoot></table>
 <p style="margin-top:10px">{btn('Copy all lines', all_text)} <span class="copied" id="copied"></span></p>
-</div>"""
+</details>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1585,6 +1667,10 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == "/api/import":
                     conf, report = merge.import_changes(service.open_store(include_ignored=True), cfg.load_config(), body)
                     cfg.save_config(conf)
+                    try:
+                        settle_short_rule()   # invoiced months from a Mac on an older version
+                    except Exception:
+                        pass
                     return self._send(200, {"report": report})
                 elif self.path == "/api/rollover":
                     service.open_store().set_rolled(int(body["id"]), "carried" if body.get("rolled") else None,
@@ -1828,6 +1914,29 @@ def _bill_lines(store, conf: dict, client: str, month: str) -> tuple[list[dict],
     return lines, sum(by_task.values())
 
 
+def settle_short_rule() -> int:
+    """Months invoiced before the short-entry limit was recorded with them: work out which way each was charged.
+    The month's total is tried with short entries counted and with today's limit; if exactly one comes to the hours
+    saved when it was invoiced, that's the one kept. Otherwise it stays as it was (everything counted)."""
+    store, conf = service.open_store(), cfg.load_config()
+    now, settled = int(store.min_entry_seconds), 0
+    for (client, month), limit in sorted(store.invoiced_limits().items()):
+        if limit is not None:
+            continue
+        saved = next((v["seconds"] for m, v in store.invoiced(client).items() if m == month), None)
+        fits = []
+        try:
+            for candidate in dict.fromkeys([0, now]):
+                store.set_invoiced_limit(client, month, candidate)
+                if _month_due(store, conf, client, month)[0] == saved:
+                    fits.append(candidate)
+        except Exception:
+            fits = []
+        store.set_invoiced_limit(client, month, fits[0] if len(fits) == 1 else None)
+        settled += len(fits) == 1
+    return settled
+
+
 def _create_bill(client: str, month: str, today: date) -> dict:
     conf = cfg.load_config()
     store = service.open_store()
@@ -1938,6 +2047,10 @@ def serve() -> None:
         ensure_app()  # existing installs get the app on their next restart or update
     except Exception as e:
         print(f"Couldn't create the app: {e}")
+    try:
+        settle_short_rule()
+    except Exception as e:
+        print(f"Couldn't check older invoices' short entries: {e}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.PORT), Handler)
     print(f"FlipTracker running at http://127.0.0.1:{cfg.PORT}")
     server.serve_forever()
