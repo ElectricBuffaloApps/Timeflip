@@ -1,5 +1,14 @@
 [
   {
+    "version": 51,
+    "changes": [
+      "Timesheets on screen now look like the rest of the app: the dark FlipTracker bar at the top, white cards, and the month's headline figures (hours charged, amount, days worked and whether it's invoiced or paid) before the detail.",
+      "On a phone, each entry is laid out properly: date, time and its figures on one line, the task underneath, then Exclude and Edit. Amounts no longer drop onto a line of their own.",
+      "Invoice lines folds away once the invoice has been made in the app, showing just its total. Click it to open it again. Until then it stays open as before.",
+      "Nothing changes on the PDFs or on paper: Save PDF and Print give the same timesheet as before."
+    ]
+  },
+  {
     "version": 50,
     "changes": [
       "Fixed: a timesheet no longer changes the moment you invoice it. Entries under 5 minutes were left off the invoice, but came back on the timesheet (rounded up) once the month was marked as invoiced, so the sheet and its PDF showed more than the invoice and warned 'Changed since'.",
