@@ -1,5 +1,12 @@
 [
   {
+    "version": 61,
+    "changes": [
+      "If part of the page can't load, it now says so. A red bar at the top names what's missing (Money to collect, your invoices, today and so on) and why, with a Try again button. Before, that part just stayed blank or kept showing old figures, which could hide money you're owed.",
+      "The bar clears itself as soon as that part loads again, including on the page's own refresh every minute."
+    ]
+  },
+  {
     "version": 60,
     "changes": [
       "Extra hours a client agreed to pay for: when a week has gone over its weekly hours, the timesheet shows 'Charge extra hours' under that week. Enter how many of the extra hours the client agreed to (all or some). They're charged on the invoice, on the days they were worked, and only the rest goes to the bank.",
