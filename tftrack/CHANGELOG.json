@@ -1,5 +1,13 @@
 [
   {
+    "version": 50,
+    "changes": [
+      "Fixed: a timesheet no longer changes the moment you invoice it. Entries under 5 minutes were left off the invoice, but came back on the timesheet (rounded up) once the month was marked as invoiced, so the sheet and its PDF showed more than the invoice and warned 'Changed since'.",
+      "An invoiced month now keeps the short-entry setting it was invoiced with. Changing 'Don't count entries shorter than' later doesn't alter months already invoiced.",
+      "Months you've already invoiced are checked once against the hours saved with the invoice, and put back to match. A month whose timesheet you've changed since invoicing is left as it is."
+    ]
+  },
+  {
     "version": 49,
     "changes": [
       "Emails now carry just the invoice. To send the timesheet too, tick 'Attach the timesheet as well as the invoice' for the business in Settings → Your businesses. You can still save a timesheet PDF from the invoice page whenever you want one.",
