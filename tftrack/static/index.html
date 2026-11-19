@@ -1580,8 +1580,8 @@ async function loadCollect() {
     const side = el("div", { class: "side" });
     if (p.value != null) side.append(el("span", { class: "worth" }, gbp(p.value)));
     if (p.action === "invoice") {
-      side.append(act("Create invoice", () => createBill(p.client, p.month), "primary"),
-                  act("Open timesheet", () => openSheet(p.client, p.month)),
+      // the timesheet first: it's where banked hours, agreed hours and mileage are added, and it has Create invoice
+      side.append(act("Review and invoice", () => openSheet(p.client, p.month), "primary"),
                   act("Mark invoiced", async () => { await api("/api/invoiced", { client: p.client, month: p.month, invoiced: true }); again(); }));
     } else if (p.action === "paid") {
       if (p.bill_id) side.append(act("Open invoice", () => openPage(`/bill?id=${p.bill_id}`)));
@@ -1979,14 +1979,9 @@ async function loadBills() {
     const row = el("div", { class: `cprompt ${r.missing.length ? "" : "warning"}` });
     const side = el("div", { class: "side" });
     side.append(el("span", { class: "worth" }, r.value == null ? "no rate" : gbp(r.value)));
-    const make = el("button", { class: "primary" }, "Create invoice");
-    make.disabled = !!r.missing.length;
-    make.onclick = async () => {
-      make.disabled = true;
-      try { await createBill(r.client, r.month); } catch (e) { alert(e.message); make.disabled = false; }
-    };
-    const sheet = el("button", {}, "Timesheet"); sheet.onclick = () => openSheet(r.client, r.month);
-    side.append(make, sheet);
+    const make = el("button", { class: "primary" }, "Review and invoice");   // opens the timesheet, which has Create invoice
+    make.onclick = () => openSheet(r.client, r.month);
+    side.append(make);
     const xs = b.extras.filter((x) => x.client.toLowerCase() === r.client.toLowerCase() && x.month === r.month);
     const extra = xs.length ? ` plus ${xs.length} extra${xs.length === 1 ? "" : "s"} (${gbp(xs.reduce((t, x) => t + x.amount, 0))})` : "";
     const from = b.several && r.business ? ` From ${r.business}.` : "";

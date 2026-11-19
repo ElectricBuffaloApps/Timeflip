@@ -1,5 +1,12 @@
 [
   {
+    "version": 59,
+    "changes": [
+      "'Create invoice' on the Dashboard and the Invoices tab is now 'Review and invoice'. It opens the month's timesheet first, so you can add banked hours, agreed hours or mileage, then press Create invoice there. Before, it made the invoice straight away with no chance to change anything.",
+      "'Create all' on the Invoices tab still makes every ready invoice in one go, for months that need no changes."
+    ]
+  },
+  {
     "version": 58,
     "changes": [
       "Saved settings are protected from being overwritten. If your businesses or client details were changed on another device or in another tab after this page loaded them, Save is refused with a message, instead of quietly putting the old ones back. Reload and make the change again.",
