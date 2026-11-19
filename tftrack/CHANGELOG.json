@@ -1,5 +1,11 @@
 [
   {
+    "version": 57,
+    "changes": [
+      "Fixed: Redo now uses the business's current prefix. If you change a business's invoice prefix (say from INV to EB-) and then redo an unsent invoice, the new one keeps its place in the sequence but takes the new prefix: INV001 becomes EB-001. Before, it kept the old wording."
+    ]
+  },
+  {
     "version": 56,
     "changes": [
       "Invoices billed by the day are now broken down by week. Each week has a heading ('W/C 5th Oct 2026') showing the week's hours and amount, with its days listed underneath.",

@@ -348,8 +348,12 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
     number, moved_on = format_number(b, n), True
     reuse_key = f"bill_reuse:{client.lower()}:{month}"       # ...unless this replaces one that was never sent
     kept = json.loads(store.get_meta(reuse_key) or "null")
-    if kept and kept["business_id"] == b["id"] and not store.number_used(b["id"], kept["number"]):
-        number, n, moved_on = kept["number"], kept["seq"], False
+    if kept and kept["business_id"] == b["id"]:
+        # the same place in the sequence, written the way the business numbers its invoices now (so a prefix
+        # changed in Settings since shows on the replacement)
+        again = format_number(b, kept["seq"])
+        if not store.number_used(b["id"], again):
+            number, n, moved_on = again, kept["seq"], False
     net = round(sum(l["amount"] for l in lines), 2)
     vat_rate = b["vat_rate"] if b["vat_registered"] else None
     vat = round(net * vat_rate / 100, 2) if vat_rate else 0.0

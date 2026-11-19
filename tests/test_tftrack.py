@@ -1181,6 +1181,13 @@ class BillingTest(unittest.TestCase):
             store.replace_bill(other["id"])
             self.assertEqual(web._create_bill("FCY", "2026-10", today)["number"], "INV-0007")
             self.assertIsNone(store.replace_bill(bill["id"]))    # already void: nothing to redo
+            # a prefix changed since shows on the replacement, which keeps its place in the sequence
+            latest = store.bill_for("FCY", "2026-10")
+            store.replace_bill(latest["id"])
+            conf["businesses"] = [{**x, "prefix": "EB-", "digits": 3} if x["id"] == "b2" else x for x in conf["businesses"]]
+            renamed = web._create_bill("FCY", "2026-10", today)
+            self.assertEqual((renamed["number"], renamed["seq"]), ("EB-007", 7))
+            self.assertEqual(next(x["next_number"] for x in saved["businesses"] if x["id"] == "b2"), 8)
 
     def test_version_30_invoices_and_business_carry_over(self):
         import sqlite3
