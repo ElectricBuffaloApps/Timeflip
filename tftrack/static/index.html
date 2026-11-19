@@ -430,6 +430,9 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 .form { display: grid; gap: 12px; }
 .form label.field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
 .form select, .form input { width: 100%; }
+.loadfail { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 16px; padding: 12px 14px;
+  border-radius: 12px; border-left: 3px solid var(--critical); background: var(--critical-bg); font-size: 13px; }
+.loadfail span { flex: 1 1 260px; } .loadfail button { flex: none; }
 .callout { background: var(--tint); border-radius: 12px; padding: 12px 14px; font-size: 13px; }
 .steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; counter-reset: s; }
 .steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; font-size: 13px; counter-increment: s; }
@@ -535,6 +538,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
 </header>
 
 <main>
+  <div class="loadfail hidden" id="loadFail" role="alert"><span id="loadFailText"></span><button id="loadFailRetry">Try again</button></div>
   <div class="banner hidden" id="error"></div>
   <div class="banner news hidden" id="newsBanner">
     <div><b id="newsTitle">What's new</b><ul id="newsList"></ul></div>
@@ -1069,6 +1073,34 @@ async function api(path, body) {
   return data;
 }
 
+/* ---------- when part of the page can't load ---------- */
+// A part that fails mustn't just stay blank (or keep showing old figures) without saying so: money owed could be
+// hiding behind it. Each failed part is named in one banner at the top, with why, until it loads again.
+const failedParts = new Map();   // name -> { why, again }
+function showFailed() {
+  const names = [...failedParts.keys()];
+  $("loadFail").classList.toggle("hidden", !names.length);
+  if (!names.length) return;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const whys = [...new Set([...failedParts.values()].map((f) => f.why))];
+  $("loadFailText").replaceChildren(el("b", {}, `Couldn't load ${list}.`),
+    ` ${names.length === 1 ? "It" : "They"} may be missing or out of date below. ${whys.join(" ")}`);
+}
+async function part(name, path, again) {
+  try {
+    const data = await api(path);
+    if (failedParts.delete(name)) showFailed();
+    return data;
+  } catch (e) {
+    // fetch itself failing (a TypeError) means the tracker didn't answer at all
+    const why = e instanceof TypeError ? "FlipTracker isn't answering: check it's running on your Mac."
+      : e instanceof SyntaxError ? "FlipTracker sent back something unexpected." : `The reason given: ${e.message}`;
+    failedParts.set(name, { why, again });
+    showFailed();
+    return null;
+  }
+}
+
 /* ---------- opening timesheets and invoices ---------- */
 function samePage() {
   // Timesheets and invoices always open in this window, with "← Tracker" to come back. Opening them in a new tab left
@@ -1472,7 +1504,8 @@ async function loadWeek() {
   const [start, end, bucket] = chartRange(kind);
   $("weekTitle").textContent = $("weekRange").selectedOptions[0].textContent;
   let r;
-  try { r = await api(`/api/report?start=${iso(start)}&end=${iso(end)}&group=client`); } catch (_) { return; }
+  r = await part("the hours chart", `/api/report?start=${iso(start)}&end=${iso(end)}&group=client`, loadWeek);
+  if (!r) return;
   const series = foldSeries(r.series);
   // Group the days into buckets (days, weeks or months), keeping each client's share.
   const buckets = [];
@@ -1527,11 +1560,10 @@ async function loadWeek() {
 }
 async function loadWeekKpi() {
   const [start, end] = chartRange("thisWeek");
-  try {
-    const r = await api(`/api/report?start=${iso(start)}&end=${iso(end)}&group=client`);
-    weekKpi = { seconds: r.total_seconds, days: r.days.filter((_, i) => r.series.some((s) => s.values[i] > 0)).length };
-    fillWeekKpi();
-  } catch (_) {}
+  const r = await part("hours this week", `/api/report?start=${iso(start)}&end=${iso(end)}&group=client`, loadWeekKpi);
+  if (!r) return;
+  weekKpi = { seconds: r.total_seconds, days: r.days.filter((_, i) => r.series.some((s) => s.values[i] > 0)).length };
+  fillWeekKpi();
 }
 $("weekRange").onchange = () => {
   try { localStorage.setItem("chartRange", $("weekRange").value); } catch (_) {}
@@ -1554,7 +1586,8 @@ let collectAny = false, soFarAny = false;   // the two halves of the one money p
 const showCollectTile = () => $("collectTile").classList.toggle("hidden", !(collectAny || soFarAny));
 async function loadCollect() {
   let c;
-  try { c = await api("/api/collect"); } catch (_) { return; }
+  c = await part("Money to collect", "/api/collect", loadCollect);
+  if (!c) return;
   collectAny = !!(c.prompts.length || c.hidden);
   showCollectTile();
   for (const [id, v] of [["colInvoice", c.to_invoice], ["colAwaiting", c.awaiting], ["colOverdue", c.overdue]]) {
@@ -1623,7 +1656,8 @@ async function loadCollect() {
 /* ---------- areas ---------- */
 async function loadAreas() {
   let r;
-  try { r = await api("/api/areas"); } catch (_) { return; }
+  r = await part("the client cards", "/api/areas", loadAreas);
+  if (!r) return;
   $("areaCards").classList.toggle("hidden", !r.areas.length);
   $("areaCards").replaceChildren(...r.areas.map((a) => {
     const card = el("a", { class: "tile acard", href: `#area=${encodeURIComponent(a.client)}`,
@@ -1873,7 +1907,8 @@ $("saveAreas").onclick = async () => {
 /* ---------- insights ---------- */
 async function loadInsights() {
   let d;
-  try { d = await api("/api/insights"); } catch (_) { return; }
+  d = await part("the earnings report", "/api/insights", loadInsights);
+  if (!d) return;
   const k = d.kpis;
   const tile = (label, fig, foot) => {
     const t = el("section", { class: "tile kpi" });
@@ -1969,7 +2004,8 @@ async function createBill(client, month) {
 }
 async function loadBills() {
   let b;
-  try { b = await api("/api/bills"); } catch (_) { return; }
+  b = await part("your invoices", "/api/bills", loadBills);
+  if (!b) return;
   $("billSetup").classList.toggle("hidden", !b.missing.length);
   $("billSetupText").textContent = `Before your first invoice, add ${b.missing.join(", ")} in Settings.`;
   const can = b.ready.filter((r) => !r.missing.length);
@@ -2262,7 +2298,8 @@ $("saveDetails").onclick = async () => {
 // Earlier months not yet invoiced are prompts in the list above; this is what the month in hand has built up.
 async function loadOutstanding() {
   let o;
-  try { o = await api("/api/outstanding"); } catch (_) { return; }
+  o = await part("this month so far", "/api/outstanding", loadOutstanding);
+  if (!o) return;
   const now = (c) => c.months.find((mo) => mo.current);
   const clients = o.clients.filter((c) => now(c) || c.carried_s);
   soFarAny = clients.length > 0;
@@ -2466,7 +2503,8 @@ function renderStrip(t) {
 }
 async function loadToday() {
   let t;
-  try { t = await api("/api/today"); } catch (_) { return; }
+  t = await part("today", "/api/today", loadToday);
+  if (!t) return;
   const [h, m] = hm(t.total_seconds).split(" ");
   $("todayTotal").replaceChildren(document.createTextNode(h.replace("h", "")), el("small", {}, "h "),
                                   document.createTextNode(m.replace("m", "")), el("small", {}, "m"));
@@ -2594,7 +2632,8 @@ function kpiTile(r) {
 }
 async function loadTargets() {
   let t;
-  try { t = await api("/api/targets"); } catch (_) { return; }
+  t = await part("targets and limits", "/api/targets", loadTargets);
+  if (!t) return;
   const hoursTile = el("section", { class: "tile kpi" });
   hoursTile.append(el("div", { class: "lbl" }, "Hours this week"), el("div", { class: "fig", id: "kpiWeekHours" }, $("kpiWeekHours")?.textContent || "–"),
                    el("div", { class: "foot", id: "kpiWeekFoot" }, $("kpiWeekFoot")?.textContent || ""));
@@ -2617,7 +2656,8 @@ function fillWeekKpi() {
 /* ---------- monthly allowances ---------- */
 async function loadAllowances() {
   let a;
-  try { a = await api("/api/allowances"); } catch (_) { return; }
+  a = await part("monthly allowances", "/api/allowances", loadAllowances);
+  if (!a) return;
   $("holidayNote").textContent = a.holidays_loaded
     ? `Bank holidays (England and Wales, from gov.uk) aren't counted. Last downloaded ${new Date(a.holidays_updated).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.`
     : "Bank holidays haven't downloaded from gov.uk yet, so every weekday counts for now. It tries again every hour.";
@@ -2678,7 +2718,8 @@ $("mMonth").onchange = () => loadMonth();
 /* ---------- phone & other computers ---------- */
 async function loadRemote() {
   let r;
-  try { r = await api("/api/remote"); } catch (_) { return; }
+  r = await part("the phone and other computers settings", "/api/remote", loadRemote);
+  if (!r) return;
   const show = (id, on) => $(id).classList.toggle("hidden", !on);
   $("remoteStatus").textContent = !r.installed ? "Tailscale isn't installed on this Mac. Install it from tailscale.com/download (or the Mac App Store) and sign in, then come back."
     : !r.running ? "Tailscale is installed but not signed in or not running. Open Tailscale and sign in."
@@ -2746,6 +2787,12 @@ function refreshAll(auto = false) {
   loadToday(); loadTargets(); loadMonth(auto); loadWeek(); loadReport(); loadAllowances(); loadOutstanding(); loadCollect(); loadAreas();
   if (areaOpen) loadArea(true);   // an area's page that's open follows a sync too
 }
+$("loadFailRetry").onclick = async () => {
+  const b = $("loadFailRetry");
+  b.disabled = true; b.textContent = "Trying…";
+  await Promise.all([...new Set([...failedParts.values()].map((f) => f.again))].map((fn) => fn()));
+  b.disabled = false; b.textContent = "Try again";
+};
 (async () => {
   try { showState(await api("/api/state"), true); }
   catch (e) { $("syncInfo").textContent = `Couldn't load: ${e.message}`; }
