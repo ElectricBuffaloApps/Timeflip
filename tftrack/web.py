@@ -18,7 +18,7 @@ from . import config as cfg
 from . import allowance, areas, billing, collect, insights, logo, mailer, merge, pdf, remote, service, updater
 from .store import MANUAL_ID_OFFSET
 from .limits import WEEKDAYS, parse_limits
-from .reports import (pence, BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
+from .reports import (pence, week_commencing, BILLING_STYLES, ROUNDING_MODES, build_report, day_weeks, invoice, invoice_lines, money_summary, month_summary, targets_summary,
                       timesheet_csv, timesheet_rows)
 
 STATIC = Path(__file__).parent / "static"
@@ -999,7 +999,8 @@ def _bank_box(inv: dict) -> str:
         return ""
     esc = html.escape
     client = esc(inv["client"])
-    head = f'<div><b>Hours in lieu for {client}: {_hm(max(0, b["seconds"]))} banked</b></div>'
+    head = (f'<div><b>Hours in lieu for {client}: {_hm(max(0, b["seconds"]))} banked</b> · '
+            f'<a href="/hours?client={quote(inv["client"])}">Week by week against the agreed hours →</a></div>')
     if b["seconds"] <= 0:
         return (f'<div class="carrybox bankbox">{head}<p class="hint">Nothing to add. Hours over the weekly hours go in '
                 f'here by themselves.</p></div>')
@@ -1078,6 +1079,67 @@ h2{{margin-top:36px}} td a{{color:#14532d}} .warn{{color:#c2410c}} @media print{
 <h1>Carried hours</h1>
 <p>Month by month for each allowance. Worked is everything tracked that month, including what was rolled over.
 Balance left is what has been rolled over or brought in and not yet added to an invoice.</p>
+{body}{LABEL_SCRIPT}</body></html>"""
+
+
+def hours_page(rec: dict, today: date) -> str:
+    """Hours worked against the hours agreed, week by week: one page to print or show a client."""
+    esc = html.escape
+    hm = lambda secs: _hm(secs) if secs else "–"
+    rate = rec["rate"]
+    money = lambda secs: f"£{secs / 3600 * rate:,.2f}" if rate else ""
+    rows = []
+    for w in rec["weeks"]:
+        monday = date.fromisoformat(w["monday"])
+        link = f'/invoice?client={quote(rec["client"])}&month={monday + timedelta(days=6):%Y-%m}'
+        agreed = f' <span class="tag">+{_hm(w["agreed_s"])} agreed extra</span>' if w["agreed_s"] else ""
+        state = ('<span class="tag">in progress</span>' if not w["finished"] else
+                 f'<span class="tag adj">{_hm(w["over_s"])} over</span>' if w["over_s"] else
+                 f'<span class="tag">{_hm(w["under_s"])} under</span>' if w["under_s"] else "✓ on the hours")
+        rows.append(f'<tr{"" if w["finished"] else " class=soft"}><td><a class="plain" href="{link}">{week_commencing(monday)}</a></td>'
+                    f'<td class=n>{_hm(w["worked_s"])}</td><td class=n>{_hm(w["limit_s"])}{agreed}</td>'
+                    f'<td class=n>{hm(w["over_s"])}</td><td class=n>{hm(w["from_bank_s"])}</td>'
+                    f'<td class=n>{_hm(w["charged_s"])}</td><td>{state}</td></tr>')
+    n = rec["finished"]
+    limit_h = rec["limit_s"] / 3600
+    if not rec["limit_s"]:
+        body = (f'<p>{esc(rec["client"])} has no hours a week set. Add them in <b>Settings → Dashboard cards</b>.</p>')
+    else:
+        avg = rec["average_s"] / 3600
+        cards = [("Agreed", f"{limit_h:g}h a week", f'since {date.fromisoformat(rec["start"]):%d/%m/%Y}'),
+                 ("Worked on average", f"{_hm(rec['average_s'])} a week", f"over {n} finished week{'s' * (n != 1)}"),
+                 ("Weeks over", f"{rec['weeks_over']} of {n}", f"{_hm(rec['over_s'])} over in all"),
+                 ("Not yet charged", _hm(max(0, rec["bank_s"])), (money(max(0, rec["bank_s"])) + " at the hourly rate") if rate else "banked")]
+        stats = "".join(f'<div class="stat"><div class="k">{k}</div><div class="v">{v}</div><div class="s">{s}</div></div>'
+                        for k, v, s in cards)
+        verdict = ""
+        if n >= 4 and avg > limit_h * 1.1:
+            verdict = (f'<p class="verdict">The work has averaged <b>{_hm(rec["average_s"])}</b> a week against '
+                       f'<b>{limit_h:g}h</b> agreed: {avg / limit_h * 100 - 100:.0f}% more.</p>')
+        body = f"""<div class="stats">{stats}</div>{verdict}
+<table class="labelled"><thead><tr><th>Week</th><th class=n>Worked</th><th class=n>Agreed</th><th class=n>Over</th>
+<th class=n>Added from bank</th><th class=n>Charged</th><th></th></tr></thead>
+<tbody>{"".join(rows) or '<tr><td colspan=7>Nothing yet.</td></tr>'}</tbody>
+<tfoot><tr class="grand"><td>{n} finished week{'s' * (n != 1)}</td><td class=n>{_hm(rec["worked_s"])}</td>
+<td class=n>{_hm(rec["limit_s"] * n + rec["agreed_s"])}</td><td class=n>{hm(rec["over_s"])}</td>
+<td class=n>{hm(rec["from_bank_s"])}</td><td class=n>{_hm(rec["worked_s"] - (rec["over_s"] if rec["holds_back"] else 0) + rec["from_bank_s"])}</td><td></td></tr></tfoot></table>
+<p class="foot">Weeks run Monday to Sunday. Worked is the time tracked, each day rounded the way it is invoiced; time left off
+timesheets isn't counted. Over is time past the agreed hours that week, not charged on that week's invoice. Added from
+bank is earlier extra time charged in a quieter week. Not yet charged is what remains.</p>"""
+    return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(rec["client"])}: hours against agreed</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>{PAGE_STYLE}
+.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}} .stat{{background:#F3F4F6;border-radius:12px;padding:12px 14px}}
+.stat .k{{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6B7280}} .stat .v{{font:700 20px Sora,Inter,sans-serif;color:#111827}}
+.stat .s{{font-size:12px;color:#6B7280}} .verdict{{font-size:16px;color:#111827;border-left:3px solid #166534;padding:6px 12px;background:#F0F7F2;border-radius:6px}}
+tr.soft td{{color:#9CA3AF}} a.plain{{color:inherit;text-decoration:none}} a.plain:hover{{text-decoration:underline}} .foot{{font-size:12px;margin-top:14px}}
+@media (max-width:700px){{.stats{{grid-template-columns:1fr 1fr}}}}
+@media print{{.bar{{display:none}} .stat,.verdict{{-webkit-print-color-adjust:exact;print-color-adjust:exact}}}}</style></head><body>
+<div class="bar">{BACK_LINK}<button onclick="window.print()">Print or save as PDF</button><span>As at {today:%d/%m/%Y}</span></div>
+<h1>{esc(rec["client"])}: hours against agreed</h1>
+<p>Week by week since {date.fromisoformat(rec["start"]):%d/%m/%Y}.</p>
 {body}{LABEL_SCRIPT}</body></html>"""
 
 
@@ -1303,6 +1365,9 @@ class Handler(BaseHTTPRequestHandler):
                     series["notional"] = hit["notional"] if hit else False
                 report["money"] = {"earned": m["earned"], "value": m["value"]}
                 return self._send(200, report)
+            if url.path == "/hours":
+                rec = areas.weekly_record(service.open_store(), cfg.load_config(), q.get("client") or "", date.today())
+                return self._send(200, hours_page(rec, date.today()), "text/html; charset=utf-8")
             if url.path == "/carried":
                 holidays, _ = allowance.bank_holidays()
                 books = allowance.ledger(service.open_store(), cfg.load_config(), date.today(), holidays or set())

@@ -728,6 +728,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="tile-head"><h2>Hours in lieu</h2></div>
       <div class="lieu-fig" id="arLieu">–</div>
       <div class="lieu-sub" id="arLieuSub"></div>
+      <p class="note"><a href="#" id="arHours">Week by week against the agreed hours →</a> <span class="hint">(a page to print or show your client)</span></p>
       <div class="lieu-form">
         <h3>Add banked hours to a day or week</h3>
         <label class="field">Add to<select id="luMode"><option value="day">A day</option><option value="week">A week</option></select></label>
@@ -1699,6 +1700,7 @@ async function loadArea(auto = false) {
     tile("Hours in lieu", hm(d.lieu.total_seconds), d.lieu.total_seconds && d.rate ? `Worth ${gbp((d.lieu.total_seconds / 3600) * d.rate)}` : "Banked, not yet used"));
   drawAreaChart();
   // hours in lieu
+  $("arHours").onclick = (ev) => { ev.preventDefault(); openPage(`/hours?client=${encodeURIComponent(areaOpen)}`); };
   $("arLieu").textContent = hm(d.lieu.total_seconds);
   const L = d.lieu, parts = [];
   if (L.auto) {

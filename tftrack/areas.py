@@ -173,6 +173,59 @@ def _billed_weeks(store, conf: dict, client: str, today: date, rules: dict) -> t
     return held, out
 
 
+def weekly_record(store, conf: dict, client: str, today: date) -> dict:
+    """Week by week since the bank's start (Monday to Sunday): what was worked against the hours a week.
+
+    For showing a client how the agreed hours compare with the work: each week's hours worked (each day rounded
+    the client's way; excluded and rolled-over time left out), the hours a week, any extra they agreed to pay for,
+    how far over or under it was, and what was charged. The week in progress is listed but kept out of the totals.
+    """
+    rules = bank_rules(conf, store, client)
+    c = _client_conf(conf, client) or {}
+    block, mode = c.get("block_minutes", 15), c.get("rounding", "none")
+    limit = rules["limit_seconds"]
+    first = rules["start"] + timedelta(days=(7 - rules["start"].weekday()) % 7)
+    from_bank, rolled = store.lieu_entry_ids(), store.rolled()
+    days: dict[str, list[int]] = {}
+    for r in timesheet_rows(store, first, today, client):
+        if r["excluded"] or r["id"] in rolled:
+            continue
+        d = days.setdefault(r["date"], [0, 0])
+        d[0] += r["seconds"]
+        d[1] += r["seconds"] if r["id"] in from_bank else 0
+    held = _billed_weeks(store, conf, client, today, rules)[0] if rules["auto"] and rules["holds_back"] else {}
+    agreed = store.week_agreed(client)
+    weeks, monday = [], first
+    while monday <= today:
+        worked = added = over = 0
+        for n in range(7):
+            iso = (monday + timedelta(days=n)).isoformat()
+            if iso in days:
+                total = round_seconds(days[iso][0], block, mode)
+                topped = min(total, days[iso][1])
+                worked += total - topped
+                added += topped
+                over += held.get(iso, 0)
+        if not rules["holds_back"]:   # nothing is held back from an invoice: over is simply past the hours a week
+            over = max(0, worked - limit - agreed.get(monday.isoformat(), 0))
+        finished = monday + timedelta(days=6) < today
+        weeks.append({"monday": monday.isoformat(), "worked_s": worked, "limit_s": limit,
+                      "agreed_s": agreed.get(monday.isoformat(), 0), "over_s": over,
+                      "under_s": max(0, limit - worked - added) if finished else 0,
+                      "from_bank_s": added, "charged_s": worked - (over if rules["holds_back"] else 0) + added,
+                      "finished": finished})
+        monday += timedelta(days=7)
+    done = [w for w in weeks if w["finished"]]
+    total = lambda k: sum(w[k] for w in done)
+    return {"client": client, "start": rules["start"].isoformat(), "limit_s": limit, "weeks": weeks,
+            "holds_back": rules["holds_back"], "rate": c.get("rate") if not c.get("notional") else None,
+            "finished": len(done), "worked_s": total("worked_s"), "over_s": total("over_s"), "under_s": total("under_s"),
+            "agreed_s": total("agreed_s"), "from_bank_s": total("from_bank_s"),
+            "weeks_over": sum(1 for w in done if w["over_s"] or w["agreed_s"]),
+            "average_s": round(total("worked_s") / len(done)) if done else 0,
+            "bank_s": bank(store, conf, client, today)["seconds"]}
+
+
 def over_weeks(store, conf: dict, client: str, today: date) -> list[dict]:
     """Each week since the bank's start with more worked than the hours a week: [{start, worked_seconds, over_seconds}].
 

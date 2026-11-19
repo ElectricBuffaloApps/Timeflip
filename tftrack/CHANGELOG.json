@@ -1,5 +1,13 @@
 [
   {
+    "version": 61,
+    "changes": [
+      "A new page for each client with weekly hours: 'Hours against agreed'. Week by week since the bank's start date, it shows the hours worked, the hours agreed, how far over or under each week was, and what was charged. At the top: the average worked per week, how many weeks went over, and the hours not yet charged with their value.",
+      "It's made to print or show a client when the work has outgrown the agreed hours. Press 'Print or save as PDF' on it.",
+      "Find it on a client's area page under Hours in lieu, or at the top of its timesheet: 'Week by week against the agreed hours'."
+    ]
+  },
+  {
     "version": 60,
     "changes": [
       "Extra hours a client agreed to pay for: when a week has gone over its weekly hours, the timesheet shows 'Charge extra hours' under that week. Enter how many of the extra hours the client agreed to (all or some). They're charged on the invoice, on the days they were worked, and only the rest goes to the bank.",

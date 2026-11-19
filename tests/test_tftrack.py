@@ -1583,6 +1583,37 @@ class AutoBankTest(unittest.TestCase):
             store.set_week_agreed("HTB", "2026-10-19", 0)
             self.assertEqual(areas.bank(store, self.conf, "HTB", today)["seconds"], 5 * h)
 
+    def test_week_by_week_record_against_the_agreed_hours(self):
+        from datetime import date
+        from tftrack import areas, web
+        h = 3600
+        store = make_store([
+            {"id": 1, "taskId": 3, "startedAt": self.at(6, 9), "duration": 4 * h},      # w/c 5 Oct: 4h, 2 under
+            {"id": 2, "taskId": 3, "startedAt": self.at(13, 9), "duration": 6 * h},     # w/c 12 Oct: 9h, 3 over
+            {"id": 3, "taskId": 3, "startedAt": self.at(14, 9), "duration": 3 * h},
+            {"id": 4, "taskId": 3, "startedAt": self.at(21, 9), "duration": 8 * h},     # w/c 19 Oct: 8h, 2 agreed
+            {"id": 5, "taskId": 3, "startedAt": self.at(27, 9), "duration": 1 * h},     # w/c 26 Oct: in progress
+        ], tasks=self.tasks)
+        store.set_week_agreed("HTB", "2026-10-19", 2 * h)
+        self.conf["areas"][2]["bank_start"] = "2026-10-05"
+        today = date(2026, 10, 28)
+        rec = areas.weekly_record(store, self.conf, "HTB", today)
+        self.assertEqual([(w["monday"][-2:], w["worked_s"] // h, w["over_s"] // h, w["under_s"] // h, w["charged_s"] // h, w["finished"])
+                          for w in rec["weeks"]],
+                         [("05", 4, 0, 2, 4, True), ("12", 9, 3, 0, 6, True), ("19", 8, 0, 0, 8, True), ("26", 1, 0, 0, 1, False)])
+        self.assertEqual((rec["finished"], rec["worked_s"], rec["over_s"], rec["weeks_over"], rec["average_s"], rec["bank_s"], rec["rate"]),
+                         (3, 21 * h, 3 * h, 2, 7 * h, 3 * h, 40))
+        page = web.hours_page(rec, today)
+        for want in ("HTB: hours against agreed", "W/C 12th Oct 2026", "3h 00m over", "+2h 00m agreed extra", "2 of 3",
+                     "7h 00m a week", "£120.00 at the hourly rate", "in progress"):
+            self.assertIn(want, page)
+        self.assertNotIn('class="verdict"', page)            # too few weeks to draw a conclusion from
+        four = {**rec, "finished": 4}
+        self.assertIn("17% more", web.hours_page(four, today))
+        # an own-business area has no rate to value it at, and nothing held back
+        own = areas.weekly_record(store, self.conf, "FYPTD", today)
+        self.assertEqual((own["rate"], own["holds_back"]), (None, False))
+
     def test_start_date_and_switching_off(self):
         from datetime import date
         from tftrack import areas
