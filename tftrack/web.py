@@ -474,7 +474,8 @@ details.lines[open]>summary::after{content:"Hide"} details.lines[open]>summary{m
  .sheet tr.entry.mo td.c-task{grid-column:1/-1}
  .sheet tr.entry td.keep{grid-row:3;grid-column:1/-1;white-space:normal;text-align:left}}
 @media print{.sheet .top,.stats{display:none} body.sheet{background:#fff} .sheet .wrap{max-width:none;padding:0}
- .sheet .card{box-shadow:none;padding:0;border-radius:0;margin-bottom:12px}}
+ .sheet .card{box-shadow:none;padding:0;border-radius:0;margin-bottom:12px}
+ .sheet thead th{font:600 14px Inter,sans-serif;letter-spacing:0;text-transform:none} .sheet th,.sheet td{padding:6px 8px}}
 """
 
 
