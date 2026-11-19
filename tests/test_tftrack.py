@@ -1147,6 +1147,21 @@ class BillingTest(unittest.TestCase):
             again = web._create_bill("HTB", "2026-10", today)
             self.assertEqual((again["number"], again["net"]), ("INV-0008", 144.0))
             self.assertEqual(sorted(b["status"] for b in web.bills_overview(today)["bills"]), ["awaiting", "awaiting", "void"])
+            # redoing one that was never sent keeps its number for the replacement, and the count doesn't move on
+            store.replace_bill(again["id"])
+            self.assertEqual(store.invoiced("HTB"), {})
+            self.assertEqual(store.bill(again["id"])["number"], "INV-0008 (replaced)")
+            self.assertEqual(len(store.extras("HTB", "2026-10")), 2)
+            redo = web._create_bill("HTB", "2026-10", today)
+            self.assertEqual((redo["number"], redo["seq"], redo["net"]), ("INV-0008", 8, 144.0))
+            self.assertEqual([b["next_number"] for b in saved["businesses"]], [9, 8])
+            store.replace_bill(redo["id"])                       # and again
+            self.assertEqual(store.bill(redo["id"])["number"], f"INV-0008 (replaced, {redo['id']})")
+            self.assertEqual(web._create_bill("HTB", "2026-10", today)["number"], "INV-0008")
+            # the kept number is only for that client's month: anything else carries on from the count
+            store.replace_bill(other["id"])
+            self.assertEqual(web._create_bill("FCY", "2026-10", today)["number"], "INV-0007")
+            self.assertIsNone(store.replace_bill(bill["id"]))    # already void: nothing to redo
 
     def test_version_30_invoices_and_business_carry_over(self):
         import sqlite3

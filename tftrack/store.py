@@ -521,6 +521,22 @@ class Store:
         self.set_invoiced(bill["client"], bill["month"], None)
         return bill
 
+    def replace_bill(self, bill_id) -> dict | None:
+        """Void an invoice that was never sent and keep its number for the one that replaces it (the next invoice
+        made for the same client and month). The old copy stays in the list, marked as replaced."""
+        bill = self.bill(bill_id)
+        if not bill or bill["voided_at"]:
+            return None
+        self.void_bill(bill_id)
+        label = f"{bill['number']} (replaced)"
+        if self.number_used(bill["business_id"], label):   # replaced more than once
+            label = f"{bill['number']} (replaced, {bill['id']})"
+        with self.db:
+            self.db.execute("UPDATE bill SET number = ? WHERE id = ?", (label, bill["id"]))
+        self.set_meta(f"bill_reuse:{bill['client'].lower()}:{bill['month']}",
+                      json.dumps({"business_id": bill["business_id"], "number": bill["number"], "seq": bill["seq"]}))
+        return bill
+
     # ----- extras for invoices -----
 
     def add_extra(self, client: str, month: str, kind: str, description: str, quantity: float, unit_price: float,

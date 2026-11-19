@@ -1,5 +1,13 @@
 [
   {
+    "version": 53,
+    "changes": [
+      "Redo an invoice you haven't sent: open the invoice and press 'Redo (not sent yet)'. That copy is withdrawn, the month goes back to 'not invoiced' and you land on its timesheet. Make your changes, press Create invoice, and the new one gets the same number, so there's no gap.",
+      "Void is still there for invoices that have gone out: the number is never reused and the replacement gets the next one.",
+      "Redo is refused for an invoice the app emailed straight from your email provider, or one marked as paid, because those numbers are in use."
+    ]
+  },
+  {
     "version": 52,
     "changes": [
       "A new look: the app is now forest green instead of orange, in the top bar, buttons, charts, timesheet pages and the default colour for invoices. Warnings stay amber and overdue stays red, so they stand out more than before.",

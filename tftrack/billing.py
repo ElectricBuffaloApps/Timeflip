@@ -322,12 +322,17 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
     n = b["next_number"]
     while store.number_used(b["id"], format_number(b, n)):   # never reuse a number, even a voided one
         n += 1
+    number, moved_on = format_number(b, n), True
+    reuse_key = f"bill_reuse:{client.lower()}:{month}"       # ...unless this replaces one that was never sent
+    kept = json.loads(store.get_meta(reuse_key) or "null")
+    if kept and kept["business_id"] == b["id"] and not store.number_used(b["id"], kept["number"]):
+        number, n, moved_on = kept["number"], kept["seq"], False
     net = round(sum(l["amount"] for l in lines), 2)
     vat_rate = b["vat_rate"] if b["vat_registered"] else None
     vat = round(net * vat_rate / 100, 2) if vat_rate else 0.0
     terms = details["terms_days"] if details["terms_days"] is not None else default_terms
     bill = {
-        "business_id": b["id"], "number": format_number(b, n), "seq": n, "client": client, "month": month,
+        "business_id": b["id"], "number": number, "seq": n, "client": client, "month": month,
         "issued_on": today.isoformat(), "due_on": (today + timedelta(days=terms)).isoformat(),
         "seconds": seconds, "net": net, "vat": vat, "total": round(net + vat, 2),
         "data": {"lines": lines, "vat_rate": vat_rate, "terms_days": terms,
@@ -339,7 +344,11 @@ def create(store, conf: dict, client: str, month: str, lines: list[dict], second
     store.claim_extras(client, month, bill["id"])
     store.set_invoiced(client, month, seconds, net)
     conf = dict(conf)
-    conf["businesses"] = [{**x, "next_number": n + 1} if x["id"] == b["id"] else x for x in businesses(conf)]
+    store.set_meta(reuse_key, None)
+    if moved_on:
+        conf["businesses"] = [{**x, "next_number": n + 1} if x["id"] == b["id"] else x for x in businesses(conf)]
+    else:
+        conf["businesses"] = businesses(conf)
     conf.pop("business", None)
     return bill, conf
 
@@ -799,6 +808,12 @@ if (em) em.onclick = async () => {
   } catch (e) { alert(e.message); em.textContent = "Email it"; }
   em.disabled = false;
 };
+const rp = document.getElementById("replace");
+if (rp) rp.onclick = async () => {
+  if (!confirm(`Redo invoice ${info.number}?\n\nOnly do this if you haven't sent it to anyone. This copy is withdrawn, the month goes back to "not invoiced", and the next invoice you make for ${info.client} for this month gets the same number, ${info.number}.\n\nIf you've already sent it, use Void instead.`)) return;
+  try { await post("/api/bill/replace", {id: info.id}); location.href = `/invoice?client=${encodeURIComponent(info.client)}&month=${info.month}`; }
+  catch (e) { alert(e.message); }
+};
 const v = document.getElementById("void");
 if (v) v.onclick = async () => {
   if (!confirm(`Void invoice ${info.number}? Its number won't be used again, and the month goes back to "not invoiced".`)) return;
@@ -829,7 +844,8 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
                    f'<a class="btn" href="/sheet.pdf?{sheet_q}">Save timesheet PDF</a>'
                    '<button onclick="window.print()">Print</button>'
                    + ('<button data-paid="0">Not paid</button>' if paid_at else '<button data-paid="1">Mark as paid</button>')
-                   + '<button class="danger" id="void">Void</button>')
+                   + '<button id="replace" style="margin-left:auto">Redo (not sent yet)</button>'
+                   + '<button class="danger" id="void" style="margin-left:0">Void</button>')
     extra = [esc(x) for x in (b["email"], b["phone"]) if x]
     if b["company_number"]:
         extra.append(f"Company number {esc(b['company_number'])}")
@@ -872,8 +888,9 @@ def bill_page(bill: dict, paid_at: str | None, today: date, emailed_at: str | No
 <table class="totals"><tr><td>Subtotal</td><td class=n>{_gbp(bill['net'])}</td></tr>{vat}
 <tr class="due"><td>Total due</td><td class=n>{_gbp(bill['total'])}</td></tr></table>
 {pay}<div class="foot">{esc(b['footer'])}</div></div>
-<p class="hint">This invoice is a fixed copy from {_d(bill['issued_on'])}. If something on it is wrong, void it and make a new one
-from the <a href="/invoice?{sheet_q}">timesheet</a>. <b>Email it</b> sends the invoice the way this business is set up in Settings: a draft in Mail on your Mac to
+<p class="hint">This invoice is a fixed copy from {_d(bill['issued_on'])}. If something on it is wrong and you haven't sent it,
+<b>Redo</b> withdraws it and keeps its number for the new one. If it has gone out, <b>Void</b> it and make a new one from
+the <a href="/invoice?{sheet_q}">timesheet</a>: that one gets the next number. <b>Email it</b> sends the invoice the way this business is set up in Settings: a draft in Mail on your Mac to
 check and send, or straight from your email provider. <span id="emailed">{emailed}</span>
 <a href="{esc(mailto(bill))}">Use another email app instead</a> (you attach the PDF yourself).</p>
 {SCRIPT}</body></html>"""

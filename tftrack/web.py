@@ -1623,6 +1623,18 @@ class Handler(BaseHTTPRequestHandler):
                     store.set_meta(f"bill_emailed:{bill['id']}",
                                    f"{'sent' if direct else 'draft'}:{datetime.now().astimezone().isoformat()}")
                     return self._send(200, {"ok": True, "to": to, "sender": sender, "mode": "sent" if direct else "draft"})
+                elif self.path == "/api/bill/replace":
+                    store = service.open_store()
+                    bill = store.bill(body.get("id"))
+                    if not bill or bill["voided_at"]:
+                        raise ValueError("No such invoice.")
+                    if (store.get_meta(f"bill_emailed:{bill['id']}") or "").startswith("sent"):
+                        raise ValueError(f"Invoice {bill['number']} was emailed from here, so its number has been used. "
+                                         "Void it instead: the new one gets the next number.")
+                    if bill["month"] in store.paid(bill["client"]):
+                        raise ValueError(f"Invoice {bill['number']} is marked as paid. Press Not paid first if that's wrong.")
+                    store.replace_bill(bill["id"])
+                    return self._send(200, {"ok": True})
                 elif self.path == "/api/bill/void":
                     if not service.open_store().void_bill(body.get("id")):
                         raise ValueError("No such invoice.")
