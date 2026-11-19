@@ -1,5 +1,13 @@
 [
   {
+    "version": 53,
+    "changes": [
+      "One money panel on the Dashboard instead of two. Outstanding has gone: it listed the same months to invoice as Money to collect, which keeps the buttons to deal with them.",
+      "What Outstanding added is now at the foot of Money to collect, under 'This month so far': each client's hours and value for the month in hand, any carried hours not yet charged, the link to its timesheet and the carried hours ledger.",
+      "On a by-the-week timesheet, the line under each week's heading now runs the full width."
+    ]
+  },
+  {
     "version": 52,
     "changes": [
       "A new look: the app is now forest green instead of orange, in the top bar, buttons, charts, timesheet pages and the default colour for invoices. Warnings stay amber and overdue stays red, so they stand out more than before.",
