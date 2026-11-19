@@ -1,5 +1,11 @@
 [
   {
+    "version": 54,
+    "changes": [
+      "The Extras form on the Invoices tab is laid out in two tidy rows: client, month, day done and type, then the wording, the figures and the Add extra button. The boxes no longer overlap and the labels line up."
+    ]
+  },
+  {
     "version": 53,
     "changes": [
       "One money panel on the Dashboard instead of two. Outstanding has gone: it listed the same months to invoice as Money to collect, which keeps the buttons to deal with them.",
