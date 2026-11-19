@@ -565,7 +565,7 @@ table.edit select.name { min-width: 150px; max-width: 100%; }
       <div class="sofar hidden" id="soFar">
         <div class="sofar-head">
           <div class="lbl">This month so far</div><span class="owed-sub" id="soFarSub"></span>
-          <a class="hidden" id="soFarLedger" href="/carried" target="_blank">Carried hours ledger →</a>
+          <a class="hidden" id="soFarLedger" href="/carried">Carried hours ledger →</a>
         </div>
         <div class="owed-grid" id="owedGrid"></div>
       </div>
@@ -1070,7 +1070,9 @@ async function api(path, body) {
 
 /* ---------- opening timesheets and invoices ---------- */
 function samePage() {
-  return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches || window.innerWidth < 760;
+  // Timesheets and invoices always open in this window, with "← Tracker" to come back. Opening them in a new tab left
+  // two copies of the app open once you pressed Tracker there.
+  return true;
 }
 function openPage(url) { if (samePage()) location.href = url; else window.open(url, "_blank"); }
 
