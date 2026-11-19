@@ -4,7 +4,8 @@
     "changes": [
       "A new page for each client with weekly hours: 'Hours against agreed'. Week by week since the bank's start date, it shows the hours worked, the hours agreed, how far over or under each week was, and what was charged. At the top: the average worked per week, how many weeks went over, and the hours not yet charged with their value.",
       "It's made to print or show a client when the work has outgrown the agreed hours. Press 'Print or save as PDF' on it.",
-      "Find it on a client's area page under Hours in lieu, or at the top of its timesheet: 'Week by week against the agreed hours'."
+      "Find it on a client's area page under Hours in lieu, or at the top of its timesheet: 'Week by week against the agreed hours'.",
+      "Mileage now starts at 55p a mile, HMRC's rate for cars and vans from 6 April 2026 (it was 45p). You can still type any rate. Mileage you've already added keeps the rate it was entered with: edit it if you want it changed."
     ]
   },
   {

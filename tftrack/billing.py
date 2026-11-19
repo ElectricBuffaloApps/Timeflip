@@ -410,7 +410,7 @@ def sample_bill(b: dict, today: date) -> dict:
               "amount": round(h * rate, 2)} for d, h in (("5th", 6.0), ("12th", 5.5), ("19th", 6.0), ("26th", 4.25))]
     lines += extra_lines([{"description": "Additional agreed hours, Thu 22 Oct 2026", "quantity": 2, "unit_price": rate,
                            "kind": "time"},
-                          {"description": "Mileage, Thu 08 Oct 2026", "quantity": 40, "unit_price": 0.45, "kind": "mileage"}])
+                          {"description": "Mileage, Thu 08 Oct 2026", "quantity": 40, "unit_price": 0.55, "kind": "mileage"}])
     net = round(sum(l["amount"] for l in lines), 2)
     vat_rate = b.get("vat_rate") if b.get("vat_registered") else None
     vat = round(net * vat_rate / 100, 2) if vat_rate else 0.0

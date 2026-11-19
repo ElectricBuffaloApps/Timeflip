@@ -2051,7 +2051,7 @@ function extraDefaults() {
   $("xQtyField").classList.toggle("hidden", !qty);
   $("xQtyLabel").textContent = qty; $("xPriceLabel").textContent = price; $("xQty").step = step;
   const rate = billingFor($("xClient").value).rate;
-  $("xPrice").value = $("xKind").value === "time" ? (rate ?? "") : $("xKind").value === "mileage" ? "0.45" : "";
+  $("xPrice").value = $("xKind").value === "time" ? (rate ?? "") : $("xKind").value === "mileage" ? "0.55" : "";
 }
 $("xKind").onchange = extraDefaults;
 $("xClient").onchange = extraDefaults;

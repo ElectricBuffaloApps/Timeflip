@@ -343,7 +343,7 @@ if (xDlg) {
     $f("xKind").value = kind; xKind();
     xAuto = $f("xDesc").value = ""; xWord();
     $f("xQty").value = ""; $f("xErr").textContent = "";
-    $f("xPrice").value = kind === "time" ? xDlg.dataset.rate : kind === "mileage" ? "0.45" : "";
+    $f("xPrice").value = kind === "time" ? xDlg.dataset.rate : kind === "mileage" ? "0.55" : "";
   };
   let xEditing = null;   // the extra being changed, or null when adding a new one
   const xMode = (extra) => {
