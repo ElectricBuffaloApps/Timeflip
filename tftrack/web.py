@@ -39,6 +39,21 @@ def _app_path() -> str | None:
     return str(app) if app else None
 
 
+def _revs(conf: dict, store) -> dict:
+    """Fingerprints of the settings a page saves as a whole. A page sends back the one it loaded; a save from a page
+    that loaded older settings is refused (see _fresh), so they can't be put back over newer ones."""
+    import copy
+    cards = {"areas": copy.deepcopy(conf.get("areas"))}
+    areas.settle_starts(cards, store)   # as the cards will stand once their start dates are filled in
+    targets = conf.get("targets") or {}
+    return {"businesses": billing.revision(billing.businesses(conf)),
+            "client_details": billing.revision(conf.get("client_details") or {}),
+            "limits": billing.revision(conf.get("limits") or []),
+            "clients": billing.revision(conf.get("clients") or {}),
+            "areas": billing.revision([cards["areas"], targets.get("hours") or {}]),   # a card's hours a week live in targets
+            "targets": billing.revision(targets)}
+
+
 def state() -> dict:
     conf = cfg.load_config()
     store = service.open_store()
@@ -66,9 +81,7 @@ def state() -> dict:
         "payment_terms_days": collect.terms_days(conf),
         "min_entry_minutes": conf.get("min_entry_minutes", 5),
         "businesses": billing.businesses(conf),
-        # fingerprints of the settings a page saves as a whole: a save from a page that loaded older ones is refused
-        "rev": {"businesses": billing.revision(billing.businesses(conf)),
-                "client_details": billing.revision(conf.get("client_details") or {})},
+        "rev": _revs(conf, store),
         "areas": [{**a, "week_hours": next((t.get("week") for n, t in ((conf.get("targets") or {}).get("hours") or {}).items()
                                             if n.lower() == a["client"].lower()), None),
                    "allotted_hours": areas.allotted_hours(conf, store, a["client"]),
@@ -1409,6 +1422,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 if self.path == "/api/limits":
                     conf = cfg.load_config()
+                    _fresh(body, _revs(conf, service.open_store())["limits"], "Your limits")
                     limits = [_clean_limit(l) for l in body.get("limits", [])]
                     parse_limits({"limits": limits})  # raises ValueError with a readable message
                     allowance.validate(limits, service.open_store().tasks())
@@ -1476,6 +1490,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/clients":
                     conf = cfg.load_config()
+                    _fresh(body, _revs(conf, service.open_store())["clients"], "How each client is invoiced")
                     conf["clients"] = {
                         str(name).strip(): _clean_client(c) for name, c in (body.get("clients") or {}).items()
                         if str(name).strip()
@@ -1517,6 +1532,7 @@ class Handler(BaseHTTPRequestHandler):
                             raise ValueError(f"{what} can't be negative.")
                         return v
                     conf = cfg.load_config()
+                    _fresh(body, _revs(conf, service.open_store())["targets"], "Your targets")
                     inc = body.get("income") or {}
                     hours = {}
                     for client, t in (body.get("hours") or {}).items():
@@ -1558,7 +1574,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/business":
                     conf = cfg.load_config()
-                    _fresh(body, billing.revision(billing.businesses(conf)), "Your businesses")
+                    _fresh(body, _revs(conf, service.open_store())["businesses"], "Your businesses")
                     before = {b["id"]: b for b in billing.businesses(conf)}
                     raw = [billing.keep_unsent(before.get(g.get("id")), g) for g in body.get("businesses") or []
                            if isinstance(g, dict)]
@@ -1607,7 +1623,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True, "mode": "sent" if b["mail_method"] == "smtp" else "draft"})
                 elif self.path == "/api/client-details":
                     conf = cfg.load_config()
-                    _fresh(body, billing.revision(conf.get("client_details") or {}), "Who each invoice goes to")
+                    _fresh(body, _revs(conf, service.open_store())["client_details"], "Who each invoice goes to")
                     conf["client_details"] = {
                         str(name).strip(): billing.clean_client_details(d or {})
                         for name, d in (body.get("details") or {}).items() if str(name).strip()
@@ -1635,6 +1651,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "numbers": [b["number"] for b in made], "errors": errors})
                 elif self.path == "/api/areas":
                     conf = cfg.load_config()
+                    _fresh(body, _revs(conf, service.open_store())["areas"], "Your dashboard cards")
                     known = sorted({t["tag"] for t in service.open_store().tasks() if t["tag"]})
                     before = {a["client"].lower(): a for a in conf.get("areas") or []}
                     conf["areas"] = areas.clean(body.get("areas"), known)

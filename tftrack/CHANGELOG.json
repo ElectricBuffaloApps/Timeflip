@@ -1,5 +1,13 @@
 [
   {
+    "version": 63,
+    "changes": [
+      "The protection for saved settings now covers the rest of Settings: Dashboard cards, Limits, How each client is invoiced, and Targets. If any of them was changed on another device or in another tab after this page loaded it, Save is refused with a message, instead of putting the old settings back. Reload and make the change again.",
+      "A page with nothing waiting to be saved picks up those changes by itself within a minute.",
+      "Limits and Targets now say 'Unsaved changes' when you've edited them, like the other sections, and a refused save keeps its message on screen until you act on it."
+    ]
+  },
+  {
     "version": 62,
     "changes": [
       "A new page for each client with weekly hours: 'Hours against agreed'. Week by week since the bank's start date, it shows the hours worked, the hours agreed, how far over or under each week was, and what was charged. At the top: the average worked per week, how many weeks went over, and the hours not yet charged with their value.",

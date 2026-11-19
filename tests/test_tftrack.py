@@ -426,6 +426,29 @@ class SettingsSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Your businesses changed somewhere else.*Nothing was saved"):
             web._fresh({"rev": "an-older-one"}, one, "Your businesses")
 
+    def test_every_settings_form_has_its_own_fingerprint(self):
+        from tftrack import web
+        store = make_store([], tasks=[{"id": 1, "name": "Build", "tag": "HTB"}])
+        conf = {"clients": {"HTB": {"billing": "day", "rate": 40}}, "limits": [{"task": "Build", "weekly_hours": 6}],
+                "targets": {"hours": {"HTB": {"week": 6}}, "income": {"month": 4000}},
+                "areas": [{"client": "HTB", "label": "HTB"}]}
+        was = web._revs(conf, store)
+        self.assertEqual(set(was), {"businesses", "client_details", "limits", "clients", "areas", "targets"})
+        self.assertEqual(was, web._revs(json.loads(json.dumps(conf)), store))          # the same settings, the same prints
+        self.assertEqual(conf["areas"], [{"client": "HTB", "label": "HTB"}])           # working them out changes nothing
+        def changed(edit):
+            c = json.loads(json.dumps(conf)); edit(c)
+            now = web._revs(c, store)
+            return sorted(k for k in was if was[k] != now[k])
+        self.assertEqual(changed(lambda c: c["clients"]["HTB"].update(billing="hourly")), ["clients"])
+        self.assertEqual(changed(lambda c: c["limits"][0].update(weekly_hours=8)), ["limits"])
+        self.assertEqual(changed(lambda c: c["areas"][0].update(label="Hit")), ["areas"])
+        self.assertEqual(changed(lambda c: c["targets"]["income"].update(month=5000)), ["targets"])
+        self.assertEqual(changed(lambda c: c["targets"]["hours"]["HTB"].update(week=8)), ["areas", "targets"])   # a card's hours
+        # a card's start date being filled in for the first time isn't a change made elsewhere
+        self.assertEqual(changed(lambda c: c["areas"][0].update(bank_start="2026-09-01")), [])
+        self.assertEqual(changed(lambda c: c["areas"][0].update(bank_start="2026-10-05")), ["areas"])
+
     def test_settings_are_backed_up_once_a_day_and_old_copies_go(self):
         from unittest import mock
         from tftrack import config as cfg

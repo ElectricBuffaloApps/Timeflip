@@ -1178,7 +1178,12 @@ new MutationObserver(() => {
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 /* ---------- state & limits ---------- */
-let bizRev = null, detRev = null;   // which saved settings the business and client forms were filled from
+// Which saved settings each Settings form was filled from. Sent back on Save: the app refuses a save from a form
+// filled before the settings last changed (on another device, in another tab), so old ones can't replace new ones.
+const REVS = { business: null, details: null, limits: null, clients: null, areas: null, targets: null };
+const REV_OF = { business: ["businesses", "businessMsg"], details: ["client_details", "detailMsg"], limits: ["limits", "saveMsg"],
+                 clients: ["clients", "clientMsg"], areas: ["areas", "areaMsg"], targets: ["targets", "targetsMsg"] };
+const filledFrom = (part) => { REVS[part] = state && state.rev ? state.rev[REV_OF[part][0]] : null; };
 function showState(s, redraw = false) {
   // redraw: true = every settings table (first load); or just the one that was saved, so unsaved edits elsewhere survive.
   let draw = (part) => redraw === true || redraw === part;
@@ -1186,9 +1191,10 @@ function showState(s, redraw = false) {
   // Settings changed somewhere else (another device, or an invoice taking the next number): show the new ones,
   // unless there are edits here waiting to be saved. Those are then refused on Save rather than undoing the change.
   const waiting = (id) => /^(Unsaved|Fill)/.test($(id).textContent);
-  const stale = { business: bizRev !== null && s.rev && s.rev.businesses !== bizRev && !waiting("businessMsg"),
-                  details: detRev !== null && s.rev && s.rev.client_details !== detRev && !waiting("detailMsg") };
-  if (stale.business || stale.details) { const was = draw; draw = (part) => was(part) || !!stale[part]; }
+  const stale = {};
+  for (const [part, [key, msg]] of Object.entries(REV_OF))
+    stale[part] = REVS[part] !== null && !!s.rev && s.rev[key] !== REVS[part] && !waiting(msg);
+  if (Object.values(stale).some(Boolean)) { const was = draw; draw = (part) => was(part) || !!stale[part]; }
   const d = s.last_sync ? new Date(s.last_sync) : null;
   const sameDay = d && iso(d) === iso(new Date());
   const when = !d ? "never" : sameDay ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
@@ -1294,17 +1300,21 @@ function limitRow(lim = {}) {
   return tr;
 }
 function renderLimitRows(limits) {
+  filledFrom("limits");
   $("limitRows").replaceChildren(...limits.map(limitRow));
 }
-$("addLimit").onclick = () => $("limitRows").append(limitRow());
+$("addLimit").onclick = () => { $("limitRows").append(limitRow()); $("saveMsg").textContent = "Unsaved changes: click Save limits."; };
+for (const kind of ["input", "change", "click"]) $("limitRows").addEventListener(kind, (ev) => {
+  if (kind !== "click" || ev.target.closest("button")) $("saveMsg").textContent = "Unsaved changes: click Save limits.";
+});
 $("saveLimits").onclick = async () => {
   const limits = [...$("limitRows").children].map((tr) => tr.read())
     .filter((l) => (l.task || l.client) && (l.daily_hours || l.weekly_hours));
   try {
-    showState(await api("/api/limits", { limits }), "limits");
+    showState(await api("/api/limits", { limits, rev: REVS.limits }), "limits");
     $("saveMsg").textContent = "Saved."; loadAllowances();
   } catch (e) { $("saveMsg").textContent = e.message; }
-  setTimeout(() => ($("saveMsg").textContent = ""), 4000);
+  setTimeout(() => { if ($("saveMsg").textContent === "Saved.") $("saveMsg").textContent = ""; }, 4000);
 };
 $("weekStarts").onchange = async () => { showState(await api("/api/settings", { week_starts: $("weekStarts").value })); refreshAll(); };
 $("syncBtn").onclick = async () => {
@@ -1883,7 +1893,7 @@ function areaRow(s, a) {
                      ...(rules.eligible ? { bank_auto: auto.checked, bank_start: from.value } : {}) });
   return tr;
 }
-function renderAreaRows(s) { $("areaRows").replaceChildren(...s.areas.map((a) => areaRow(s, a))); }
+function renderAreaRows(s) { filledFrom("areas"); $("areaRows").replaceChildren(...s.areas.map((a) => areaRow(s, a))); }
 $("areaAdd").onclick = () => {
   const taken = [...$("areaRows").children].map((tr) => tr.read().client);
   const next = state.clients.find((c) => !taken.includes(c));
@@ -1897,7 +1907,7 @@ $("saveAreas").onclick = async () => {
   const list = [...$("areaRows").children].map((tr) => tr.read());
   if (new Set(list.map((a) => a.client)).size !== list.length) { $("areaMsg").textContent = "Each client can only have one card."; return; }
   try {
-    showState(await api("/api/areas", { areas: list }), "areas"); renderTargetSettings(state); $("areaMsg").textContent = "Saved.";
+    showState(await api("/api/areas", { areas: list, rev: REVS.areas }), "areas"); renderTargetSettings(state); $("areaMsg").textContent = "Saved.";
     loadAreas(); loadTargets(); loadOutstanding(); loadCollect();
   }
   catch (e) { $("areaMsg").textContent = e.message; return; }
@@ -2172,7 +2182,7 @@ async function sendLogo(body) {
   try {
     const s = await api("/api/business/logo", { id: b.id, ...body });
     b.logo = (s.businesses.find((x) => x.id === b.id) || {}).logo || "";   // only the logo: anything half-typed stays
-    state = s; bizRev = s.rev ? s.rev.businesses : bizRev; brandShow();
+    state = s; filledFrom("business"); brandShow();
     $("bLogoMsg").textContent = b.logo ? "Logo saved. Press See a sample invoice to check it." : "Logo removed.";
   } catch (e) { $("bLogoMsg").textContent = e.message; }
 }
@@ -2202,7 +2212,7 @@ function bizShow() {
   businessPreview();
 }
 function renderBusiness(s) {
-  bizRev = s.rev ? s.rev.businesses : null;
+  filledFrom("business");
   bizList = s.businesses.map((b) => ({ ...b }));
   bizAt = Math.min(bizAt, bizList.length - 1);
   bizShow();
@@ -2254,14 +2264,14 @@ $("businessTile").addEventListener("input", (ev) => {
 $("saveBusiness").onclick = async () => {
   bizStash();
   try {
-    showState(await api("/api/business", { businesses: bizList, rev: bizRev }), "business");
+    showState(await api("/api/business", { businesses: bizList, rev: REVS.business }), "business");
     renderDetailRows(state);
     $("businessMsg").textContent = "Saved."; loadCollect();
   } catch (e) { $("businessMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("businessMsg").textContent === "Saved.") $("businessMsg").textContent = ""; }, 4000);
 };
 function renderDetailRows(s) {
-  detRev = s.rev ? s.rev.client_details : null;
+  filledFrom("details");
   const paying = payingClients(s);
   const several = s.businesses.length > 1;
   for (const c of document.querySelectorAll(".bizcol")) c.classList.toggle("hidden", !several);
@@ -2289,7 +2299,7 @@ $("detailRows").addEventListener("change", () => { $("detailMsg").textContent = 
 $("detailRows").addEventListener("input", () => { $("detailMsg").textContent = "Unsaved changes: click Save client details."; });
 $("saveDetails").onclick = async () => {
   const details = Object.fromEntries([...$("detailRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/client-details", { details, rev: detRev }), "details"); $("detailMsg").textContent = "Saved."; }
+  try { showState(await api("/api/client-details", { details, rev: REVS.details }), "details"); $("detailMsg").textContent = "Saved."; }
   catch (e) { $("detailMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("detailMsg").textContent === "Saved.") $("detailMsg").textContent = ""; }, 4000);
 };
@@ -2374,6 +2384,7 @@ $("tsSavePdf").onclick = () => { window.location.href = tsUrl(false).replace(/^\
 
 /* ---------- invoicing settings ---------- */
 function renderClientRows(s) {
+  filledFrom("clients");
   const names = [...new Set([...s.clients, ...Object.keys(s.client_billing || {})])].sort();
   $("clientRows").replaceChildren(...names.map((name) => {
     const c = billingFor(name);
@@ -2405,7 +2416,7 @@ $("clientRows").addEventListener("input", () => { $("clientMsg").textContent = "
 $("clientRows").addEventListener("change", () => { $("clientMsg").textContent = "Unsaved changes: click Save invoicing."; });
 $("saveClients").onclick = async () => {
   const clients = Object.fromEntries([...$("clientRows").children].map((tr) => tr.read()));
-  try { showState(await api("/api/clients", { clients }), "clients"); $("clientMsg").textContent = "Saved."; refreshAll(); }
+  try { showState(await api("/api/clients", { clients, rev: REVS.clients }), "clients"); $("clientMsg").textContent = "Saved."; refreshAll(); }
   catch (e) { $("clientMsg").textContent = e.message; return; }
   setTimeout(() => { if ($("clientMsg").textContent === "Saved.") $("clientMsg").textContent = ""; }, 4000);
 };
@@ -2566,6 +2577,7 @@ $("saveIgnored").onclick = async () => {
 const PERIOD_LABEL = { day: "Today", week: "This week", month: "This month" };
 const EARNED_LABEL = { day: "Earned today", week: "Earned this week", month: "Earned this month" };
 function renderTargetSettings(s) {
+  filledFrom("targets");
   const t = s.targets || {};
   const inc = t.income || {};
   $("tDay").value = inc.day ?? ""; $("tWeek").value = inc.week ?? ""; $("tMonth").value = inc.month ?? "";
@@ -2593,11 +2605,12 @@ $("saveTargets").onclick = async () => {
   }
   try {
     showState(await api("/api/targets", { income: { day: $("tDay").value, week: $("tWeek").value, month: $("tMonth").value },
-                                          weekends: $("tWeekends").checked, hours }), "targets");
+                                          weekends: $("tWeekends").checked, hours, rev: REVS.targets }), "targets");
     $("targetsMsg").textContent = "Saved."; loadTargets();
   } catch (e) { $("targetsMsg").textContent = e.message; }
-  setTimeout(() => ($("targetsMsg").textContent = ""), 4000);
+  setTimeout(() => { if ($("targetsMsg").textContent === "Saved.") $("targetsMsg").textContent = ""; }, 4000);
 };
+for (const kind of ["input", "change"]) $("setTargets").addEventListener(kind, () => { $("targetsMsg").textContent = "Unsaved changes: click Save targets."; });
 function kpiTile(r) {
   // Money for one period, with progress towards its target when one is set.
   const tile = el("section", { class: "tile kpi" });
