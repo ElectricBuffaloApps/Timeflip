@@ -60,8 +60,31 @@ def migrate(conf: dict) -> dict:
     return conf
 
 
+BACKUPS_KEPT = 30
+
+
+def backup_config(today=None) -> Path | None:
+    """Keep a copy of the settings as they stood at the start of each day they change (the last 30 such days), so
+    anything overwritten by mistake can be put back. Returns the copy made, or None if today's already exists."""
+    from datetime import date
+    if not CONFIG_PATH.exists():
+        return None
+    target = APP_DIR / "settings-backups" / f"config-{(today or date.today()).isoformat()}.json"
+    if target.exists():
+        return None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(CONFIG_PATH, target)
+        for old in sorted(target.parent.glob("config-*.json"))[:-BACKUPS_KEPT]:
+            old.unlink()
+    except OSError:
+        return None   # a backup that can't be written must never stop a save
+    return target
+
+
 def save_config(conf: dict) -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_config()
     tmp = CONFIG_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(conf, indent=2) + "\n")
     tmp.replace(CONFIG_PATH)

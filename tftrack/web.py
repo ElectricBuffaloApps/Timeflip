@@ -66,6 +66,9 @@ def state() -> dict:
         "payment_terms_days": collect.terms_days(conf),
         "min_entry_minutes": conf.get("min_entry_minutes", 5),
         "businesses": billing.businesses(conf),
+        # fingerprints of the settings a page saves as a whole: a save from a page that loaded older ones is refused
+        "rev": {"businesses": billing.revision(billing.businesses(conf)),
+                "client_details": billing.revision(conf.get("client_details") or {})},
         "areas": [{**a, "week_hours": next((t.get("week") for n, t in ((conf.get("targets") or {}).get("hours") or {}).items()
                                             if n.lower() == a["client"].lower()), None),
                    "allotted_hours": areas.allotted_hours(conf, store, a["client"]),
@@ -1464,8 +1467,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/business":
                     conf = cfg.load_config()
-                    raw = body.get("businesses")
+                    _fresh(body, billing.revision(billing.businesses(conf)), "Your businesses")
                     before = {b["id"]: b for b in billing.businesses(conf)}
+                    raw = [billing.keep_unsent(before.get(g.get("id")), g) for g in body.get("businesses") or []
+                           if isinstance(g, dict)]
                     cleaned = billing.clean_businesses(raw)
                     for b, given in zip(cleaned, raw):
                         b["smtp_password_saved"] = bool(before.get(b["id"], {}).get("smtp_password_saved"))
@@ -1511,6 +1516,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"ok": True, "mode": "sent" if b["mail_method"] == "smtp" else "draft"})
                 elif self.path == "/api/client-details":
                     conf = cfg.load_config()
+                    _fresh(body, billing.revision(conf.get("client_details") or {}), "Who each invoice goes to")
                     conf["client_details"] = {
                         str(name).strip(): billing.clean_client_details(d or {})
                         for name, d in (body.get("details") or {}).items() if str(name).strip()
@@ -1902,6 +1908,14 @@ def _fix_banked(store, client: str, month: str) -> None:
 def _month_dates(month: str) -> tuple[date, date]:
     y, m = (int(x) for x in month.split("-"))
     return date(y, m, 1), date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+
+
+def _fresh(body: dict, now: str, what: str) -> None:
+    """Refuse a save from a page that loaded these settings before they were last changed (on another device, in
+    another tab, or before an update): saving would put the old ones back over the new."""
+    if body.get("rev") and body["rev"] != now:
+        raise ValueError(f"{what} changed somewhere else since this page loaded them (another device or tab). "
+                         "Nothing was saved. Reload the page, then make your change again.")
 
 
 def _bill_lines(store, conf: dict, client: str, month: str) -> tuple[list[dict], int]:

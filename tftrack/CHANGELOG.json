@@ -1,5 +1,14 @@
 [
   {
+    "version": 58,
+    "changes": [
+      "Saved settings are protected from being overwritten. If your businesses or client details were changed on another device or in another tab after this page loaded them, Save is refused with a message, instead of quietly putting the old ones back. Reload and make the change again.",
+      "A page with nothing waiting to be saved now picks up settings changed elsewhere by itself, within a minute.",
+      "A page left open from before an update can no longer blank boxes it doesn't know about (your name, invoice style, the timesheet tick box) when it saves.",
+      "A safety net: the app keeps a copy of your settings from the start of each day they change, for the last 30 such days, in the folder .tftrack/settings-backups in your home folder. If something is ever lost, it can be put back from there."
+    ]
+  },
+  {
     "version": 57,
     "changes": [
       "Fixed: Redo now uses the business's current prefix. If you change a business's invoice prefix (say from INV to EB-) and then redo an unsent invoice, the new one keeps its place in the sequence but takes the new prefix: INV001 becomes EB-001. Before, it kept the old wording."

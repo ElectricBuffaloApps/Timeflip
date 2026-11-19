@@ -134,6 +134,29 @@ def business_for(conf: dict, client: str | None) -> dict:
     return next((b for b in every if b["id"] == chosen), every[0])
 
 
+def keep_unsent(saved: dict | None, given: dict) -> dict:
+    """A business as sent from Settings, with anything the page didn't send taken from what's saved.
+
+    A page left open from before an update doesn't know about boxes added since (your name, the invoice style...),
+    and would otherwise blank them when it saves. A page that old sends the address or bank details as one block
+    of text: then the text it sent wins over the saved boxes.
+    """
+    if not saved:
+        return dict(given)
+    out = {**saved, **given}
+    for text, fields in (("address", ADDRESS_FIELDS), ("payment", BANK_FIELDS)):
+        if text in given and not any(k in given for k in fields):
+            for k in fields:
+                out.pop(k, None)
+    return out
+
+
+def revision(value) -> str:
+    """A short fingerprint of some settings, to tell whether they've changed since a page loaded them."""
+    import hashlib
+    return hashlib.sha1(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
 def clean_businesses(raw: list) -> list[dict]:
     """Check and tidy the whole list from Settings. New businesses (no id yet) get the next free id."""
     if not isinstance(raw, list) or not raw:

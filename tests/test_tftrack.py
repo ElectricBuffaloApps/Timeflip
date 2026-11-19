@@ -398,6 +398,53 @@ class InvoiceLinesTest(unittest.TestCase):
         self.assertEqual(week_commencing(date(2026, 10, 5)), "W/C 5th Oct 2026")
 
 
+class SettingsSafetyTest(unittest.TestCase):
+    def test_a_page_from_before_an_update_doesnt_blank_newer_boxes(self):
+        from tftrack import billing
+        saved = billing.clean_business({"name": "Acme", "contact_name": "Sam Smith", "layout": "band", "addr1": "1 Road",
+                                        "town": "Hove", "postcode": "bn3 1aa", "bank_name": "Revolut",
+                                        "bank_sort_code": "123456", "attach_timesheet": True})
+        saved["id"] = "b1"
+        # an old page: knows the name and the address as one block, nothing newer
+        old_page = {"id": "b1", "name": "Acme Ltd", "address": "2 New Street\nBrighton\nBN1 1AA", "payment": saved["payment"]}
+        b = billing.clean_business(billing.keep_unsent(saved, old_page))
+        self.assertEqual((b["name"], b["contact_name"], b["layout"]), ("Acme Ltd", "Sam Smith", "band"))
+        self.assertEqual((b["addr1"], b["town"], b["postcode"]), ("2 New Street", "Brighton", "BN1 1AA"))   # its text wins
+        self.assertEqual((b["bank_name"], b["bank_sort_code"]), ("Revolut", "12-34-56"))
+        # today's page sends every box, so clearing one still clears it
+        now = billing.clean_business(billing.keep_unsent(saved, {**saved, "contact_name": "", "attach_timesheet": False}))
+        self.assertEqual((now["contact_name"], now["attach_timesheet"]), ("", False))
+        self.assertEqual(billing.keep_unsent(None, {"name": "New"}), {"name": "New"})
+
+    def test_a_save_from_a_stale_page_is_refused(self):
+        from tftrack import billing, web
+        one = billing.revision([{"id": "b1", "name": "Acme"}])
+        self.assertEqual(one, billing.revision([{"name": "Acme", "id": "b1"}]))           # order of keys doesn't matter
+        self.assertNotEqual(one, billing.revision([{"id": "b1", "name": "Acme Ltd"}]))
+        web._fresh({"rev": one}, one, "Your businesses")
+        web._fresh({}, one, "Your businesses")                                             # a page too old to say
+        with self.assertRaisesRegex(ValueError, "Your businesses changed somewhere else.*Nothing was saved"):
+            web._fresh({"rev": "an-older-one"}, one, "Your businesses")
+
+    def test_settings_are_backed_up_once_a_day_and_old_copies_go(self):
+        from unittest import mock
+        from tftrack import config as cfg
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            with mock.patch.object(cfg, "APP_DIR", home), mock.patch.object(cfg, "CONFIG_PATH", home / "config.json"):
+                cfg.save_config({"businesses": [{"name": "First"}]})                      # nothing to back up yet
+                self.assertFalse((home / "settings-backups").exists())
+                cfg.save_config({"businesses": [{"name": "Second"}]})
+                copies = sorted((home / "settings-backups").glob("config-*.json"))
+                self.assertEqual(len(copies), 1)
+                self.assertIn("First", copies[0].read_text())                              # as it stood before today's changes
+                cfg.save_config({"businesses": [{"name": "Third"}]})
+                self.assertIn("First", copies[0].read_text())                              # one a day, not overwritten
+                for n in range(1, 40):
+                    cfg.backup_config(date(2026, 1, 1) + timedelta(days=n))
+                self.assertEqual(len(list((home / "settings-backups").glob("config-*.json"))), cfg.BACKUPS_KEPT)
+
+
 class InvoiceLayoutTest(unittest.TestCase):
     def _bill(self, layout, vat=False):
         from tftrack import billing
