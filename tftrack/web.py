@@ -126,7 +126,7 @@ tr.rolled td{color:#9CA3AF;font-style:italic} tr.rolled td.keep{font-style:norma
 .bankform input[type=number]{width:110px} .bankbox button{font-size:13px;padding:7px 14px}
 .bankform label{min-width:0} .bankform select{min-width:0;max-width:100%}
 .bankbox button.primary{background:#166534;border-color:#166534;color:#fff}
-button.weekfill,button.weekextra{font-size:12px;padding:4px 11px;border-radius:7px}
+button.weekfill,button.weekextra,button.weekagreed{font-size:12px;padding:4px 11px;border-radius:7px}
 button.weekfill{background:#166534;border-color:#166534;color:#fff}
 button.weekfill:hover{background:#14532d;border-color:#14532d} button.weekfill:disabled{opacity:.5}
 .tag.keepline{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:8px 0 0;font-family:Inter,sans-serif;font-weight:400;font-style:normal;color:#6B7280}
@@ -286,6 +286,20 @@ const comeBackTo = (id) => { try { sessionStorage.setItem("comeBack", id); } cat
   if (id) window.addEventListener("load", () => setTimeout(() => {
     const at = document.getElementById(id); if (at) at.scrollIntoView({block: "center"});
   }, 60)); }
+for (const b of document.querySelectorAll("button.weekagreed")) {
+  b.addEventListener("click", async () => {
+    const d = b.dataset;
+    const said = prompt(`Week of ${d.label}: how many hours over the weekly hours did the client agree to pay for?\n\n` +
+      `This week has ${d.max} extra in all. What you enter is charged on this invoice, on the days it was worked. ` +
+      `The rest stays in the bank. Enter 0 to bank it all.`, d.got !== "0" ? d.got : d.max);
+    if (said === null) return;
+    const hours = Number(String(said).replace(",", "."));
+    if (!(hours >= 0)) return alert("Enter a number of hours, like 2.5.");
+    if (hours > Number(d.max) + 0.001) return alert(`This week only has ${d.max} hours over the weekly hours. For hours that weren't tracked, use + Agreed hours.`);
+    try { await post("/api/week-agreed", {client: d.client, week: d.week, hours}); comeBackTo("week-" + d.week); }
+    catch (e) { alert(e.message); }
+  });
+}
 for (const b of document.querySelectorAll("button.weekfill")) {
   b.addEventListener("click", async () => {
     const box = document.querySelector(".bankbox[data-client]");
@@ -680,6 +694,13 @@ def invoice_page(inv: dict) -> str:
         return note + week_actions(monday, gap), gap
 
     banked = max(0, (inv.get("bank") or {}).get("seconds", 0))
+    agreed = service.open_store().week_agreed(inv["client"]) if inv.get("bank") else {}
+    over_by_week: dict[str, int] = {}     # what each week has held back for the bank, from the days on this sheet
+    for g in inv["groups"]:
+        for d in g["days"]:
+            day = date.fromisoformat(d["date"])
+            key = (day - timedelta(days=day.weekday())).isoformat()
+            over_by_week[key] = over_by_week.get(key, 0) + (d.get("banked_s") or 0)
     first_day = {x["monday"]: x["first"] for x in (inv.get("bank") or {}).get("weeks", [])}
 
     def week_actions(monday: date, gap: int) -> str:
@@ -696,6 +717,11 @@ def invoice_page(inv: dict) -> str:
             out += (f'<button class="weekfill" data-week="{monday.isoformat()}" '
                     f'data-date="{first_day.get(monday.isoformat(), monday.isoformat())}" data-seconds="{take}">'
                     f'+ {_hm(take)} from the bank</button><span class="why">{full} · {_hm(banked)} banked</span>')
+        got, over = agreed.get(monday.isoformat(), 0), over_by_week.get(monday.isoformat(), 0)
+        if got or over:   # the week went over: the client may have agreed to pay for some or all of the extra
+            label = (f"{_hm(got)} extra agreed and charged · change" if got else f"Charge extra hours ({_hm(over)} over)")
+            out += (f'<button class="weekagreed" data-client="{esc(inv["client"])}" data-week="{monday.isoformat()}" '
+                    f'data-label="{week}" data-got="{got / 3600:g}" data-max="{(got + over) / 3600:g}">{label}</button>')
         out += (f'<button class="weekextra" data-kind="time" data-week="{monday.isoformat()}" data-label="{week}">+ Agreed hours</button>'
                 f'<button class="weekextra" data-kind="mileage" data-week="{monday.isoformat()}" data-label="{week}">+ Mileage</button>')
         return f' <span class="tag keepline">{out}</span>'
@@ -1568,6 +1594,23 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("You can't take out more than is in the bank.")
                     note = str(body.get("note") or "").strip()[:200] or ("Added by hand" if seconds > 0 else "Taken out by hand")
                     store.add_lieu(client, seconds, note)
+                    return self._send(200, {"ok": True})
+                elif self.path == "/api/week-agreed":
+                    client = str(body.get("client") or "").strip()
+                    try:
+                        monday = date.fromisoformat(str(body.get("week") or ""))
+                        seconds = round(float(body.get("hours")) * 60) * 60
+                    except (TypeError, ValueError):
+                        raise ValueError("Enter a number of hours, like 2.5.")
+                    if monday.weekday() != 0 or not client:
+                        raise ValueError("Choose a week.")
+                    if not 0 <= seconds <= 100 * 3600:
+                        raise ValueError("Enter between 0 and 100 hours.")
+                    store = service.open_store()
+                    for month in {f"{monday:%Y-%m}", f"{monday + timedelta(days=6):%Y-%m}"}:
+                        if month in store.invoiced(client):
+                            raise ValueError("That week is on an invoice already. Redo or void the invoice first.")
+                    store.set_week_agreed(client, monday.isoformat(), seconds)
                     return self._send(200, {"ok": True})
                 elif self.path == "/api/lieu/use":
                     client = str(body.get("client") or "").strip()

@@ -1552,6 +1552,37 @@ class AutoBankTest(unittest.TestCase):
             self.assertEqual(areas.invoiced_since_start(store, self.conf, "FCY"), ["2026-10"])
             self.assertEqual(areas.invoiced_since_start(store, self.conf, "FYPTD"), [])
 
+    def test_extra_hours_a_client_agreed_for_a_week_are_charged_not_banked(self):
+        from datetime import date
+        from tftrack import areas, web
+        from tftrack.reports import invoice_lines
+        m = 60
+        store = make_store([
+            {"id": 1, "taskId": 3, "startedAt": self.at(21, 9), "duration": 365 * m},    # Wed 6h 05m -> 6h 15m
+            {"id": 2, "taskId": 3, "startedAt": self.at(22, 9), "duration": 197 * m},    # Thu 3h 17m -> 3h 30m
+            {"id": 3, "taskId": 3, "startedAt": self.at(23, 9), "duration": 66 * m},     # Fri 1h 06m -> 1h 15m
+        ], tasks=self.tasks)
+        today, h = date(2026, 11, 19), 3600
+        p = self.patched(store)
+        with p[0], p[1], p[2], p[3]:
+            days = lambda: [(d["date"][-2:], d["billed_s"] / h, d["banked_s"] / h)
+                            for g in web._invoice({"client": "HTB", "month": "2026-10"})["groups"] for d in g["days"]]
+            self.assertEqual(days(), [("21", 6.0, 0.25), ("22", 0.0, 3.5), ("23", 0.0, 1.25)])   # a firm 6 hours
+            self.assertEqual(areas.bank(store, self.conf, "HTB", today)["seconds"], 5 * h)
+            self.assertIn('class="weekagreed"', web.invoice_page(web._invoice({"client": "HTB", "month": "2026-10"})))
+            # the client agreed to pay for 2.5 of them: charged on the days worked, and no longer in the bank
+            store.set_week_agreed("HTB", "2026-10-19", round(2.5 * h))
+            self.assertEqual(days(), [("21", 6.25, 0.0), ("22", 2.25, 1.25), ("23", 0.0, 1.25)])
+            self.assertEqual(areas.bank(store, self.conf, "HTB", today)["seconds"], round(2.5 * h))
+            self.assertEqual(web._month_due(store, self.conf, "HTB", "2026-10")[:2], (round(8.5 * h), 340.0))
+            inv = web._invoice({"client": "HTB", "month": "2026-10"})
+            self.assertEqual([(l["detail"], l["hours"]) for l in invoice_lines(inv, 40)],
+                             [("21/10/2026", 6.25), ("22/10/2026", 2.25)])
+            self.assertIn("2h 30m extra agreed and charged", web.invoice_page(inv))
+            # other weeks are untouched, and taking it back banks the lot again
+            store.set_week_agreed("HTB", "2026-10-19", 0)
+            self.assertEqual(areas.bank(store, self.conf, "HTB", today)["seconds"], 5 * h)
+
     def test_start_date_and_switching_off(self):
         from datetime import date
         from tftrack import areas

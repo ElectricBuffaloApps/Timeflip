@@ -1,5 +1,13 @@
 [
   {
+    "version": 60,
+    "changes": [
+      "Extra hours a client agreed to pay for: when a week has gone over its weekly hours, the timesheet shows 'Charge extra hours' under that week. Enter how many of the extra hours the client agreed to (all or some). They're charged on the invoice, on the days they were worked, and only the rest goes to the bank.",
+      "This is for extra time you tracked on the cube. It stops the same hours being both charged and banked. For agreed time that wasn't tracked, '+ Agreed hours' is still the one to use.",
+      "The button shows what's been agreed for the week, and you can change it or set it back to 0 until the month is invoiced."
+    ]
+  },
+  {
     "version": 59,
     "changes": [
       "'Create invoice' on the Dashboard and the Invoices tab is now 'Review and invoice'. It opens the month's timesheet first, so you can add banked hours, agreed hours or mileage, then press Create invoice there. Before, it made the invoice straight away with no chance to change anything.",

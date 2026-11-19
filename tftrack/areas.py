@@ -154,10 +154,11 @@ def _billed_weeks(store, conf: dict, client: str, today: date, rules: dict) -> t
         d = date.fromisoformat(iso)
         weeks.setdefault(d - timedelta(days=d.weekday()), []).append((iso, total - min(total, days[iso][1])))
     fixed_days, fixed_weeks = store.banked_days(client), store.banked_weeks(client)
+    agreed = store.week_agreed(client)   # extra hours the client said they'd pay for, week by week
     held, out = {}, []
     for ws, items in sorted(weeks.items()):
         worked = sum(secs for _, secs in items)
-        budget = rules["limit_seconds"]
+        budget = rules["limit_seconds"] + agreed.get(ws.isoformat(), 0)
         if ws.isoformat() in fixed_weeks and not any(iso in fixed_days for iso, _ in items):
             budget = max(0, worked - fixed_weeks[ws.isoformat()])   # a week fixed as a whole (how version 36 kept it)
         used = over = 0

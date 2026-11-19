@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS banked_week (
     seconds INTEGER NOT NULL,
     PRIMARY KEY (client, week_start)
 );
+-- Extra hours a client agreed to pay for in one week, on top of the weekly hours: charged, not banked.
+CREATE TABLE IF NOT EXISTS week_agreed (
+    client TEXT NOT NULL,
+    monday TEXT NOT NULL,       -- the week's Monday, YYYY-MM-DD
+    seconds INTEGER NOT NULL,
+    PRIMARY KEY (client, monday)
+);
 -- The same, day by day: what each day of an invoiced month held back. Clients invoiced by the day need it by day.
 CREATE TABLE IF NOT EXISTS banked_day (
     client TEXT NOT NULL,
@@ -436,6 +443,17 @@ class Store:
             self.db.execute("DELETE FROM banked_week WHERE lower(client) = lower(?) AND month = ?", (client, month))
             self.db.executemany("INSERT OR REPLACE INTO banked_day VALUES (?, ?, ?, ?)",
                                 [(client, month, day, secs) for day, secs in days.items()])
+
+    def week_agreed(self, client: str) -> dict[str, int]:
+        """Monday -> extra seconds the client agreed to pay for that week, over the weekly hours."""
+        return {r["monday"]: r["seconds"] for r in
+                self.db.execute("SELECT monday, seconds FROM week_agreed WHERE lower(client) = lower(?)", (client,))}
+
+    def set_week_agreed(self, client: str, monday: str, seconds: int) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM week_agreed WHERE lower(client) = lower(?) AND monday = ?", (client, monday))
+            if seconds > 0:
+                self.db.execute("INSERT INTO week_agreed VALUES (?, ?, ?)", (client, monday, int(seconds)))
 
     def banked_days(self, client: str) -> dict[str, int]:
         return {r["day"]: r["seconds"] for r in
